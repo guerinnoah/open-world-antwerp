@@ -1,3 +1,4 @@
+import { inject } from '@vercel/analytics';
 import { N8AOPass } from 'n8ao';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -23,12 +24,14 @@ import { createLandmarks } from './world/landmarks';
 import { createFacadeDetail } from './world/facadeDetail';
 import { createMarkings } from './world/markings';
 import { createProps } from './world/props';
+import { Halls } from './world/halls';
 import { Interiors } from './world/interiors';
 import { Signs } from './world/signs';
 import { loadTextures } from './world/textures';
 import { clearTramTracks } from './world/trackClearance';
 import { createTrees } from './world/trees';
 
+if (import.meta.env.PROD && !navigator.webdriver) inject(); // not for our Playwright probes
 const params = new URLSearchParams(location.search);
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const loading = document.querySelector<HTMLDivElement>('#loading')!;
@@ -95,7 +98,7 @@ const [city, graph, textures, crowd] = await Promise.all([
   fetch('/map/city.json').then((r) => r.json() as Promise<CityData>),
   fetch('/map/graph.json').then((r) => r.json() as Promise<GraphData>),
   loadTextures(renderer, quality.textureSize, quality.anisotropy),
-  Crowd.load(quality.peds + 24, quality.level === 'high' ? 8 : 4),
+  Crowd.load(quality.peds + 24, quality.level === 'high' ? Infinity : 4),
 ]);
 const t1 = performance.now();
 clearTramTracks(city, graph.trams);
@@ -105,9 +108,10 @@ const facadeDetail = createFacadeDetail(city.buildings, quality.detailView);
 const signs = new Signs(city, renderer, 200 * quality.detailView);
 const bikes = new Bikes(city, crowd, 130 * quality.detailView);
 scene.add(bikes.group);
+const landmarks = await createLandmarks(city.landmarks, textures);
 const scenery = [
   createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures),
-  createTrees(city.trees), await createLandmarks(city.landmarks, textures),
+  createTrees(city.trees), landmarks,
 ];
 scene.add(...scenery);
 // The scenery never moves: compose its matrices once instead of thousands every frame.
@@ -155,6 +159,7 @@ if (params.has('fly')) {
   const interiors = new Interiors(signs.doors, city.buildings, physics, environment, crowd);
   scene.add(interiors.group);
   game.attachInteriors(interiors);
+  interiors.halls = new Halls(city.landmarks, landmarks, physics, environment, crowd, interiors, game.player);
   game.attachBreakables(breakables);
   breakables.extras = (b) => (b.parts[0]?.kind === 'veloDock' ? bikes.clearDocks(b.x, b.z, 0.6) : []);
   game.attachBikes(bikes);

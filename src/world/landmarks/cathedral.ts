@@ -92,8 +92,9 @@ function crossingTower(kit: Kit, x: number, z: number) {
   kit.cylinder(1.2, 1.2, 2.5, x, y, z, STONE, 8).cone(1.5, 2.5, x, y + 2.5, z, ROOF, 8).cone(0.3, 1, x, y + 5, z, GOLD, 6);
 }
 
+// Portal on the footprint's facade line, where halls/cathedral.ts puts the door.
 function westFront(kit: Kit) {
-  const x = 60.5, z = -3, w = 12;
+  const x = 58.7, z = -1, w = 12;
   kit.box(5, NAVE.eaves, w, x - 2.5, 0, z, STONE);
   kit.group(x, 0, z, Math.PI / 2, () => {
     kit.facade([[-w / 2, NAVE.eaves], [w / 2, NAVE.eaves], [0, NAVE.ridge + 1]], STONE, 1);

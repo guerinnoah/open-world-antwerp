@@ -14,6 +14,8 @@ interface ClipInfo {
 interface Manifest {
   name: string;
   gender: 'f' | 'm';
+  weight: number;
+  european: boolean;
   vertices: number;
   triangles: number;
   bones: number;
@@ -87,11 +89,11 @@ export class Crowd {
   static async load(capacity: number, limit = Infinity): Promise<Crowd> {
     const crowd = new Crowd();
     const manifest = (await (await fetch('/people/people.json')).json()) as Manifest[];
-    const women = manifest.filter((m) => m.gender === 'f'), men = manifest.filter((m) => m.gender === 'm');
-    const picked: Manifest[] = [];
-    for (let i = 0; picked.length < Math.min(limit, manifest.length); i++) {
-      if (women[i]) picked.push(women[i]);
-      if (men[i] && picked.length < limit) picked.push(men[i]);
+    // Fewer avatars keep the city's mix: each dropped one's share goes to a kept one of the same sex and background.
+    const picked = manifest.slice(0, limit);
+    for (const m of manifest.slice(limit)) {
+      const heir = picked.find((p) => p.gender === m.gender && p.european === m.european) ?? picked.find((p) => p.european === m.european);
+      if (heir) heir.weight += m.weight;
     }
     const loader = new THREE.TextureLoader();
     await Promise.all(
@@ -156,6 +158,13 @@ export class Crowd {
 
   get names(): string[] {
     return this.avatars.map((a) => a.info.name);
+  }
+
+  /** A random avatar, as likely as its share of the city's population. */
+  pick(): number {
+    let x = Math.random() * this.avatars.reduce((sum, a) => sum + a.info.weight, 0);
+    const i = this.avatars.findIndex((a) => (x -= a.info.weight) < 0);
+    return i < 0 ? this.avatars.length - 1 : i;
   }
 
   private avatar(i: number): Avatar {

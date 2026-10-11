@@ -86,7 +86,7 @@ function toBase64(bytes: Uint8Array): string {
 
 interface BakeInput {
   fbx: string;
-  textures: { body: string; head: string; opacity: string | null };
+  textures: { body: string; head: string; opacity: string | null; glasses: string | null };
   anims: Record<Clip, string>;
 }
 
@@ -99,7 +99,7 @@ async function bake(input: BakeInput) {
   const skinned = mesh as THREE.SkinnedMesh;
   group.updateMatrixWorld(true);
 
-  const quadrant: Record<string, [number, number]> = { body: [0, 0], head: [0.5, 0], opacity: [0, 0.5] };
+  const quadrant: Record<string, [number, number]> = { body: [0, 0], head: [0.5, 0], opacity: [0, 0.5], glasses: [0.5, 0.5] };
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = ATLAS;
   const ctx = canvas.getContext('2d')!;
@@ -123,7 +123,7 @@ async function bake(input: BakeInput) {
   const uvRange = [Infinity, -Infinity, Infinity, -Infinity];
   for (const g of src.groups) {
     const name = materials[g.materialIndex ?? 0] ?? '';
-    const key = /opacity/.test(name) ? 'opacity' : /head/.test(name) ? 'head' : 'body';
+    const key = /glasses/.test(name) ? 'glasses' : /opacity/.test(name) ? 'opacity' : /head/.test(name) ? 'head' : 'body';
     const [ou, ov] = quadrant[key];
     for (let i = g.start; i < g.start + g.count; i++) {
       const u = uv.getX(i), v = uv.getY(i);

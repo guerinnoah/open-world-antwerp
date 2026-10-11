@@ -1,0 +1,49 @@
+# Architecture
+
+The city is generated offline into JSON files ([map pipeline](map-pipeline.md)). The browser turns them into meshes
+and physics at load time and simulates traffic, pedestrians and transit locally. The only server is a relay that
+passes player positions between games ([multiplayer](multiplayer.md)).
+
+Antwerp is flat, so physics is 2D (Rapier) on the ground plane and rendering is 3D (Three.js).
+
+## Coordinates
+
+Metres, with the origin at the Brabo fountain on the Grote Markt. +x is east, +z is south, +y is up. Rapier's (x, y)
+is Three's (x, z).
+
+## How it runs
+
+- `src/main.ts` loads the map, textures and people, builds the scenery, then creates `Game` and the optional systems
+  (interiors, motorbikes, multiplayer…), which attach with `game.attachX()`.
+- The loop steps physics at a fixed rate (60 Hz on desktop, 30 on phones) and renders every frame, interpolating
+  between steps.
+- `src/game/game.ts` owns the simulation. Logic goes in `fixedUpdate`, drawing in `render`.
+
+## Physics
+
+Buildings are static polygons, vehicles are boxes, people are circles. Trams and buses in service are moved
+kinematically along their routes; other players are kinematic bodies too.
+
+## Rendering
+
+- Buildings are extruded at load time and merged into 500 m chunks; a shader draws the windows and shopfronts.
+- Nearly everything else (trees, props, signs, cars, people) is instanced.
+- `src/core/quality.ts` picks a low, medium or high preset from the device. It sets resolution, shadows, draw
+  distance and how many cars and people there are.
+
+## Folders
+
+| Folder | Contents |
+|---|---|
+| `src/world/` | Buildings, roofs, ground, signs, props, interiors, landmark models |
+| `src/actors/` | Player, vehicles, traffic, pedestrians, trams, buses, bikes, scooters, motorbikes |
+| `src/game/` | `Game`, the chase camera, GPS routing |
+| `src/net/` | Multiplayer client and the shared wire protocol |
+| `src/ui/`, `src/audio/` | HUD, minimap, world map; sound and radio |
+
+## Conventions
+
+- Tunables are constants at the top of the file that uses them.
+- Every drivable thing is a `Vehicle` (`src/actors/vehicle.ts`) with its own spec.
+- Random placement (parked cars, scooters) uses fixed seeds, so every player sees the same city.
+- The map file formats are defined in `src/world/cityData.ts`.

@@ -6,7 +6,7 @@ const port = Number(process.env.PORT ?? 8787);
 const server = createServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ players: relay.players, rooms: relay.rooms.size }));
+    res.end(JSON.stringify({ players: relay.players }));
     return;
   }
   res.writeHead(404).end();

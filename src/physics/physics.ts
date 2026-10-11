@@ -4,7 +4,8 @@ import type { CityData } from '../world/cityData';
 
 export { RAPIER };
 
-export const GROUP = { STATIC: 0x1, VEHICLE: 0x2, PED: 0x4, BIKE: 0x8 } as const;
+/** HALL: a landmark's interior; whoever is inside collides with nothing else. */
+export const GROUP = { STATIC: 0x1, VEHICLE: 0x2, PED: 0x4, BIKE: 0x8, HALL: 0x10 } as const;
 export const WHEELS = GROUP.VEHICLE | GROUP.BIKE;
 
 export const groups = (member: number, filter: number) => (member << 16) | filter;
@@ -16,7 +17,7 @@ const ray = (x: number, z: number, dx: number, dz: number) => {
   return new RAPIER.Ray({ x, y: z }, { x: dx / len, y: dz / len });
 };
 
-export type Owner = { kind: 'vehicle' | 'ped' | 'player' | 'tram' | 'bus'; entity: unknown };
+export type Owner = { kind: 'vehicle' | 'ped' | 'player' | 'tram' | 'bus' | 'cyclist'; entity: unknown };
 
 export class Physics {
   readonly world: RAPIER.World;

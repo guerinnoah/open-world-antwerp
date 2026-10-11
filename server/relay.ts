@@ -2,8 +2,8 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  CHAT_BURST, ChatLimit, MAX_LEFT_BEHIND, MAX_PLAYERS_PER_ROOM, PROTOCOL_VERSION, RELAY_PATH, VEHICLE_KINDS, cleanChat, cleanLook, cleanName,
-  cleanRoom, decodeState, staysParked, type CarEvent, type ClientMessage, type PeerInfo, type ServerMessage,
+  CHAT_BURST, ChatLimit, MAX_LEFT_BEHIND, PROTOCOL_VERSION, RELAY_PATH, VEHICLE_KINDS, cleanChat, cleanLook, cleanName, decodeState, staysParked,
+  type CarEvent, type ClientMessage, type PeerInfo, type ServerMessage,
 } from '../src/net/protocol.ts';
 
 interface Client {
@@ -11,26 +11,22 @@ interface Client {
   ws: WebSocket;
   name: string;
   look: string;
-  room: Room | null;
   state: number[] | null;
+  farAt: number; // ms: when its state last went to far-off players too
   limit: ChatLimit;
   chat: ChatLimit;
   alive: boolean;
-}
-
-interface Room {
-  name: string;
-  clients: Map<number, Client>;
-  cars: CarEvent[];
 }
 
 interface UpgradeSource {
   on(event: 'upgrade', listener: (req: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown;
 }
 
-const MAX_CLIENTS = 2000;
+const MAX_PLAYERS = 100;
 const MAX_PER_ADDRESS = 20; // generous: mobile carriers put many players behind one address
-const CAR_LOG = 200; // parked-car events a room remembers for late joiners
+const CAR_LOG = 200; // parked-car events the world remembers for late joiners
+const NEAR = 500; // m: players farther apart get each other's state once a second (FAR_EVERY), enough for the minimap
+const FAR_EVERY = 1000;
 const HELLO_TIMEOUT = 10_000;
 const HEARTBEAT = 15_000;
 const RATE = 40; // messages/s per client on average, BURST at once; states alone are 15/s
@@ -46,13 +42,13 @@ export type Relay = ReturnType<typeof attachRelay>;
 export function attachRelay(
   server: UpgradeSource,
   {
-    maxPerRoom = MAX_PLAYERS_PER_ROOM, maxClients = MAX_CLIENTS, maxPerAddress = MAX_PER_ADDRESS, trustProxy = process.env.TRUST_PROXY === '1',
-    standalone = false,
+    maxPlayers = MAX_PLAYERS, maxPerAddress = MAX_PER_ADDRESS, trustProxy = process.env.TRUST_PROXY === '1', standalone = false,
   } = {},
 ) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
-  const rooms = new Map<string, Room>();
   const clients = new Set<Client>();
+  const world = new Map<number, Client>(); // those past hello
+  const cars: CarEvent[] = [];
   const perAddress = new Map<string, number>();
   let nextId = 1;
 
@@ -63,48 +59,31 @@ export function attachRelay(
     send(c, { t: 'refused', reason });
     c.ws.close(reason === 'version' ? 4000 : 4001, reason);
   };
-  const broadcast = (room: Room, from: Client, msg: ServerMessage, droppable = false) => {
+  const broadcast = (from: Client, msg: ServerMessage) => {
     const data = JSON.stringify(msg);
-    for (const c of room.clients.values()) {
-      if (c === from || c.ws.readyState !== WebSocket.OPEN) continue;
-      if (droppable && c.ws.bufferedAmount > SLOW_CLIENT) continue;
-      c.ws.send(data);
-    }
+    for (const c of world.values()) if (c !== from && c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
   };
   const info = (c: Client): PeerInfo => ({ id: c.id, name: c.name, look: c.look, ...(c.state ? { state: c.state } : {}) });
-  const openRoom = (name: string) => {
-    const room: Room = { name, clients: new Map(), cars: [] };
-    rooms.set(name, room);
-    return room;
-  };
 
-  function pickRoom(requested: string): Room | null {
-    if (requested) {
-      const room = rooms.get(requested);
-      if (!room) return openRoom(requested);
-      return room.clients.size < maxPerRoom ? room : null;
-    }
-    for (let n = 1; ; n++) {
-      const room = rooms.get(`antwerp-${n}`);
-      if (!room) return openRoom(`antwerp-${n}`);
-      if (room.clients.size < maxPerRoom) return room;
+  function relayState(from: Client, s: number[], to: 'all' | 'near' | 'far') {
+    const data = JSON.stringify({ t: 's', id: from.id, s } satisfies ServerMessage);
+    for (const c of world.values()) {
+      if (c === from || c.ws.readyState !== WebSocket.OPEN || c.ws.bufferedAmount > SLOW_CLIENT) continue;
+      const far = !!c.state && Math.hypot(c.state[2] - s[2], c.state[3] - s[3]) > NEAR; // [2], [3]: x, z; no position yet counts as near
+      if (to === 'all' || far === (to === 'far')) c.ws.send(data);
     }
   }
 
   function hello(c: Client, msg: Extract<ClientMessage, { t: 'hello' }>) {
     if (msg.v !== PROTOCOL_VERSION) return refuse(c, 'version');
-    const room = pickRoom(cleanRoom(msg.room));
-    if (!room) return refuse(c, 'full');
     c.name = cleanName(msg.name) || `Player ${c.id}`;
     c.look = cleanLook(msg.look);
-    c.room = room;
-    send(c, { t: 'welcome', id: c.id, room: room.name, peers: [...room.clients.values()].map(info), cars: room.cars });
-    room.clients.set(c.id, c);
-    broadcast(room, c, { t: 'join', peer: info(c) });
+    send(c, { t: 'welcome', id: c.id, peers: [...world.values()].map(info), cars });
+    world.set(c.id, c);
+    broadcast(c, { t: 'join', peer: info(c) });
   }
 
-  function remember(room: Room, event: CarEvent) {
-    const cars = room.cars;
+  function remember(event: CarEvent) {
     // Games clear away all but the newest MAX_LEFT_BEHIND left-behind cars, so older ones needn't be replayed.
     if (event.t === 'left' && cars.filter((e) => e.t === 'left').length >= MAX_LEFT_BEHIND) cars.splice(cars.findIndex((e) => e.t === 'left'), 1);
     cars.push(event);
@@ -122,7 +101,7 @@ export function attachRelay(
       return;
     }
     if (!msg || typeof msg !== 'object') return;
-    if (!c.room) {
+    if (!world.has(c.id)) {
       if (msg.t === 'hello') hello(c, msg);
       return;
     }
@@ -130,31 +109,33 @@ export function attachRelay(
       const s = decodeState(msg.s);
       if (!s) return;
       const was = c.state && decodeState(c.state);
-      // Got out: everyone in the room has that car parked there now (Multiplayer.leaveCar), so late joiners need it too.
+      // Got out: everyone has that car parked there now (Multiplayer.leaveCar), so late joiners need it too.
       if (was && was.mode === 1 && s.mode === 0 && staysParked(VEHICLE_KINDS[was.kind], was.sink)) {
-        remember(c.room, { t: 'left', x: was.x, z: was.z, angle: was.angle, kind: was.kind, colour: was.colour });
+        remember({ t: 'left', x: was.x, z: was.z, angle: was.angle, kind: was.kind, colour: was.colour });
       }
+      // Getting in or out goes to everyone at once, after the state before it, so far-off games park the car where it stopped.
+      const switched = !!was && was.mode !== s.mode;
+      if (switched) relayState(c, c.state!, 'far');
+      const everyone = switched || now - c.farAt >= FAR_EVERY;
+      if (everyone) c.farAt = now;
       c.state = msg.s;
-      broadcast(c.room, c, { t: 's', id: c.id, s: msg.s }, true);
+      relayState(c, msg.s, everyone ? 'all' : 'near');
     } else if (msg.t === 'took') {
       const { x, z, kind, colour } = msg;
       if (![x, z, kind, colour].every((v) => typeof v === 'number' && Number.isFinite(v))) return;
-      remember(c.room, { t: 'took', x, z, kind, colour });
-      broadcast(c.room, c, { t: 'took', id: c.id, x, z, kind, colour });
+      remember({ t: 'took', x, z, kind, colour });
+      broadcast(c, { t: 'took', id: c.id, x, z, kind, colour });
     } else if (msg.t === 'chat') {
       const text = cleanChat(msg.text);
-      if (text && c.chat.take(now)) broadcast(c.room, c, { t: 'chat', id: c.id, text });
+      if (text && c.chat.take(now)) broadcast(c, { t: 'chat', id: c.id, text });
     }
   }
 
   function leave(c: Client) {
     clients.delete(c);
-    const room = c.room;
-    if (!room) return;
-    c.room = null;
-    room.clients.delete(c.id);
-    if (room.clients.size === 0) rooms.delete(room.name);
-    else broadcast(room, c, { t: 'leave', id: c.id });
+    if (!world.delete(c.id)) return;
+    if (world.size === 0) cars.length = 0; // nobody's game has those cars any more: the next to join starts afresh
+    else broadcast(c, { t: 'leave', id: c.id });
   }
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
@@ -168,13 +149,13 @@ export function attachRelay(
       else perAddress.delete(address);
     });
     const c: Client = {
-      id: nextId++, ws, name: '', look: '', room: null, state: null, limit: new ChatLimit(BURST, 1000 / RATE),
+      id: nextId++, ws, name: '', look: '', state: null, farAt: 0, limit: new ChatLimit(BURST, 1000 / RATE),
       // A little over the game's own chat limit, so network jitter never drops a message the game let through.
       chat: new ChatLimit(CHAT_BURST + 2), alive: true,
     };
-    if (clients.size >= maxClients) return refuse(c, 'full');
+    if (clients.size >= maxPlayers) return refuse(c, 'full');
     clients.add(c);
-    const timeout = setTimeout(() => c.room || ws.terminate(), HELLO_TIMEOUT);
+    const timeout = setTimeout(() => world.has(c.id) || ws.terminate(), HELLO_TIMEOUT);
     ws.on('message', (data, binary) => !binary && receive(c, data.toString()));
     ws.on('pong', () => (c.alive = true));
     ws.on('close', () => {
@@ -212,7 +193,6 @@ export function attachRelay(
   });
 
   return {
-    rooms,
     get players() {
       return clients.size;
     },

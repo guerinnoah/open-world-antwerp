@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Building, Road } from '../src/world/cityData';
+import type { Area, Building, CityData, Road } from '../src/world/cityData';
 import {
   assembleRings, besideRoad, centroid, interiorPoint, pointInRing, polygonsOf, roadGrid, signedArea, type OsmElement, type Pt,
 } from '../tools/map/geo';
@@ -12,7 +12,11 @@ import { buildGraphData } from '../tools/map/graph';
 import { grbMatcher } from '../tools/map/grb';
 import { posts, solid, splitOutlines, type Mass } from '../tools/map/massing';
 import { logoItemsOf, placeSigns } from '../tools/map/signs';
+import { facadeOf } from '../tools/map/palette';
 import { streetDetail } from '../tools/map/street';
+import { layWater } from '../tools/map/water';
+import { WaterMap } from '../src/world/water';
+import { inRing } from '../src/world/polyline';
 
 /** Inverse of project() near the origin, where it is linear: OSM lat/lon for local metres. */
 const M_LON = project(51.2213, 4.4097)[0] / 0.01;
@@ -230,6 +234,33 @@ describe('drive graph', () => {
   });
 });
 
+describe('bike graph', () => {
+  let id = 0;
+  const way = (tags: Record<string, string>, z = 0): OsmElement => {
+    const pts: Pt[] = [[0, z], [50, z], [100, z]];
+    return { type: 'way', id: ++id, tags, nodes: [id * 10, id * 10 + 1, id * 10 + 2], geometry: pts.map(latLon) };
+  };
+  const bike = (...ways: OsmElement[]) => buildGraphData({ elements: ways, buildings: [], inBounds: () => true, roadWidth: () => 7 }).bike!;
+
+  it('rides both ways down a one-way street open to bicycles, keeping clear of cars on the centreline', () => {
+    const [e] = bike(way({ highway: 'residential', oneway: 'yes', 'oneway:bicycle': 'no' })).edges;
+    expect(e.o).toBeUndefined();
+    expect(e.l).toBeGreaterThanOrEqual(1.35);
+  });
+
+  it('keeps off footways and closed roads, and only rarely onto a road whose track is mapped beside it', () => {
+    const g = bike(
+      way({ highway: 'footway' }, 0), way({ highway: 'residential', bicycle: 'no' }, 20),
+      way({ highway: 'secondary', bicycle: 'use_sidepath' }, 40), way({ highway: 'cycleway' }, 60),
+    );
+    expect(g.edges).toHaveLength(2);
+    const [road, track] = g.edges;
+    expect(road.q).toBeLessThan(0.1);
+    expect(track.q).toBeGreaterThan(2);
+    expect(track.l).toBeLessThan(1);
+  });
+});
+
 describe('bus runs', () => {
   const LAT = 51.2213;
   const node = (id: number, lon: number) => ({ id, lat: LAT, lon });
@@ -397,5 +428,46 @@ describe('GRB heights', () => {
     expect(grbMatcher([{ outer: overhang, height: 12, type: 'verdieping' }])(overhang)).toMatchObject({ height: 12, type: 'verdieping', ground: 0 });
     const match = grbMatcher([{ outer: overhang, height: 12, type: 'verdieping' }, { outer: halfUnder, height: 9 }]);
     expect(match(overhang)?.ground).toBeCloseTo(0.5);
+  });
+});
+
+describe('facadeOf', () => {
+  const rand = () => 0.5;
+
+  it('keeps colours and materials that OSM tags', () => {
+    const tags = { building: 'yes', 'building:material': 'brick', 'building:colour': '#bb9999', 'roof:colour': 'black' };
+    expect(facadeOf(tags, 12, 100, true, rand)).toEqual({ c: 0xbb9999, r: 0x3a3836, m: 1 });
+  });
+
+  it('builds churches in stone and leaves rendered walls without a material', () => {
+    expect(facadeOf({ building: 'church' }, 20, 800, true, rand).m).toBe(3);
+    expect(facadeOf({ building: 'yes', 'building:material': 'plaster' }, 12, 100, true, rand)).not.toHaveProperty('m');
+  });
+});
+
+describe('layWater', () => {
+  const square = (x0: number, z0: number, x1: number, z1: number): Pt[] => [[x0, z0], [x1, z0], [x1, z1], [x0, z1], [x0, z0]];
+  const flatSquare = (x0: number, z0: number, x1: number, z1: number) => [x0, z0, x1, z0, x1, z1, x0, z1];
+  const bounds = [square(-500, -500, 500, 500)];
+  const inArea = (a: Area, x: number, z: number) => a.rings.reduce((inside, r) => inside !== inRing(r, x, z), false);
+  const covered = (areas: Area[], k: Area['k'], x: number, z: number) => areas.some((a) => a.k === k && inArea(a, x, z));
+
+  it("shows a park's pond instead of drawing grass over it", () => {
+    const park: Area = { k: 'green', rings: [flatSquare(0, 0, 100, 100)] };
+    const out = layWater([[square(40, 40, 60, 60)]], bounds, [], [park]);
+    expect(covered(out, 'water', 50, 50)).toBe(true);
+    expect(covered(out, 'green', 50, 50)).toBe(false);
+    expect(covered(out, 'green', 10, 10)).toBe(true);
+  });
+
+  it('keeps piers, pontoons and paths over the water dry, and the water around them wet', () => {
+    const pier: Road = { k: 'foot', w: 2.5, p: [0, -50, 0, 50] };
+    const pontoon: Area = { k: 'plaza', rings: [flatSquare(30, -10, 50, 10)] };
+    const out = layWater([[square(-100, -20, 100, 20)]], bounds, [pier], [pontoon]);
+    const water = new WaterMap({ areas: out } as CityData);
+    expect(water.contains(0, 0)).toBe(false);
+    expect(water.contains(40, 0)).toBe(false);
+    expect(water.contains(-20, 0)).toBe(true);
+    expect(water.contains(70, 0)).toBe(true);
   });
 });

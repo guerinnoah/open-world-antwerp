@@ -1,19 +1,22 @@
 // Wire format shared by the game and the relay: JSON over one WebSocket. No imports: Node runs this file directly.
 export const PROTOCOL_VERSION = 5;
 export const RELAY_PATH = '/net';
-export const MAX_PLAYERS_PER_ROOM = 16;
 export const CHAT_MAX = 120;
 export const CHAT_BURST = 5;
 export const CHAT_EVERY = 2000; // ms: after a burst of CHAT_BURST, one message per this
 export const MAX_LEFT_BEHIND = 12; // cars others got out of that a game keeps parked; older ones are cleared away
 
 /** Sent by index: the order is part of the protocol, only append. */
-export const VEHICLE_KINDS = ['city', 'hatch', 'estate', 'sedan', 'suv', 'van', 'bike', 'scooter', 'bus', 'artic', 'motorbike', 'moped'] as const;
+export const VEHICLE_KINDS = [
+  'city', 'hatch', 'estate', 'sedan', 'suv', 'van', 'bike', 'scooter', 'bus', 'artic', 'motorbike', 'moped',
+  'police', 'policevan', 'taxi', 'ambulance', 'truck', 'firetruck',
+] as const;
 
 export const FLAG = {
   DOWN: 1,
   INDOORS: 2,
   HORN: 4,
+  SIREN: 8,
 } as const;
 
 export interface PlayerState {
@@ -47,20 +50,20 @@ export interface Took {
   colour: number;
 }
 
-/** The room's parked-car history, oldest first, which a late joiner replays: cars taken (gone for everyone) and left behind (parked for everyone). */
+/** The world's parked-car history, oldest first, which a late joiner replays: cars taken (gone for everyone) and left behind (parked for everyone). */
 export type CarEvent = ({ t: 'took' } & Took) | ({ t: 'left'; angle: number } & Took);
 
 /** A car someone gets out of stays behind as a parked car, unless it's sinking or a bike. */
 export const staysParked = (kind: string | undefined, sink: number) => !!kind && kind !== 'bike' && sink <= 0;
 
 export type ClientMessage =
-  | { t: 'hello'; v: number; name: string; look: string; room?: string }
+  | { t: 'hello'; v: number; name: string; look: string }
   | { t: 's'; s: number[] }
   | ({ t: 'took' } & Took)
   | { t: 'chat'; text: string };
 
 export type ServerMessage =
-  | { t: 'welcome'; id: number; room: string; peers: PeerInfo[]; cars?: CarEvent[] } // cars: missing from older relays
+  | { t: 'welcome'; id: number; peers: PeerInfo[]; cars?: CarEvent[] } // cars: missing from older relays
   | { t: 'join'; peer: PeerInfo }
   | { t: 'leave'; id: number }
   | { t: 's'; id: number; s: number[] }
@@ -96,12 +99,6 @@ export function decodeState(a: unknown): PlayerState | null {
 export function cleanName(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw.replace(/[\p{C}<>]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16).trim();
-}
-
-export function cleanRoom(raw: unknown): string {
-  if (typeof raw !== 'string') return '';
-  const room = raw.trim().toLowerCase();
-  return /^[a-z0-9-]{1,24}$/.test(room) ? room : '';
 }
 
 export function cleanChat(raw: unknown): string {

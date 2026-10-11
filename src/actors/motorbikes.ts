@@ -250,7 +250,7 @@ export class Motorbikes {
       if (!moving && t.parkedRoll && stands < this.stands.instanceMatrix.count) this.stands.setMatrixAt(stands++, M);
       if (v.driven && !v.remote) {
         let who = v === riding ? avatar : this.riders.get(v);
-        if (who === undefined) this.riders.set(v, (who = Math.floor(Math.random() * 64)));
+        if (who === undefined) this.riders.set(v, (who = this.crowd.pick()));
         const sway = this.crowd.clip(who, t.clip);
         this.crowd.add(who, M, t.clip, sway ? this.clock / sway.duration : 0, distance);
       }

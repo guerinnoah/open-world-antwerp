@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 
 const SUN_AZIMUTH = THREE.MathUtils.degToRad(250);
-const SUN_ELEVATION = THREE.MathUtils.degToRad(14);
+const SUN_ELEVATION = THREE.MathUtils.degToRad(30); // mid-afternoon: low enough for long shadows, high enough to light the street
 
 export interface EnvironmentOptions {
   shadowMapSize: number;
@@ -32,9 +32,9 @@ export class Environment {
     u.sunPosition.value.copy(this.sunDir);
     sky.renderOrder = -1000; // before the ground layers: they don't write depth, so the sky would paint over them
     scene.add(sky);
-    scene.fog = new THREE.Fog(0xc9b59c, fogNear, Math.min(4000, drawDistance * 0.92));
+    scene.fog = new THREE.Fog(0xc3c9cf, fogNear, Math.min(4000, drawDistance * 0.92));
 
-    this.sun = new THREE.DirectionalLight(0xffd2a1, 3.2);
+    this.sun = new THREE.DirectionalLight(0xffeddb, 3.2);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     Object.assign(this.sun.shadow.camera, {
@@ -43,7 +43,7 @@ export class Environment {
     this.sun.shadow.bias = -0.0005;
     this.sun.shadow.normalBias = 0.6;
     scene.add(this.sun, this.sun.target);
-    scene.add(new THREE.HemisphereLight(0xc6d6f0, 0x7a6a58, 0.35));
+    scene.add(new THREE.HemisphereLight(0xd9e1ea, 0x736b60, 0.35));
 
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(gradientSky(), 0.04).texture;
@@ -53,7 +53,7 @@ export class Environment {
   setIndoor(on: boolean) {
     this.indoor = on;
     this.sun.intensity = on ? 2.3 : 3.2;
-    this.sun.color.set(on ? 0xfff2e2 : 0xffd2a1);
+    this.sun.color.set(on ? 0xfff2e2 : 0xffeddb);
   }
 
   follow(focus: THREE.Vector3) {
@@ -71,7 +71,7 @@ function gradientSky(): THREE.Scene {
   const geometry = new THREE.SphereGeometry(100, 32, 16);
   const pos = geometry.getAttribute('position');
   const colours = new Float32Array(pos.count * 3);
-  const zenith = new THREE.Color(0x4f7fc0), horizon = new THREE.Color(0xe9c9a0), ground = new THREE.Color(0x5e574e);
+  const zenith = new THREE.Color(0x9aadc8), horizon = new THREE.Color(0xdcd8d0), ground = new THREE.Color(0x5e5952);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i) / 100;

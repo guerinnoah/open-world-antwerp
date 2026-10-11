@@ -15,17 +15,18 @@ interface Layer {
 
 // Flat at y = 0, drawn back-to-front in this order. Only base and water write depth (pushed back with polygon
 // offset), so the layers on top never z-fight but buildings still occlude them.
+// tint: the surface's average colour (sRGB); scale: metres per texture repeat, the scan's real size.
 const LAYERS: Layer[] = [
-  { key: 'base', texture: 'pavement', scale: 3, tint: 0xd4d0c8 },
+  { key: 'base', texture: 'pavement', scale: 1.85, tint: 0x8f8c86 }, // grey 30 cm concrete pavement tiles
   { key: 'water', tint: 0x23414c }, // under roads, so bridges over the docks stay visible
-  { key: 'green', texture: 'grass', scale: 4, tint: 0xc8d4b0 },
-  { key: 'plaza', texture: 'cobble', scale: 4, tint: 0xf2ece2 },
-  { key: 'foot', texture: 'pavers', scale: 2.5, tint: 0xd8cfc6 },
-  { key: 'cycle', texture: 'asphalt', scale: 5, tint: 0xd06a52 },
-  { key: 'service', texture: 'asphalt', scale: 5, tint: 0xc4c4c4 },
-  { key: 'pedestrian', texture: 'cobble', scale: 4, tint: 0xf2ece2 },
-  { key: 'minor', texture: 'asphalt', scale: 5, tint: 0xa8a8a8 },
-  { key: 'major', texture: 'asphalt', scale: 5, tint: 0x9a9a9a },
+  { key: 'green', texture: 'grass', scale: 2.5, tint: 0x5b6b3c },
+  { key: 'plaza', texture: 'cobble', scale: 2.5, tint: 0x7f7c76 }, // granite setts laid in arcs
+  { key: 'foot', texture: 'pavers', scale: 1.8, tint: 0x8c8983 },
+  { key: 'cycle', texture: 'asphalt', scale: 5, tint: 0x8a4a3d },
+  { key: 'service', texture: 'asphalt', scale: 5, tint: 0x5c5c5c },
+  { key: 'pedestrian', texture: 'cobble', scale: 2.5, tint: 0x84817b },
+  { key: 'minor', texture: 'asphalt', scale: 5, tint: 0x545556 },
+  { key: 'major', texture: 'asphalt', scale: 5, tint: 0x4b4c4e },
   { key: 'tram', tint: 0x8a8a8a, roughness: 0.35, metalness: 0.8 },
 ];
 
@@ -139,8 +140,10 @@ export function createGround(city: CityData, textures: Textures): Ground {
     if (!builder.idx.length) return;
     const tex = layer.texture && textures.ground[layer.texture];
     const writesDepth = layer.key === 'water' || layer.key === 'base';
+    const color = new THREE.Color(layer.tint);
+    if (tex) color.setRGB(color.r / tex.mean.r, color.g / tex.mean.g, color.b / tex.mean.b);
     const material = new THREE.MeshStandardMaterial({
-      color: layer.tint,
+      color,
       ...(tex ? { map: tex.map, normalMap: tex.normalMap } : {}),
       roughness: layer.roughness ?? 0.95,
       metalness: layer.metalness ?? 0,

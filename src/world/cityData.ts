@@ -5,8 +5,11 @@ type Ring = number[];
 export interface Building {
   h: number; // roof height above ground (m)
   mh?: number; // where the walls start, for parts like tower sections (m)
+  /** Average wall and pitched-roof colour (sRGB), as seen; textures add detail around it. */
   c: number;
   r: number;
+  /** Wall material: absent = painted render; 1 red brick, 2 yellow brick, 3 stone ashlar. */
+  m?: WallMaterial;
   nw?: 1;
   /** Not solid: raised parts and canopies you can drive under. */
   nc?: 1;
@@ -78,6 +81,10 @@ export interface GraphEdge {
   n?: string;
   /** Walk graph: sidewalk offset from the centreline [left, right] looking a → b; 0 = centreline, -1 = no room. */
   sw?: [number, number];
+  /** Bike graph: where riders keep to, m right of the centreline. */
+  l?: number;
+  /** Bike graph: how readily riders turn into it (absent = 1, a quiet street). */
+  q?: number;
 }
 
 export interface RoadGraph {
@@ -103,10 +110,13 @@ export interface GraphData {
   version: 1;
   drive: RoadGraph;
   walk: RoadGraph;
+  bike?: RoadGraph;
   trams: TramRun[];
   buses: BusRun[];
   hospital: [number, number, number]; // respawn outside ZNA Sint-Elisabeth: x, z, facing (Rapier angle)
 }
+
+export type WallMaterial = 1 | 2 | 3;
 
 export type ShopKind = 1 | 2 | 3 | 4 | 5 | 6 | 7; // 1 shop, 2 café / restaurant, 3 fashion, 4 food, 5 bakery, 6 jewellery, 7 service
 

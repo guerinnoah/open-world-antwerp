@@ -7,14 +7,17 @@ interface CameraFocus {
   z: number;
   height: number;
   heading?: number;
+  stride?: number; // 0..1 of run pace; on foot only
   speed: number;
   distance: number;
   sprint?: boolean;
-  room?: { free(x: number, z: number, dx: number, dz: number): number; confine(p: THREE.Vector3): void };
+  room?: { free(x: number, z: number, dx: number, dz: number): number; confine(p: THREE.Vector3): void; lookUp?: boolean };
 }
 
 const MIN_PITCH = -0.05;
+const LOOK_UP = -0.75; // rad: in halls the camera may drop to the floor to look up at the vaults
 const MAX_PITCH = 1.1;
+const WALK_FOLLOW = 1.5; // 1/s at run pace
 
 export class CameraRig {
   yaw = 0;
@@ -25,6 +28,7 @@ export class CameraRig {
   readonly target = new THREE.Vector3();
   private position = new THREE.Vector3();
   private initialised = false;
+  private minPitch = MIN_PITCH;
 
   constructor(readonly camera: THREE.PerspectiveCamera, private physics: Physics) {}
 
@@ -35,15 +39,22 @@ export class CameraRig {
   look(dx: number, dy: number) {
     if (dx || dy) this.manualTimer = 1.6;
     this.yaw += dx;
-    this.pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, this.pitch + dy));
+    this.pitch = Math.max(this.minPitch, Math.min(MAX_PITCH, this.pitch + dy));
   }
 
   update(focus: CameraFocus, dt: number) {
     this.manualTimer -= dt;
+    this.minPitch = focus.room?.lookUp ? LOOK_UP : MIN_PITCH;
+    if (this.pitch < this.minPitch) this.pitch += (this.minPitch - this.pitch) * Math.min(1, dt * 4);
     if (focus.heading !== undefined && this.manualTimer <= 0) {
       const d = wrapAngle(focus.heading - this.yaw);
-      this.yaw += d * Math.min(1, dt * 3 * Math.min(focus.speed / 4, 1));
-      this.pitch += (0.22 - this.pitch) * Math.min(1, dt * 1.5);
+      if (focus.stride !== undefined) {
+        // sin, not d: running at the camera leaves it put instead of whipping it round
+        this.yaw += Math.sin(d) * Math.min(1, dt * WALK_FOLLOW * focus.stride);
+      } else {
+        this.yaw += d * Math.min(1, dt * 3 * Math.min(focus.speed / 4, 1));
+        this.pitch += (0.22 - this.pitch) * Math.min(1, dt * 1.5);
+      }
     }
 
     const ahead = Math.min(focus.speed * 0.25, 6);

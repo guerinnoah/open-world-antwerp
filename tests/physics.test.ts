@@ -65,7 +65,7 @@ describe('removing', () => {
 });
 
 describe('traffic gap', () => {
-  const host: TrafficHost = { addVehicle() {}, removeVehicle() {} };
+  const host: TrafficHost = { vehicles: [], addVehicle() {}, removeVehicle() {} };
   const gapAhead = (place: () => () => void) => {
     const traffic = new Traffic(physics, {} as NavGraph, host, 0);
     const car = new Vehicle(physics.world, sedan, 0xffffff, -50, -50, 0);

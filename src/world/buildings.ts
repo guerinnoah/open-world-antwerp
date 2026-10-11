@@ -24,21 +24,16 @@ const layer = (name: BuildingLayer) => BUILDING_LAYERS.indexOf(name);
 /** Stable random in [0, 1) per building; salt 5 = facade seed, 7 = wall push (reused by signs, interiors, facadeDetail). */
 export const rand = (b: Building, salt = 0) => hash(b.rings[0][0], b.rings[0][1], salt);
 
-function surfaces(b: Building): { wall: Surface; roof: Surface } {
-  const c = new THREE.Color(b.c);
-  const hsl = c.getHSL({ h: 0, s: 0, l: 0 });
-  const shade = 0.85 + rand(b) * 0.3;
-  let wall: Surface;
-  if ((hsl.h < 0.06 || hsl.h > 0.95) && hsl.s > 0.25) {
-    wall = { layer: layer('brick'), tint: new THREE.Color(shade, shade * 0.97, shade * 0.95) };
-  } else if (hsl.h >= 0.08 && hsl.h <= 0.17 && hsl.s > 0.3 && rand(b, 1) < 0.5) {
-    wall = { layer: layer('yellowBrick'), tint: new THREE.Color(shade * 1.05, shade, shade * 0.9) };
-  } else {
-    wall = { layer: layer('plaster'), tint: c.clone().multiplyScalar(1.3) };
-  }
-  const roofHsl = new THREE.Color(b.r).getHSL({ h: 0, s: 0, l: 0 });
-  const roof = { layer: layer(roofHsl.s > 0.25 ? 'tiles' : 'slate'), tint: new THREE.Color().setScalar(0.8 + rand(b, 2) * 0.35) };
-  return { wall, roof };
+const WALLS: BuildingLayer[] = ['plaster', 'brick', 'yellowBrick', 'ashlar']; // by Building.m
+// Flat roofs, mostly bitumen, some gravel ballast or pale membrane (sRGB).
+const FLAT_ROOFS = [0x4b4b4c, 0x4b4b4c, 0x4b4b4c, 0x56565a, 0x56565a, 0x625f5b, 0x7d7a74, 0x7d7a74, 0x8f8d89];
+
+function surfaces(b: Building): { wall: Surface; roof: Surface; flatRoof: Surface } {
+  const wall = { layer: layer(WALLS[b.m ?? 0]), tint: new THREE.Color(b.c).multiplyScalar(0.94 + rand(b) * 0.12) };
+  const tiled = new THREE.Color(b.r).getHSL({ h: 0, s: 0, l: 0 }).s > 0.25;
+  const roof = { layer: layer(tiled ? 'tiles' : 'slate'), tint: new THREE.Color(b.r).multiplyScalar(0.92 + rand(b, 2) * 0.16) };
+  const flatRoof = { layer: layer('flatRoof'), tint: new THREE.Color(FLAT_ROOFS[Math.floor(rand(b, 3) * FLAT_ROOFS.length)]) };
+  return { wall, roof, flatRoof };
 }
 
 export function extrudeBuildings(buildings: Building[]): BuildingArrays {
@@ -49,7 +44,7 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
     const plan = planRoof(b);
     const y0 = b.mh ?? 0;
     const y1 = plan ? plan.eaves : b.h;
-    const { wall, roof } = surfaces(b);
+    const { wall, roof, flatRoof } = surfaces(b);
     const windows = b.nw ? 0 : 1;
     const seed = rand(b, 5);
     const shopFlags = (b.sh ?? 0) * 2;
@@ -102,13 +97,12 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
       for (let i = 0; i < tris.length; i += 3) idx.push(v + tris[i], v + tris[i + 2], v + tris[i + 1]);
     }
     const v = pos.length / 3;
-    const roofShade = 1.1 + rand(b, 3) * 0.4;
     for (let i = 0; i < flat.length; i += 2) {
       pos.push(flat[i], y1, flat[i + 1]);
       nor.push(0, 1, 0);
-      col.push(roofShade, roofShade, roofShade);
+      col.push(flatRoof.tint.r, flatRoof.tint.g, flatRoof.tint.b);
       uvm.push(flat[i], flat[i + 1]);
-      surf.push(layer('flatRoof'), 0);
+      surf.push(flatRoof.layer, 0);
       fac.push(0, 0, 0, 0);
     }
     for (const t of tris) idx.push(v + t);
@@ -131,6 +125,7 @@ function createBuildingMaterial(textures: Textures): THREE.MeshStandardMaterial 
     shader.uniforms.tAlbedo = { value: textures.buildingAlbedo };
     shader.uniforms.tNormal = { value: textures.buildingNormal };
     shader.uniforms.uScale = { value: BUILDING_LAYERS.map((l) => BUILDING_SCALE[l]) };
+    shader.uniforms.uMean = { value: textures.buildingMean };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -144,7 +139,7 @@ function createBuildingMaterial(textures: Textures): THREE.MeshStandardMaterial 
         `void main() {
         float layer = floor(vSurf.x + 0.5);
         vec2 tuv = vUvm / uScale[int(layer)];
-        vec3 wallTex = texture(tAlbedo, vec3(tuv, layer)).rgb;
+        vec3 wallTex = texture(tAlbedo, vec3(tuv, layer)).rgb / uMean[int(layer)];
         Facade fc = facadeAt(vFacade, vUvm.y, dot(wallTex, vec3(0.3, 0.59, 0.11)));`,
       )
       .replace('#include <map_fragment>', 'diffuseColor.rgb *= wallTex;')
@@ -185,6 +180,7 @@ precision highp sampler2DArray;
 uniform sampler2DArray tAlbedo;
 uniform sampler2DArray tNormal;
 uniform float uScale[${BUILDING_LAYERS.length}];
+uniform vec3 uMean[${BUILDING_LAYERS.length}];
 varying vec2 vUvm;
 varying vec2 vSurf;
 varying vec4 vFacade;
@@ -255,12 +251,12 @@ void paneLook(vec2 p, float hw, float bot, float top, float id, inout vec3 c, in
   lit = step(hash2(vec2(id, 11.3)), 0.07);
 }
 
-Facade windowAt(vec2 p, float hw, float bot, float top, bool arched, float id, vec3 paint, vec3 stone, float ledge, vec2 aa) {
+Facade windowAt(vec2 p, float hw, float bot, float top, bool arched, float id, vec3 paint, vec3 sillStone, vec3 trim, float ledge, vec2 aa) {
   float fr, g, si, li;
   windowMasks(p, hw, bot, top, arched, aa, fr, g, si, li);
   vec3 pane; float lit;
   paneLook(p, hw, bot, top, id, pane, lit);
-  return Facade(fr * paint + g * pane + (si + li + ledge) * stone, max(max(fr, g), max(max(si, li), ledge)), g, g * lit, vec3(0.0));
+  return Facade(fr * paint + g * pane + si * sillStone + (li + ledge) * trim, max(max(fr, g), max(max(si, li), ledge)), g, g * lit, vec3(0.0));
 }
 
 // What's seen through a shop window, by ShopKind (cityData.ts); lx, h: metres from the bay's centre and the pavement.
@@ -370,17 +366,21 @@ Facade facadeAt(vec4 f, float h, float texLum) {
   float fade = 1.0 - smoothstep(0.05, 0.16, max(aa.x, aa.y)); // far away the detail would only shimmer
   if (fade <= 0.0) return o;
 
-  vec3 stone = vec3(0.5, 0.47, 0.41) * (0.75 + 0.5 * texLum);
+  // Bluestone plinth and often sills; cornice, lintels and string courses painted cream or in grey stone.
+  float grain = 0.85 + 0.15 * texLum;
+  vec3 trim = (fract(seed * 19.9) < 0.8 ? vec3(0.62, 0.6, 0.55) : vec3(0.3, 0.29, 0.26)) * grain;
+  vec3 bluestone = vec3(0.075, 0.08, 0.085) * grain;
+  vec3 sillStone = fract(seed * 37.1) < 0.55 ? bluestone : trim;
   vec3 paint = framePaint(seed);
   float top = f.z;
 
   if (top > 0.0 && h > top - 0.6 && fract(seed * 31.3) < 0.75) { // cornice with dentils
     float under = 1.0 - smoothstep(top - 0.52 - aa.y, top - 0.52 + aa.y, h);
     float dentils = step(0.5, fract(f.x / 0.3)) * rectMask(vec2(0.0, h), vec2(-1.0, top - 0.42), vec2(1.0, top - 0.3), aa);
-    o.colour = stone * (1.0 - 0.55 * max(under, dentils));
+    o.colour = trim * (1.0 - 0.55 * max(under, dentils));
     o.amount = 1.0;
   } else if (h < 0.45) { // plinth
-    o.colour = stone * 0.7;
+    o.colour = bluestone;
     o.amount = 0.9;
   } else if (h < groundH) {
     float door = floor(fract(seed * 29.7) * nb);
@@ -405,19 +405,19 @@ Facade facadeAt(vec4 f, float h, float texLum) {
       float surround = max(rectMask(vec2(lx, h), vec2(-0.72, 0.0), vec2(0.72, dTop + 0.6), aa) - d - transom, 0.0);
       float panels = (1.0 - smoothstep(0.02, 0.02 + aa.x, abs(lx))) * 0.5
                    + (1.0 - smoothstep(0.02, 0.02 + aa.y, abs(h - dTop * 0.55))) * 0.5;
-      o.colour = d * doorPaint(seed) * (1.0 - panels * 0.6) + surround * stone + transom * vec3(0.02, 0.022, 0.026);
+      o.colour = d * doorPaint(seed) * (1.0 - panels * 0.6) + surround * sillStone + transom * vec3(0.02, 0.022, 0.026);
       o.amount = max(d, max(surround, transom));
       o.glass = transom;
     } else {
       float wTop = min(0.9 + winH * (street ? 1.0 : 0.8), groundH - 0.4);
-      o = windowAt(vec2(lx, h), hw, 0.9, wTop, arched, bay + seed * 91.0, paint, stone, 0.0, aa);
+      o = windowAt(vec2(lx, h), hw, 0.9, wTop, arched, bay + seed * 91.0, paint, sillStone, trim, 0.0, aa);
     }
   } else { // upper floors: an optional ledge at each floor line, then the window
     float level = floor((h - groundH) / floorH);
     float ly = h - groundH - level * floorH;
     float ledge = fract(seed * 23.1) < 0.6 ? rectMask(vec2(0.0, ly), vec2(-1.0, 0.0), vec2(1.0, 0.13), aa) : 0.0;
     float wTop = min(0.85 + winH, floorH - 0.3);
-    o = windowAt(vec2(lx, ly), hw, 0.85, wTop, arched, bay + level * 17.0 + seed * 91.0, paint, stone, ledge, aa);
+    o = windowAt(vec2(lx, ly), hw, 0.85, wTop, arched, bay + level * 17.0 + seed * 91.0, paint, sillStone, trim, ledge, aa);
   }
   o.amount *= fade;
   o.glass *= fade;

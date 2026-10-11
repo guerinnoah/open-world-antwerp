@@ -2,11 +2,14 @@ import { Radio, STATIONS, type RadioStatus, type Station } from './radio';
 
 const MUTE_KEY = 'gta-antwerp-muted';
 const STATION_KEY = 'gta-antwerp-station';
+const RADIO_OFF_KEY = 'gta-antwerp-radio-off';
 const GEARS = [0, 18, 38, 62, 92, 140]; // km/h where each gear starts
 const IDLE_RPM = 850;
 const MAX_RPM = 5600;
 // Events that count as a user activation. Not pointerdown: a touch pointerdown isn't one, so iOS would stay silent.
 const GESTURES = ['pointerup', 'touchend', 'click', 'keydown'] as const;
+const SIREN_VOICES = 3;
+const SIREN_RANGE = 300; // m
 
 /** localStorage throws when site storage is blocked (cookies off, sandboxed iframe): then nothing is remembered. */
 function stored(key: string, value?: string): string | null {
@@ -42,16 +45,18 @@ export class Sound {
   private listener = { x: 0, z: 0, yaw: 0 };
   private stopHorn: (() => void) | null = null;
   private lastCrash = 0;
+  private sirenVoices = new Map<object, Siren>();
   private radio: Radio | null = null;
   private radioWanted = false;
-  private station = Math.min(Number(stored(STATION_KEY) ?? 0) || 0, STATIONS.length);
+  private station = (Number(stored(STATION_KEY)) || 0) % STATIONS.length;
+  private radioMuted = stored(RADIO_OFF_KEY) === '1';
   muted = stored(MUTE_KEY) === '1';
 
   constructor() {
     // Browsers only allow audio after a user gesture: start on a key or tap (Radio's iOS unlock needs it too).
     this.awaitGesture(true);
     addEventListener('keydown', (e) => e.code === 'KeyM' && !e.repeat && this.toggleMute());
-    addEventListener('keydown', (e) => e.code === 'KeyR' && !e.repeat && this.radioWanted && this.nextStation());
+    addEventListener('keydown', (e) => e.code === 'KeyR' && !e.repeat && this.radioWanted && (e.shiftKey ? this.toggleRadio() : this.nextStation()));
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
       if (document.hidden) void this.ctx.suspend();
@@ -149,17 +154,30 @@ export class Sound {
     this.onRadio?.();
   }
 
+  /** Off comes back on at the same station. */
   nextStation() {
-    if (this.radio?.status !== 'blocked') {
-      this.station = (this.station + 1) % (STATIONS.length + 1);
+    if (this.radioMuted) this.setRadioMuted(false);
+    else if (this.radio?.status !== 'blocked') {
+      this.station = (this.station + 1) % STATIONS.length;
       stored(STATION_KEY, String(this.station));
     }
     this.radio?.tune(this.tuned);
     this.onRadio?.();
   }
 
+  toggleRadio() {
+    this.setRadioMuted(!this.radioMuted);
+    this.radio?.tune(this.tuned);
+    this.onRadio?.();
+  }
+
+  private setRadioMuted(off: boolean) {
+    this.radioMuted = off;
+    stored(RADIO_OFF_KEY, off ? '1' : '0');
+  }
+
   private get tuned(): Station | null {
-    return STATIONS[this.station] ?? null;
+    return this.radioMuted ? null : STATIONS[this.station];
   }
 
   /** `impact`: the speed lost (m/s). */
@@ -269,6 +287,30 @@ export class Sound {
     }
   }
 
+  /** The nearest few sirens out in the world, and the one you drive (`own`, centred and louder). */
+  sirens(cars: readonly { x: number; z: number; siren: boolean }[], own: object | null) {
+    if (!this.ctx) return;
+    const wanted = new Map<object, { gain: number; pan: number }>();
+    if (own) wanted.set(own, { gain: 1, pan: 0 });
+    const near = cars
+      .filter((c) => c !== own && c.siren)
+      .map((c) => ({ c, ...this.place(c.x, c.z, SIREN_RANGE) }))
+      .filter((n) => n.gain > 0)
+      .sort((a, b) => b.gain - a.gain)
+      .slice(0, SIREN_VOICES);
+    for (const n of near) wanted.set(n.c, { gain: n.gain * 0.75, pan: n.pan });
+    for (const [car, voice] of this.sirenVoices) {
+      if (wanted.has(car)) continue;
+      voice.stop();
+      this.sirenVoices.delete(car);
+    }
+    for (const [car, { gain, pan }] of wanted) {
+      let voice = this.sirenVoices.get(car);
+      if (!voice) this.sirenVoices.set(car, (voice = new Siren(this.ctx, this.muffle)));
+      voice.set(gain, pan);
+    }
+  }
+
   private ambience() {
     const ctx = this.ctx!;
     for (const [type, freq, gain] of [['lowpass', 380, 0.07], ['bandpass', 1400, 0.012]] as const) {
@@ -373,6 +415,46 @@ export class Sound {
     const gain = Math.max(0, 1 - d / range) ** 2;
     const pan = d > 0.1 ? ((-dx * Math.sin(this.listener.yaw) + dz * Math.cos(this.listener.yaw)) / d) * 0.8 : 0;
     return { gain, pan };
+  }
+}
+
+/** Two-tone, A4 and D5 like the Martinshorn; each unit's cycle a little different so a convoy doesn't sound as one. */
+class Siren {
+  private osc: OscillatorNode[];
+  private gain: GainNode;
+  private pan: StereoPannerNode;
+
+  constructor(private ctx: AudioContext, out: AudioNode) {
+    const tone = ctx.createOscillator();
+    tone.type = 'sawtooth';
+    tone.frequency.value = 513.5;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 1 / (1.15 + Math.random() * 0.3);
+    const depth = ctx.createGain();
+    depth.gain.value = 73.5;
+    lfo.connect(depth).connect(tone.frequency);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2400;
+    this.gain = ctx.createGain();
+    this.gain.gain.value = 0;
+    this.pan = ctx.createStereoPanner();
+    tone.connect(filter).connect(this.gain).connect(this.pan).connect(out);
+    this.osc = [tone, lfo];
+    for (const o of this.osc) o.start();
+  }
+
+  set(level: number, pan: number) {
+    const t = this.ctx.currentTime;
+    this.gain.gain.setTargetAtTime(level * 0.09, t, 0.08);
+    this.pan.pan.setTargetAtTime(pan, t, 0.08);
+  }
+
+  stop() {
+    const t = this.ctx.currentTime;
+    this.gain.gain.setTargetAtTime(0, t, 0.08);
+    for (const o of this.osc) o.stop(t + 0.5);
   }
 }
 

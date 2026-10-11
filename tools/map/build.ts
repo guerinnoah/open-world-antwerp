@@ -1,10 +1,12 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import polygonClipping, { type MultiPolygon, type Polygon } from 'polygon-clipping';
+import type { MultiPolygon, Polygon } from 'polygon-clipping';
 import type { Area, AreaKind, Building, CityData, Road, RoadKind } from '../../src/world/cityData.ts';
 import { BBOX, ORIGIN, OUT_DIR, RAW_DIR } from './config.ts';
 import { buildGraphData, underground } from './graph.ts';
 import { loadGrbHeights } from './grb.ts';
 import { markFacades } from './facades.ts';
+import { facadeOf } from './palette.ts';
+import { OLD_TOWN_RADIUS } from '../../src/world/roofs.ts';
 import { markShopKinds, offRoad, placeSigns, placeStreetPlates, veloStations } from './signs.ts';
 import { renderMinimap } from './minimap.ts';
 import { loadLogos } from './logos.ts';
@@ -12,6 +14,7 @@ import { extractLandmarks } from './landmarks.ts';
 import { posts, solid, splitOutlines, type Mass } from './massing.ts';
 import { streetDetail } from './street.ts';
 import { WaterMap } from '../../src/world/water.ts';
+import { layWater } from './water.ts';
 import {
   besideRoad, centroid, flat, interiorPoint, outlineGrid, pointInRing, polygonsOf, project, round, roadGrid, signedArea, toPts,
   type OsmElement, type Pt,
@@ -52,21 +55,8 @@ function hash(id: number): number {
   return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
 }
 
-const WALLS = [0x8a4b3a, 0x7a3f33, 0x9c5a45, 0xcbb89a, 0xe6dfd2, 0xd8c7a3, 0xc9a467, 0xa9a49b, 0x7f8b92];
-const ROOFS = [0x4f4a47, 0x5d5753, 0x8c4a35, 0x6b6560];
-const NAMED_COLOURS: Record<string, number> = {
-  white: 0xebe7df, lightgrey: 0xc9c6bf, grey: 0x9a9893, gray: 0x9a9893, darkgrey: 0x5e5c59, black: 0x3a3836,
-  red: 0x8a4b3a, brown: 0x6e4a36, beige: 0xd8c7a3, yellow: 0xd8b860, tan: 0xc9a467,
-};
-
 const PLAIN_WALLS = new Set(['church', 'cathedral', 'chapel', 'basilica', 'tower', 'monument']);
 const PLAIN_PARTS = new Set(['tower', 'steeple', 'spire', 'church', 'chapel', 'roof', 'dome', 'column', 'chimney']);
-
-function colourOf(v: string | undefined): number | undefined {
-  if (!v) return undefined;
-  if (/^#[0-9a-f]{6}$/i.test(v)) return parseInt(v.slice(1), 16);
-  return NAMED_COLOURS[v.toLowerCase()];
-}
 
 /** Guessed heights for small things: a bus shelter or a kiosk is not a town house. */
 function smallHeight(t: Record<string, string>, area: number, h: number): number {
@@ -91,11 +81,9 @@ for (const e of elements) {
   if (t.building === 'no' || t['building:part'] === 'no' || t.location === 'underground') continue;
   const isPart = !!t['building:part'];
   const { h, mh, source } = heightOf(t, e.id);
-  const r = hash(e.id * 7 + 3);
-  const c = colourOf(t['building:colour']) ?? WALLS[Math.floor(hash(e.id) * WALLS.length)];
-  const roof = colourOf(t['roof:colour']) ?? ROOFS[Math.floor(r * ROOFS.length)];
   for (const rings of polygonsOf(e)) {
-    if (!inBounds(centroid(rings[0]))) continue;
+    const centre = centroid(rings[0]);
+    if (!inBounds(centre)) continue;
     if (!solid(rings)) {
       slivers++;
       continue;
@@ -118,7 +106,8 @@ for (const e of elements) {
     } else if (source === 'default' && !grb) {
       top = smallHeight(t, area, top);
     }
-    const b: Building = { h: round(top), c, r: roof, rings: rings.map(flat) };
+    const look = facadeOf(t, top, area, Math.hypot(...centre) < OLD_TOWN_RADIUS, (salt) => hash(e.id * 31 + salt));
+    const b: Building = { h: round(top), ...look, rings: rings.map(flat) };
     if (base > 0) b.mh = round(base);
     // nw: no windows (churches, towers, raised parts); nc: no collider, so raised sections and canopies don't block the street.
     if (PLAIN_WALLS.has(t.building) || PLAIN_PARTS.has(t['building:part']) || base > 0) b.nw = 1;
@@ -174,9 +163,8 @@ function roadWidth(t: Record<string, string>): number | undefined {
 
 const roads: Road[] = [];
 const trams: number[][] = [];
-const areas: Area[] = [];
+let areas: Area[] = [];
 const water: MultiPolygon = [];
-const bridges: Polygon[] = [];
 const bboxPoly: Polygon = [[[minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ], [minX, minZ]]];
 
 function areaKind(t: Record<string, string>): AreaKind | undefined {
@@ -208,31 +196,9 @@ for (const e of elements) {
   const w = roadWidth(t);
   if (!kind || !w) continue;
   roads.push({ k: kind, w, p: flat(pts) });
-  if (t.bridge && t.bridge !== 'no') bridges.push(...deck(pts, w + 1));
 }
 
-function deck(pts: Pt[], width: number): Polygon[] {
-  const quads: Polygon[] = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [x0, z0] = pts[i];
-    const [x1, z1] = pts[i + 1];
-    const len = Math.hypot(x1 - x0, z1 - z0) || 1;
-    const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
-    const nx = -uz * (width / 2), nz = ux * (width / 2);
-    const ex = ux * (width / 2), ez = uz * (width / 2);
-    quads.push([[
-      [x0 - ex + nx, z0 - ez + nz], [x1 + ex + nx, z1 + ez + nz], [x1 + ex - nx, z1 + ez - nz],
-      [x0 - ex - nx, z0 - ez - nz], [x0 - ex + nx, z0 - ez + nz],
-    ]]);
-  }
-  return quads;
-}
-
-// Water is merged and clipped to the slice; bridge decks are cut out so driving over a bridge isn't driving into water.
-const clippedWater = polygonClipping.intersection(polygonClipping.union(water), bboxPoly);
-for (const poly of bridges.length ? polygonClipping.difference(clippedWater, ...bridges) : clippedWater) {
-  areas.push({ k: 'water', rings: poly.map((r) => flat(r.slice(0, -1) as Pt[])) });
-}
+areas = layWater(water, bboxPoly, roads, areas);
 
 const waterMap = new WaterMap({ areas } as CityData);
 const open = (p: Pt) => !waterMap.contains(...p) && !inBuilding(p);

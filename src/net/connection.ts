@@ -5,14 +5,12 @@ export type Status = 'connecting' | 'online' | 'offline' | 'full' | 'outdated';
 export interface Identity {
   name: string;
   look: string;
-  room?: string;
 }
 
 export class Connection {
   onMessage: (msg: ServerMessage) => void = () => {};
   onStatus: (status: Status) => void = () => {};
   id = 0;
-  room = '';
   private ws: WebSocket | null = null;
   private retry = 1000;
 
@@ -36,8 +34,8 @@ export class Connection {
     const ws = (this.ws = new WebSocket(this.url));
     let refused: 'full' | 'version' | null = null;
     ws.onopen = () => {
-      const { name, look, room } = this.identity;
-      ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, name, look, ...(room ? { room } : {}) } satisfies ClientMessage));
+      const { name, look } = this.identity;
+      ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, name, look } satisfies ClientMessage));
     };
     ws.onmessage = (e) => {
       let msg: ServerMessage;
@@ -48,7 +46,6 @@ export class Connection {
       }
       if (msg.t === 'welcome') {
         this.id = msg.id;
-        this.room = msg.room;
         this.retry = 1000;
         this.onStatus('online');
       } else if (msg.t === 'refused') {

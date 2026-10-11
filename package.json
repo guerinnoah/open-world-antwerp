@@ -3,6 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -30,6 +34,7 @@
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "^0.21.0",
+    "@vercel/analytics": "^2.0.1",
     "earcut": "^3.2.4",
     "n8ao": "^2.0.1",
     "postprocessing": "^6.39.5",
@@ -46,6 +51,7 @@
     "playwright": "^1.64.0",
     "polygon-clipping": "^0.15.7",
     "proj4": "^2.22.0",
+    "railway": "^3.13.1",
     "shapefile": "^0.6.6",
     "sharp": "^0.35.5",
     "tsx": "^4.23.15",

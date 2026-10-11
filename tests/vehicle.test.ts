@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ARTIC_SPEC, BUS_SPEC, VEHICLE_TYPES } from '../src/actors/vehicle';
+import { ARTIC_SPEC, BUS_SPEC, VEHICLE_TYPES, paintFor } from '../src/actors/vehicle';
 import { wrapAngle } from '../src/core/util';
+import { VEHICLE_KINDS } from '../src/net/protocol';
 import { RAPIER } from '../src/physics/physics';
 import { testDrive } from './drive';
 
@@ -162,5 +163,26 @@ describe.each([60, 30])('afloat at %i Hz', (hz) => {
     };
     expect(slip(false)).toBeLessThan(0.1);
     expect(slip(true)).toBeGreaterThan(0.5);
+  });
+});
+
+describe('the wider fleet', () => {
+  it('can send every traffic type over the network', () => {
+    for (const [spec] of VEHICLE_TYPES) expect(VEHICLE_KINDS).toContain(spec.name);
+  });
+
+  it('paints emergency vehicles in their livery colour', () => {
+    const police = VEHICLE_TYPES.find(([spec]) => spec.name === 'police')![0];
+    expect(new Set(Array.from({ length: 20 }, () => paintFor(police))).size).toBe(1);
+  });
+
+  it.each(['truck', 'firetruck'])('%s gets going and stops from 50 km/h within 20 m', (name) => {
+    const spec = VEHICLE_TYPES.find(([s]) => s.name === name)![0];
+    const { car, run } = testDrive(spec, 1 / 60);
+    expect(run({ throttle: 1 }, 10, () => car.forwardSpeed > 30 / 3.6)).toBeLessThan(8);
+    const braking = testDrive(spec, 1 / 60, 50 / 3.6);
+    const x0 = braking.car.x;
+    braking.run({ throttle: -1 }, 6, () => braking.car.forwardSpeed < 0.1);
+    expect(braking.car.x - x0).toBeLessThan(20);
   });
 });

@@ -1,14 +1,17 @@
 import * as THREE from 'three';
 import type { Clip, Crowd } from '../actors/crowd';
+import { parkMiller } from '../core/util';
 import { GROUP, RAPIER, WHEELS, groups, type Physics } from '../physics/physics';
 import { rand } from './buildings';
 import type { Building, SignStyle } from './cityData';
 import type { Environment } from './environment';
+import type { HallDoor, Halls } from './halls';
 import { bays, doorBay, facadeStyle } from './facadeLayout';
 import { inRing } from './polyline';
 import type { Door } from './signs';
 
 type Place = Exclude<SignStyle, 'street'>;
+export type Entrance = Door | HallDoor;
 
 /** Room wanted per kind of place: [width along the street, depth] (m), shrunk to fit the building. */
 const SIZE: Record<Place, [number, number]> = {
@@ -21,7 +24,7 @@ const FRONT = 0.12; // m into the building: inner face of the front wall, just b
 const ENTRY_X = 1.05, ENTRY_Z = 2.4; // entrance kept clear of furniture: |x| < ENTRY_X, z < ENTRY_Z
 const SPAWN_Z = 1.5; // m: enter() puts the player here, on the doorway's axis
 
-type V3 = [number, number, number];
+export type V3 = [number, number, number];
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 
@@ -37,7 +40,7 @@ class Grow<T extends Float32Array | Uint32Array> {
 }
 
 /** Collects triangles in room space: x along the street wall (0 = the doorway), y up, z into the building. */
-class Mesher {
+export class Mesher {
   private pos = new Grow(new Float32Array(3 * 4096));
   private nor = new Grow(new Float32Array(3 * 4096));
   private col = new Grow(new Float32Array(3 * 4096));
@@ -88,11 +91,15 @@ class Mesher {
     this.quad(sub(c, hz), hx, hy, [0, 0, -1], colour);
   }
 
-  geometry(g: THREE.BufferGeometry, m: THREE.Matrix4, colour: number) {
+  /** uv: metres per texture tile, mapped from the geometry's own uv (shapes: their x, y in metres). */
+  geometry(g: THREE.BufferGeometry, m: THREE.Matrix4, colour: number, uv = 0) {
     let t = templates.get(g);
     if (!t) {
       const index = g.index ? (g.index.array as ArrayLike<number>) : Array.from({ length: g.getAttribute('position').count }, (_, i) => i);
-      t = { p: g.getAttribute('position').array as Float32Array, n: g.getAttribute('normal').array as Float32Array, i: Uint32Array.from(index) };
+      t = {
+        p: g.getAttribute('position').array as Float32Array, n: g.getAttribute('normal').array as Float32Array,
+        t: g.getAttribute('uv')?.array as Float32Array | undefined, i: Uint32Array.from(index),
+      };
       templates.set(g, t);
     }
     this.colour.setHex(colour);
@@ -105,7 +112,8 @@ class Mesher {
       const a = t.n[i], b = t.n[i + 1], c = t.n[i + 2];
       const nx = q[0] * a + q[3] * b + q[6] * c, ny = q[1] * a + q[4] * b + q[7] * c, nz = q[2] * a + q[5] * b + q[8] * c;
       const l = Math.hypot(nx, ny, nz) || 1;
-      this.vertex(e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14], nx / l, ny / l, nz / l, 0, 0);
+      const k = (i / 3) * 2, u = uv && t.t ? t.t[k] / uv : 0, v = uv && t.t ? t.t[k + 1] / uv : 0;
+      this.vertex(e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14], nx / l, ny / l, nz / l, u, v);
     }
     const idx = this.idx;
     for (let k = 0; k < t.i.length; k++) idx.a[idx.n++] = base + t.i[k];
@@ -123,16 +131,16 @@ class Mesher {
   }
 }
 
-const templates = new WeakMap<THREE.BufferGeometry, { p: Float32Array; n: Float32Array; i: Uint32Array }>();
+const templates = new WeakMap<THREE.BufferGeometry, { p: Float32Array; n: Float32Array; t?: Float32Array; i: Uint32Array }>();
 
-const CYL = new THREE.CylinderGeometry(1, 1, 1, 12);
-const BALL = new THREE.IcosahedronGeometry(1, 1);
+export const CYL = new THREE.CylinderGeometry(1, 1, 1, 12);
+export const BALL = new THREE.IcosahedronGeometry(1, 1);
 const SHADE = new THREE.ConeGeometry(0.2, 0.18, 12, 1, true);
 const KNOT = new THREE.TorusKnotGeometry(0.16, 0.05, 48, 8);
-const CUBE = new THREE.BoxGeometry(1, 1, 1);
+export const CUBE = new THREE.BoxGeometry(1, 1, 1);
 const BEAM = new THREE.ConeGeometry(1, 1, 16, 1, true);
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-const at = (x: number, y: number, z: number, sx: number, sy: number, sz: number, ry = 0, rx = 0, rz = 0) =>
+export const at = (x: number, y: number, z: number, sx: number, sy: number, sz: number, ry = 0, rx = 0, rz = 0) =>
   new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(euler.set(rx, ry, rz)), new THREE.Vector3(sx, sy, sz));
 
 type FloorKind = 'planks' | 'planksDark' | 'tiles' | 'checker' | 'marble' | 'carpet' | 'concrete';
@@ -143,15 +151,14 @@ const REPEAT: Record<WallKind, number> = { plaster: 2.4, brick: 1.2, whiteBrick:
 const WALL_ROUGHNESS: Record<WallKind, number> = { plaster: 0.92, brick: 0.95, whiteBrick: 0.9, subway: 0.22, stripes: 0.8 };
 
 const surfaces = new Map<string, THREE.CanvasTexture>();
-function surfaceTexture(kind: Surface, tint = '#3a3d4a'): THREE.CanvasTexture {
+export function surfaceTexture(kind: Surface, tint = '#3a3d4a'): THREE.CanvasTexture {
   const key = kind + tint;
   const cached = surfaces.get(key);
   if (cached) return cached;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 512;
   const g = canvas.getContext('2d')!;
-  let seed = 7;
-  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const r = parkMiller(7);
   const shade = (base: number[], k: number) => `rgb(${base.map((v) => Math.round(v * k)).join(',')})`;
   if (kind === 'planks' || kind === 'planksDark') {
     const base = kind === 'planks' ? [176, 132, 86] : [92, 58, 34];
@@ -284,12 +291,12 @@ function surfaceTexture(kind: Surface, tint = '#3a3d4a'): THREE.CanvasTexture {
   return tex;
 }
 
-const FLOOR_ROUGHNESS: Record<FloorKind, number> = { planks: 0.5, planksDark: 0.45, tiles: 0.3, checker: 0.35, marble: 0.12, carpet: 0.95, concrete: 0.35 };
+export const FLOOR_ROUGHNESS: Record<FloorKind, number> = { planks: 0.5, planksDark: 0.45, tiles: 0.3, checker: 0.35, marble: 0.12, carpet: 0.95, concrete: 0.35 };
 
-const MAX_LAMPS = 12, MAX_BLOCKS = 40;
-const WARM = 0xffc690, SOFT = 0xffe2c0, COOL = 0xf1f4ff, DAY = 0xdbe6ff;
+export const MAX_LAMPS = 12, MAX_BLOCKS = 40;
+export const WARM = 0xffc690, SOFT = 0xffe2c0, COOL = 0xf1f4ff, DAY = 0xdbe6ff;
 
-interface Lamp {
+export interface Lamp {
   x: number;
   y: number;
   z: number;
@@ -334,7 +341,7 @@ float inOcclusion(vec3 p, vec3 n) {
 }
 `;
 
-function lit<M extends THREE.MeshStandardMaterial>(material: M, uniforms: Record<string, THREE.IUniform>): M {
+export function lit<M extends THREE.MeshStandardMaterial>(material: M, uniforms: Record<string, THREE.IUniform>): M {
   material.onBeforeCompile = (s) => {
     Object.assign(s.uniforms, uniforms);
     s.vertexShader = s.vertexShader.replace('#include <common>', `#include <common>\n${LIGHT_VERTEX}`).replace('#include <project_vertex>', `#include <project_vertex>
@@ -445,11 +452,12 @@ interface Kit {
 export class Interiors {
   readonly group = new THREE.Group();
   room: Room | null = null;
+  halls: Halls | null = null;
   private grid = new Map<string, Door[]>();
   private buildingGrid = new Map<string, Building[]>();
   private fits = new Map<Door, Fit | null>();
   private time = 0;
-  private light = {
+  readonly light = {
     uRoom: { value: new THREE.Matrix4() },
     uLamp: { value: Array.from({ length: MAX_LAMPS }, () => new THREE.Vector4()) },
     uLampColour: { value: Array.from({ length: MAX_LAMPS }, () => new THREE.Color()) },
@@ -460,7 +468,7 @@ export class Interiors {
     uAmbient: { value: new THREE.Color() },
     uSun: { value: 0.12 },
   };
-  private materials = {
+  readonly materials = {
     solid: lit(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72 }), this.light),
     shiny: lit(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.16, metalness: 0.55 }), this.light),
     glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
@@ -490,7 +498,21 @@ export class Interiors {
     }
   }
 
-  doorAt(x: number, z: number): Door | null {
+  get inside(): boolean {
+    return !!this.room || !!this.halls?.active;
+  }
+
+  get openAir(): boolean {
+    return !!this.halls?.openAir;
+  }
+
+  get lookUp(): boolean {
+    return !!this.halls?.active;
+  }
+
+  doorAt(x: number, z: number): Entrance | null {
+    const hall = this.halls?.doorAt(x, z);
+    if (hall) return hall;
     let best: Door | null = null, bestD = Infinity;
     const gx = Math.floor(x / 20), gz = Math.floor(z / 20);
     for (let i = gx - 1; i <= gx + 1; i++) {
@@ -516,7 +538,25 @@ export class Interiors {
     return lz < 1.9 && Math.abs(lx) < 1.3;
   }
 
-  enter(door: Door, fromX: number, fromZ: number, avoidAvatar: number): { x: number; z: number; heading: number } | null {
+  /** What E does at this spot indoors, as a hint: 'Leave', a hall's lift, or null. */
+  usable(x: number, z: number): string | null {
+    if (this.halls?.active) return this.halls.usable(x, z);
+    return this.atExit(x, z) ? 'Leave' : null;
+  }
+
+  /** Does what usable() offers. A lift moves the player itself ('moved'); leaving is the game's to do. */
+  use(x: number, z: number): 'leave' | 'moved' | null {
+    if (this.halls?.active) return this.halls.use(x, z);
+    return this.atExit(x, z) ? 'leave' : null;
+  }
+
+  step(dt: number) {
+    this.halls?.step(dt);
+  }
+
+  enter(entrance: Entrance, fromX: number, fromZ: number, avoidAvatar: number): { x: number; z: number; heading: number } | null {
+    if ('hall' in entrance) return this.halls!.enter(entrance, fromX, fromZ, avoidAvatar);
+    const door = entrance;
     const fit = this.fitFor(door);
     if (!fit) return null;
     if (this.room) this.leave();
@@ -613,6 +653,7 @@ export class Interiors {
   }
 
   leave(): { x: number; z: number; heading: number } {
+    if (this.halls?.active) return this.halls.leave();
     const room = this.room!;
     for (const m of room.meshes) {
       this.group.remove(m);
@@ -628,6 +669,7 @@ export class Interiors {
 
   render(dt: number, camera: THREE.Vector3) {
     this.time += dt;
+    this.halls?.render(dt, camera);
     if (!this.room) return;
     for (const p of this.room.people) {
       const info = this.crowd.clip(p.avatar, p.clip);
@@ -637,6 +679,7 @@ export class Interiors {
   }
 
   free(x: number, z: number, dx: number, dz: number): number {
+    if (this.halls?.active) return this.halls.free(x, z, dx, dz);
     const room = this.room;
     if (!room) return Infinity;
     const { door, fit } = room;
@@ -652,6 +695,7 @@ export class Interiors {
   }
 
   confine(p: THREE.Vector3) {
+    if (this.halls?.active) return this.halls.confine(p);
     const room = this.room;
     if (!room) return;
     const { door, fit } = room;
@@ -882,7 +926,7 @@ function shell(k: Kit, door: Door): ShellLook {
 
 type Wall = 'back' | 'left' | 'right';
 
-function fitFont(g: CanvasRenderingContext2D, font: string, text: string, width: number, size: number) {
+export function fitFont(g: CanvasRenderingContext2D, font: string, text: string, width: number, size: number) {
   for (; size > 12; size -= 2) {
     g.font = font.replace('{s}', String(size));
     if (g.measureText(text).width < width) break;

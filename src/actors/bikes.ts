@@ -24,6 +24,10 @@ const SEAT_TOP = along(BB, 0.5);
 const SADDLE = 0.92;
 const STAND_LEAN = 0.1;
 
+export const VELO_RED = RED;
+/** Any other colour on a 'bike' is a private one, taken off a cyclist (cyclists.ts draws those). */
+export const isVelo = (v: Vehicle) => v.colour === VELO_RED;
+
 function wheelParts(near: boolean): THREE.BufferGeometry[] {
   const parts = [
     coloured(new THREE.TorusGeometry(R - 0.022, 0.022, near ? 6 : 4, near ? 24 : 14), BLACK),
@@ -233,7 +237,7 @@ export class Bikes {
     }
     let n = this.docked;
     for (const v of vehicles) {
-      if (v.spec.name !== 'bike' || v === riding || n >= this.still.instanceMatrix.count) continue;
+      if (v.spec.name !== 'bike' || !isVelo(v) || v === riding || n >= this.still.instanceMatrix.count) continue;
       if (Math.hypot(v.x - camera.x, v.z - camera.z) > this.view) continue;
       this.still.setMatrixAt(n++, ridePose(this.matrix, v, alpha, v.remote ? v.roll : STAND_LEAN));
     }

@@ -1,9 +1,9 @@
-import { pick } from '../core/util';
+import { weightedPick } from '../core/util';
 import { RAPIER, type Physics } from '../physics/physics';
 import type { NavGraph, Step } from '../world/navGraph';
-import { segmentDistance } from '../world/polyline';
+import { lengthFrom, segmentDistance } from '../world/polyline';
 import { extent } from './trackProbe';
-import { PAINTS, VEHICLE_TYPES, Vehicle } from './vehicle';
+import { VEHICLE_TYPES, Vehicle, isEmergency, paintFor } from './vehicle';
 
 const SPAWN_MIN = 140;
 const SPAWN_MAX = 300;
@@ -11,6 +11,10 @@ const DESPAWN = 340;
 const TWO_WAY_LANE = 1.9; // m from the centreline to the lane centre on two-way roads
 const CORNER_SPEED = 3.5; // m/s through a right-angle junction
 const DECEL = 3; // m/s², comfortable braking
+const RESPONDING = 1.35; // × the speed limit, siren on
+const PULL_OVER = 1.3; // m to the right, for a siren behind
+const OVERTAKE = 1.1; // m to the left, past cars pulling over
+const HEARD = 45; // m: how far behind a siren gets drivers to pull over
 
 interface Driver {
   id: number;
@@ -26,15 +30,20 @@ interface Driver {
   wedged: number;
   reversing: number;
   honkCooldown: number;
+  yielding: number; // s left pulling over for a siren
+  overtaking: number; // s left swinging out past cars that pull over (siren on)
+  pull: number; // m off the lane, + = right
 }
 
 export interface TrafficHost {
+  readonly vehicles: Vehicle[];
   addVehicle(v: Vehicle): void;
   removeVehicle(v: Vehicle): void;
 }
 
 export class Traffic {
   readonly honks: [number, number][] = [];
+  sirens: Vehicle[] = []; // driven ones, refreshed with spawning
   private drivers = new Map<Vehicle, Driver>();
   private nextId = 0;
   private spawnTimer = 0;
@@ -70,7 +79,9 @@ export class Traffic {
       this.spawnTimer = 0.25;
       for (const d of this.drivers.values()) {
         if (Math.hypot(d.v.x - px, d.v.z - pz) > DESPAWN) this.despawn(d.v);
+        else if (isEmergency(d.v.spec) && Math.random() < 0.0025) this.respond(d, !d.v.siren);
       }
+      this.sirens = this.host.vehicles.filter((v) => v.siren && (v.driven || v.remote));
       for (let n = initial ? this.target * 3 : 2; n > 0 && this.drivers.size < this.target; n--) {
         this.spawn(px, pz, initial ? 40 : SPAWN_MIN);
       }
@@ -92,22 +103,41 @@ export class Traffic {
     const t = Math.random();
     const x = lane[k * 2] + (lane[k * 2 + 2] - lane[k * 2]) * t, z = lane[k * 2 + 1] + (lane[k * 2 + 3] - lane[k * 2 + 1]) * t;
     const angle = Math.atan2(lane[k * 2 + 3] - lane[k * 2 + 1], lane[k * 2 + 2] - lane[k * 2]);
-    const spec = weightedPick(VEHICLE_TYPES, VEHICLE_TYPES.map(([, w]) => w))[0];
+    const [spec] = weightedPick(VEHICLE_TYPES, VEHICLE_TYPES.map(([, w]) => w));
     if (this.physics.boxOverlaps(x, z, angle, spec.length / 2 + 2, spec.width / 2 + 0.3)) return;
     // Cars spawned this frame aren't in Rapier's query structures until the next step: check them directly.
     for (const other of this.drivers.keys()) if (Math.hypot(other.x - x, other.z - z) < 12) return;
 
-    const v = new Vehicle(this.physics.world, spec, pick(PAINTS), x, z, angle);
+    const v = new Vehicle(this.physics.world, spec, paintFor(spec), x, z, angle);
     v.driven = true;
     const speed = e.s * 0.7;
     v.body.setLinvel({ x: Math.cos(angle) * speed, y: Math.sin(angle) * speed }, true);
     this.host.addVehicle(v);
     const d: Driver = {
       id: this.nextId++, v, pts: [], limits: [], i: 1, last: step, temper: 0.85 + Math.random() * 0.2,
-      stuck: 0, bold: 0, deadEnd: false, wedged: 0, reversing: 0, honkCooldown: 0,
+      stuck: 0, bold: 0, deadEnd: false, wedged: 0, reversing: 0, honkCooldown: 0, yielding: 0, overtaking: 0, pull: 0,
     };
     this.append(d, step, [x, z, ...lane.slice(k * 2 + 2)]);
     this.drivers.set(v, d);
+    if (Math.random() < (spec.siren ?? 0)) this.respond(d, true);
+  }
+
+  private respond(d: Driver, on: boolean) {
+    d.v.siren = on;
+    const k = on ? RESPONDING : 1 / RESPONDING;
+    d.temper *= k;
+    for (let i = 0; i < d.limits.length; i++) d.limits[i] *= k;
+  }
+
+  private sirenBehind(v: Vehicle): boolean {
+    for (const s of this.sirens) {
+      if (s === v) continue;
+      const c = Math.cos(s.angle), n = Math.sin(s.angle);
+      const rx = v.x - s.x, rz = v.z - s.z;
+      const ahead = rx * c + rz * n;
+      if (ahead > 0 && ahead < HEARD && Math.abs(-rx * n + rz * c) < 4 && Math.cos(v.angle - s.angle) > 0.5) return true;
+    }
+    return false;
   }
 
   private append(d: Driver, step: Step, lane = this.graph.lane(step, this.laneOffset(step))) {
@@ -122,7 +152,7 @@ export class Traffic {
   }
 
   private extend(d: Driver) {
-    let ahead = lengthFrom(d.pts, d.i, 0);
+    let ahead = lengthFrom(d.pts, d.i);
     while (ahead < 80 && !d.deadEnd) {
       const node = this.graph.endNode(d.last);
       const options = this.graph.options(node, d.last.edge);
@@ -141,7 +171,7 @@ export class Traffic {
       });
       const before = d.pts.length / 2 - 1;
       this.append(d, weightedPick(options, weights));
-      ahead = lengthFrom(d.pts, before, ahead);
+      ahead += lengthFrom(d.pts, before);
     }
     if (d.i > 24) {
       const drop = d.i - 2;
@@ -171,7 +201,19 @@ export class Traffic {
       return;
     }
     while (d.i < n - 1 && Math.hypot(d.pts[d.i * 2] - x, d.pts[d.i * 2 + 1] - z) < look) d.i++;
-    const dx = d.pts[d.i * 2] - x, dz = d.pts[d.i * 2 + 1] - z;
+
+    if (!v.siren && this.sirens.length && this.sirenBehind(v)) d.yielding = 1.5;
+    d.yielding -= dt;
+    d.overtaking -= dt;
+    const pull = d.yielding > 0 ? PULL_OVER : d.overtaking > 0 ? -OVERTAKE : 0;
+    d.pull += (pull - d.pull) * Math.min(1, 1.8 * dt);
+    let dx = d.pts[d.i * 2] - x, dz = d.pts[d.i * 2 + 1] - z;
+    if (Math.abs(d.pull) > 0.05) {
+      const ux = d.pts[d.i * 2] - d.pts[d.i * 2 - 2], uz = d.pts[d.i * 2 + 1] - d.pts[d.i * 2 - 1];
+      const len = Math.hypot(ux, uz) || 1;
+      dx -= (uz / len) * d.pull;
+      dz += (ux / len) * d.pull;
+    }
     const alpha = Math.atan2(-dx * fz + dz * fx, dx * fx + dz * fz);
     const steer = Math.max(-1, Math.min(1, alpha * 2.2));
 
@@ -188,15 +230,21 @@ export class Traffic {
       dist += Math.hypot(bx, bz);
     }
     target = Math.min(target, Math.abs(alpha) > 0.6 ? CORNER_SPEED + 1 : target);
+    if (d.yielding > 0) target = Math.min(target, 3);
 
     d.honkCooldown -= dt;
     if (d.bold <= 0) {
       const { gap, blocker, player } = this.obstacleAhead(v, x, z, a, speed);
-      // Two AI cars blocking each other (crossing at a junction) would wait forever: the lower id goes first.
+      // Two AI cars blocking each other (crossing at a junction) would wait forever: a siren, then the lower id, goes first.
       const other = blocker && this.drivers.get(blocker);
-      const yieldsToUs = other && other.id > d.id && this.blocks(v, other);
+      const first = other && (v.siren !== other.v.siren ? v.siren : other.id > d.id);
+      const yieldsToUs = first && this.blocks(v, other);
       // The gap is to its near side, so this stops about 1.3 m short, as it always did behind a car.
       if (gap < Infinity && !yieldsToUs) target = Math.min(target, Math.max(0, (gap - 1) * 0.9));
+      if (v.siren && other && other.yielding > 0 && gap < 25) {
+        d.overtaking = 1.5;
+        target = Math.max(target, Math.min(3, gap - 1.5));
+      }
       if (player && d.stuck > 1.2 && d.honkCooldown <= 0) {
         this.honks.push([x, z]);
         d.honkCooldown = 3 + Math.random() * 2;
@@ -205,7 +253,7 @@ export class Traffic {
     d.bold -= dt;
     if (target < 0.5 && Math.abs(speed) < 0.5) {
       d.stuck += dt;
-      if (d.stuck > 3.5) {
+      if (d.stuck > (v.siren ? 1.5 : 3.5)) {
         d.bold = 2.5;
         d.stuck = 0;
       }
@@ -285,14 +333,4 @@ export class Traffic {
     d.deadEnd = false;
     this.append(d, step, [d.v.x, d.v.z, ...lane.slice(Math.min(vertex + 1, lane.length / 2 - 1) * 2)]);
   }
-}
-
-function weightedPick<T>(items: T[], weights: number[]): T {
-  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
-  return items.find((_, i) => (r -= weights[i]) < 0) ?? items[0];
-}
-
-function lengthFrom(p: number[], from: number, total: number): number {
-  for (let j = from; j < p.length / 2 - 1; j++) total += Math.hypot(p[j * 2 + 2] - p[j * 2], p[j * 2 + 3] - p[j * 2 + 1]);
-  return total;
 }

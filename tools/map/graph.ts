@@ -21,6 +21,12 @@ const WALKABLE = new Set([
 ]);
 /** Walked down the middle (sidewalks [0, 0]); other car roads get sidewalks at the kerb. */
 const CENTRELINE = new Set(['pedestrian', 'footway', 'path', 'steps', 'track', 'living_street', 'service']);
+const CYCLABLE = new Set([
+  'primary', 'secondary', 'tertiary', 'primary_link', 'secondary_link', 'tertiary_link', 'residential',
+  'unclassified', 'living_street', 'service', 'track', 'cycleway',
+]);
+const CYCLABLE_IF_SIGNED = new Set(['pedestrian', 'footway', 'path']);
+const CYCLE_SIDES = ['cycleway', 'cycleway:both', 'cycleway:right', 'cycleway:left'];
 
 const DEFAULT_KMH: Record<string, number> = { living_street: 20, residential: 30, unclassified: 30, tertiary: 30 };
 
@@ -37,6 +43,56 @@ export const underground = (t: Record<string, string>) =>
 function speedOf(t: Record<string, string>): number {
   const kmh = t.maxspeed === 'walk' ? 6 : parseFloat(t.maxspeed ?? '') || DEFAULT_KMH[t.highway] || 50;
   return round(kmh / 3.6);
+}
+
+const signed = (v?: string) => v === 'yes' || v === 'designated' || v === 'permissive';
+
+function cyclable(t: Record<string, string>): boolean {
+  const no = (v?: string) => v === 'no' || v === 'private';
+  if (no(t.bicycle) || t.bicycle === 'dismount') return false;
+  if ((no(t.access) || no(t.vehicle)) && !signed(t.bicycle)) return false;
+  if (CYCLABLE_IF_SIGNED.has(t.highway)) return signed(t.bicycle);
+  if (t.highway === 'service' && /parking_aisle|driveway|drive-through/.test(t.service ?? '')) return false;
+  return CYCLABLE.has(t.highway);
+}
+
+function bikeFlow(t: Record<string, string>): -1 | 0 | 1 {
+  const own = t['oneway:bicycle'];
+  if (own === 'no' || CYCLE_SIDES.some((k) => /^opposite/.test(t[k] ?? ''))) return 0;
+  if (own === 'yes') return t.oneway === '-1' ? -1 : 1;
+  return own === '-1' ? -1 : flow(t);
+}
+
+/** How strongly riders pick this way at a junction: separate tracks and bicycle streets over quiet streets over busy ones. */
+function bikePreference(t: Record<string, string>): number {
+  const h = t.highway;
+  if (h === 'cycleway' || t.bicycle_road === 'yes' || t.cyclestreet === 'yes') return 3;
+  // A separately mapped track runs alongside: riding the carriageway is the rare exception.
+  if (t.bicycle === 'use_sidepath' || CYCLE_SIDES.some((k) => t[k] === 'separate')) return 0.05;
+  if (t.footway === 'crossing') return 3;
+  if (CYCLABLE_IF_SIGNED.has(h)) return t.bicycle === 'designated' ? 2.5 : 0.4;
+  if (CYCLE_SIDES.some((k) => /lane|track/.test(t[k] ?? ''))) return 2;
+  if (h === 'service' || h === 'track') return 0.4;
+  return speedOf(t) > 9 ? 0.5 : 1.5;
+}
+
+/** Where riders keep to (m right of the centreline): clear of cars parked at the kerb (src/game/game.ts parkCars) and of the car lane. */
+function bikeLane(t: Record<string, string>, w: number): number {
+  const h = t.highway;
+  if (h === 'pedestrian') return round(Math.min(w / 2 - 0.8, 1.2));
+  if (h === 'cycleway' || h === 'track' || CYCLABLE_IF_SIGNED.has(h)) return bikeFlow(t) !== 0 ? 0 : round(Math.min(w / 4, 0.7));
+  const carOneway = flow(t) !== 0;
+  const parking = DRIVABLE.has(h) && !blocked(t, 'car') && w >= (carOneway ? 6.6 : 10.4) && speedOf(t) <= 14;
+  const kerb = w / 2 - (parking ? 2.6 : 0.9);
+  // One-way traffic drives the centreline: stay 1.35 m off it, past a car's half width.
+  return round(carOneway ? Math.min(Math.max(kerb, 1.35), w / 2 - 0.6) : Math.max(kerb, 0.6));
+}
+
+function bikeSpeed(t: Record<string, string>): number {
+  const h = t.highway;
+  if (h === 'pedestrian' || (CYCLABLE_IF_SIGNED.has(h) && t.bicycle !== 'designated')) return 3.5;
+  if (h === 'cycleway' || CYCLABLE_IF_SIGNED.has(h)) return 7;
+  return Math.min(speedOf(t), h === 'service' || h === 'track' ? 5 : 8);
 }
 
 function buildGraph(
@@ -339,6 +395,19 @@ export function buildGraphData({ elements, buildings, inBounds, roadWidth }: Gra
     },
   );
 
+  const bike = buildGraph(
+    ways
+      .filter((w) => cyclable(w.tags!))
+      .map((w) => (bikeFlow(w.tags!) === -1 ? { ...w, nodes: [...w.nodes!].reverse(), geometry: [...w.geometry!].reverse() } : w)),
+    inBounds,
+    (w) => {
+      const t = w.tags!;
+      const width = roadWidth(t) ?? 2;
+      const q = bikePreference(t);
+      return { s: bikeSpeed(t), w: width, ...(bikeFlow(t) !== 0 ? { o: 1 as const } : {}), l: bikeLane(t, width), ...(q !== 1 ? { q } : {}) };
+    },
+  );
+
   const hospital = elements.find((e) => e.tags?.amenity === 'hospital' && /Sint-Elisabeth/.test(e.tags.name ?? ''));
   const hc: Pt = hospital?.geometry ? centroid(toPts(hospital.geometry)) : [0, 0];
   let spawn: [number, number, number] = [hc[0], hc[1], 0];
@@ -358,5 +427,5 @@ export function buildGraphData({ elements, buildings, inBounds, roadWidth }: Gra
     }
   }
 
-  return { version: 1, drive, walk, trams: tramRuns(elements, inBounds), buses: busRuns(elements, inBounds), hospital: spawn };
+  return { version: 1, drive, walk, bike, trams: tramRuns(elements, inBounds), buses: busRuns(elements, inBounds), hospital: spawn };
 }

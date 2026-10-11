@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clipForSpeed, phaseStep, type Crowd } from '../actors/crowd';
 import { riderClip } from '../actors/motorbikes';
-import type { Player } from '../actors/player';
+import { PLAYER_LOOK, type Player } from '../actors/player';
 import { ARTIC_SPEC, BIKE_SPEC, BUS_SPEC, SCOOTER_SPEC, VEHICLE_TYPES, Vehicle, isMotorbike, twoWheeled, type VehicleSpec } from '../actors/vehicle';
 import { coarsePointer } from '../core/quality';
 import { lerpPose, pick, wrapAngle } from '../core/util';
@@ -90,8 +90,6 @@ export class Multiplayer {
     private camera: THREE.Camera,
   ) {
     this.name = pickName(params);
-    const look = pickLook(crowd);
-    host.player.avatar = avatarFor(crowd, look);
     this.scatter();
 
     const ui = document.createElement('div');
@@ -108,7 +106,7 @@ export class Multiplayer {
     this.tags.id = 'nametags';
     document.body.append(this.tags, ui);
 
-    this.connection = new Connection(url, { name: this.name, look, room: params.get('room') ?? undefined });
+    this.connection = new Connection(url, { name: this.name, look: PLAYER_LOOK });
     this.connection.onMessage = (msg) => this.receive(msg);
     this.connection.onStatus = (status) => {
       this.status = status;
@@ -308,7 +306,7 @@ export class Multiplayer {
       return {
         time, mode: 1, x: car.x, z: car.z, angle: wrapAngle(car.angle), vx: v.x, vz: v.y, spin: car.body.angvel(),
         kind: VEHICLE_KINDS.indexOf(car.spec.name), colour: car.colour, steer: car.steerSmoothed, throttle: car.controls.throttle,
-        sink: car.sink, flags: honking ? FLAG.HORN : 0,
+        sink: car.sink, flags: (honking ? FLAG.HORN : 0) | (car.siren ? FLAG.SIREN : 0),
       };
     }
     const v = player.body.linvel();
@@ -350,6 +348,7 @@ export class Multiplayer {
       car = peer.car = null;
     }
     if (!car) car = peer.car = this.spawnCar(specFor(kind), s);
+    car.siren = (s.flags & FLAG.SIREN) !== 0;
     if (peer.body) {
       this.physics.remove(peer.body);
       peer.body = null;
@@ -471,17 +470,17 @@ export class Multiplayer {
       connecting: 'Connecting…',
       online: others ? `${others + 1} players · Invite` : 'Just you here · Invite',
       offline: 'Offline · reconnecting',
-      full: 'Room full · retrying',
+      full: 'Server full · retrying',
       outdated: 'New version: reload to play online',
     };
     this.pill.textContent = text[this.status];
     this.pill.classList.toggle('online', this.status === 'online');
-    this.pill.title = this.status === 'online' ? `Room ${this.connection.room}. Click to copy an invite link.` : '';
+    this.pill.title = this.status === 'online' ? 'Click to copy an invite link.' : '';
   }
 
   private async invite() {
     if (!this.connection.online) return;
-    const url = `${location.origin}${location.pathname}?room=${encodeURIComponent(this.connection.room)}`;
+    const url = `${location.origin}${location.pathname}`;
     try {
       if (navigator.share && coarsePointer()) {
         await navigator.share({ title: 'GTA Antwerp', text: 'Come drive around Antwerp with me', url });
@@ -515,13 +514,6 @@ function pickName(params: URLSearchParams): string {
     cleanName(stored('gta-antwerp.name')) ||
     `${pick(NICKNAMES)} ${100 + Math.floor(Math.random() * 900)}`;
   return stored('gta-antwerp.name', name) ?? name;
-}
-
-function pickLook(crowd: Crowd): string {
-  const names = crowd.names;
-  const saved = stored('gta-antwerp.look');
-  if (saved && names.includes(saved)) return saved;
-  return stored('gta-antwerp.look', pick(names)) ?? names[0];
 }
 
 function avatarFor(crowd: Crowd, look: string): number {

@@ -1,16 +1,27 @@
 import * as THREE from 'three';
 
-export const BUILDING_LAYERS = ['brick', 'plaster', 'yellowBrick', 'slate', 'tiles', 'flatRoof'] as const;
+export const BUILDING_LAYERS = ['brick', 'plaster', 'yellowBrick', 'ashlar', 'slate', 'tiles', 'flatRoof'] as const;
 export type BuildingLayer = (typeof BUILDING_LAYERS)[number];
-export const BUILDING_SCALE: Record<BuildingLayer, number> = { brick: 2.2, plaster: 3, yellowBrick: 2.2, slate: 2.5, tiles: 2.5, flatRoof: 4 };
+/** Metres per texture repeat: each scan's real size, so bricks and slates come out life-size. */
+export const BUILDING_SCALE: Record<BuildingLayer, number> = {
+  brick: 1.4, plaster: 2, yellowBrick: 2, ashlar: 2, slate: 3, tiles: 2.6, flatRoof: 20,
+};
 
 export type GroundTexture = 'asphalt' | 'pavement' | 'cobble' | 'grass' | 'pavers';
+
+/** mean: the albedo's average linear colour. Materials divide by it, so a tint is the surface's real average colour. */
+interface Pair {
+  map: THREE.Texture;
+  normalMap: THREE.Texture;
+  mean: THREE.Color;
+}
 
 export interface Textures {
   buildingAlbedo: THREE.DataArrayTexture;
   buildingNormal: THREE.DataArrayTexture;
-  ground: Record<GroundTexture, { map: THREE.Texture; normalMap: THREE.Texture }>;
-  stone: { map: THREE.Texture; normalMap: THREE.Texture };
+  buildingMean: THREE.Color[];
+  ground: Record<GroundTexture, Pair>;
+  stone: Pair;
   water: THREE.DataTexture;
 }
 
@@ -25,15 +36,28 @@ export async function loadTextures(renderer: THREE.WebGLRenderer, size: number, 
     pair('stone', anisotropy),
   ]);
   return {
-    buildingAlbedo: albedo,
-    buildingNormal: normal,
+    buildingAlbedo: albedo.texture,
+    buildingNormal: normal.texture,
+    buildingMean: albedo.means,
     ground: Object.fromEntries(GROUND.map((n, i) => [n, ground[i]])) as Textures['ground'],
     stone,
     water: waterNormals(256),
   };
 }
 
-async function pair(name: string, anisotropy: number) {
+const LINEAR = Array.from({ length: 256 }, (_, i) => new THREE.Color().setRGB(i / 255, 0, 0, THREE.SRGBColorSpace).r);
+
+function meanOf(rgba: Uint8ClampedArray | Uint8Array, from = 0, to = rgba.length): THREE.Color {
+  const sum = [0, 0, 0];
+  let n = 0;
+  for (let i = from; i < to; i += 4 * 7) {
+    for (let c = 0; c < 3; c++) sum[c] += LINEAR[rgba[i + c]];
+    n++;
+  }
+  return new THREE.Color(sum[0] / n, sum[1] / n, sum[2] / n);
+}
+
+async function pair(name: string, anisotropy: number): Promise<Pair> {
   const loader = new THREE.TextureLoader();
   const [map, normalMap] = await Promise.all([
     loader.loadAsync(`/textures/${name}_albedo.webp`),
@@ -44,10 +68,14 @@ async function pair(name: string, anisotropy: number) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.anisotropy = anisotropy;
   }
-  return { map, normalMap };
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(map.image, 0, 0, 128, 128);
+  return { map, normalMap, mean: meanOf(ctx.getImageData(0, 0, 128, 128).data) };
 }
 
-async function arrayTexture(urls: string[], size: number, srgb: boolean, anisotropy: number): Promise<THREE.DataArrayTexture> {
+async function arrayTexture(urls: string[], size: number, srgb: boolean, anisotropy: number) {
   const data = new Uint8Array(size * size * 4 * urls.length);
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -61,7 +89,8 @@ async function arrayTexture(urls: string[], size: number, srgb: boolean, anisotr
   const texture = repeating(new THREE.DataArrayTexture(data, size, size, urls.length));
   texture.anisotropy = anisotropy;
   if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
+  const layerBytes = size * size * 4;
+  return { texture, means: urls.map((_, i) => meanOf(data, i * layerBytes, (i + 1) * layerBytes)) };
 }
 
 function repeating<T extends THREE.Texture>(texture: T): T {

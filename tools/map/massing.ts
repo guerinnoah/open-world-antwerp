@@ -74,7 +74,7 @@ export function splitOutlines(
         const lower = on.filter((q) => q !== p && (q.b.mh ?? 0) < mh - 0.05);
         const under = polygonClipping.intersection(closed(o.rings), closed(p.rings));
         const gap = lower.length ? polygonClipping.difference(under, ...lower.map((q) => closed(q.rings))) : under;
-        const base: Building = { h: mh, c: o.b.c, r: o.b.r, rings: [] };
+        const base: Building = { h: mh, c: o.b.c, r: o.b.r, m: o.b.m, rings: [] };
         if (o.b.nw) base.nw = 1;
         if (o.b.hd) base.hd = 1;
         masses.push(...pieces(gap, (rings) => ({ b: { ...base, rings: rings.map(flat) }, outer: rings[0], rings, isPart: false })));

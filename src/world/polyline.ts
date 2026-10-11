@@ -33,6 +33,12 @@ export function cumulative(p: number[]): number[] {
   return c;
 }
 
+export function lengthFrom(p: number[], from: number): number {
+  let total = 0;
+  for (let j = Math.max(from, 0); j < p.length / 2 - 1; j++) total += Math.hypot(p[j * 2 + 2] - p[j * 2], p[j * 2 + 3] - p[j * 2 + 1]);
+  return total;
+}
+
 export function pointAt(p: number[], cum: number[], s: number): { x: number; z: number; dx: number; dz: number } {
   let lo = 0, hi = cum.length - 1;
   s = Math.max(0, Math.min(s, cum[hi]));

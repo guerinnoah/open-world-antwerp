@@ -1,6 +1,31 @@
-import { mkdir, writeFile, access } from 'node:fs/promises';
+import { mkdir, writeFile, access, readdir } from 'node:fs/promises';
 
-export const AVATARS = ['Female_Adult_01', 'Female_Adult_03', 'Female_Adult_06', 'Female_Adult_08', 'Male_Adult_01', 'Male_Adult_04', 'Male_Adult_08', 'Male_Adult_12'];
+interface Avatar {
+  name: string;
+  weight: number; // % of the crowd
+  european: boolean;
+}
+
+/** Antwerp residents 2023: 59.6% Belgian, neighbouring or EU background. Order is load priority (Crowd.load). */
+export const ROSTER: Avatar[] = [
+  { name: 'Female_Adult_01', weight: 9, european: true },
+  { name: 'Male_Adult_08', weight: 9, european: true },
+  { name: 'Female_Adult_06', weight: 8, european: false },
+  { name: 'Male_Adult_17', weight: 9, european: false },
+  { name: 'Female_Adult_08', weight: 8, european: true },
+  { name: 'Male_Adult_06', weight: 8, european: true },
+  { name: 'Female_Adult_14', weight: 8, european: true },
+  { name: 'Male_Adult_03', weight: 7, european: true },
+  { name: 'Business_Female_02', weight: 7, european: true },
+  { name: 'Delivery_Male_01', weight: 6, european: true },
+  { name: 'Male_Adult_12', weight: 5, european: false },
+  { name: 'Female_Adult_11', weight: 4, european: false },
+  { name: 'Male_Adult_20', weight: 4, european: false },
+  { name: 'Female_Party_02', weight: 3, european: false },
+  { name: 'Female_Adult_03', weight: 3, european: false },
+  { name: 'Wood_Male_01', weight: 2, european: false },
+];
+export const genderOf = (name: string) => (name.includes('Female') ? 'f' : 'm');
 export const ANIMS = {
   f: { walk: 'xy/f_walk_neutral', run: 'xy/f_run_neutral', idle: 'static/f_idle_neutral_01' },
   m: { walk: 'xy/m_walk_neutral', run: 'xy/m_run_neutral', idle: 'static/m_idle_neutral_01' },
@@ -28,11 +53,12 @@ for (const g of Object.values(ANIMS)) {
     await download(`${RAW}/Animations/all_animations_max_motextr_${folder}/${name}.max.fbx`, `${OUT}/anims/${name}.fbx`);
   }
 }
-for (const name of AVATARS) {
+for (const { name } of ROSTER) {
   const dir = `${OUT}/${name}`;
   await mkdir(dir, { recursive: true });
-  const base = `Adults/${name}`;
+  const base = `${/_(Adult|Party)_/.test(name) ? 'Adults' : 'Professions'}/${name}`;
   await download(`${RAW}/Avatars/${base}/Export/${name}.fbx`, `${dir}/${name}.fbx`);
+  if ((await readdir(dir)).some((f) => f.endsWith('_body_color.tga'))) continue; // spares the 60/h API limit: bake-people imports this file
   const files = (await (await fetch(`${API}/Avatars/${base}/Textures`, ua)).json()) as { name: string }[];
   for (const f of files.filter((f) => /_color\.tga$/i.test(f.name))) {
     await download(`${RAW}/Avatars/${base}/Textures/${f.name}`, `${dir}/${f.name}`);

@@ -4,7 +4,6 @@ import { DESKTOP, DEV, hold, launch, load, stand } from './probe.ts';
 
 const base = process.argv[2] ?? DEV;
 const browser = await launch();
-const room = `mp-test-${Date.now() % 100000}`;
 
 type V = { x: number; z: number; angle: number; forwardSpeed: number; teleport(x: number, z: number, angle: number): void; remote: boolean; driven: boolean; spec: { name: string }; colour: number };
 type PeerView = { ready: boolean; name: string; car: V | null; state: { x: number; z: number; mode: number } };
@@ -29,7 +28,7 @@ async function join(name: string) {
   const page = await (await browser.newContext(DESKTOP)).newPage();
   page.on('console', (m) => m.type() === 'error' && console.log(`[${name}] ${m.text()}`));
   page.on('pageerror', (e) => console.log(`[${name} pageerror] ${e.message}`));
-  await load(page, `${base}/?mp&room=${room}&name=${name}&spawn=grotemarkt`, 90_000);
+  await load(page, `${base}/?mp&name=${name}&spawn=grotemarkt`, 90_000);
   return page;
 }
 
@@ -41,7 +40,8 @@ const self = (page: Page) =>
   });
 const other = (page: Page) =>
   page.evaluate(() => {
-    const [p] = (window as unknown as G).game.multiplayer.peers.values();
+    // By name: anyone else on the dev server is in the same world.
+    const p = [...(window as unknown as G).game.multiplayer.peers.values()].find((q) => q.name === 'Anna' || q.name === 'Bram');
     if (!p?.ready) return null;
     const car = p.car && { x: p.car.x, z: p.car.z, remote: p.car.remote };
     return { name: p.name, x: car ? car.x : p.state.x, z: car ? car.z : p.state.z, mode: p.state.mode, car };
@@ -175,7 +175,7 @@ await b.waitForTimeout(600);
 await b.screenshot({ path: 'screenshots/mp-3-on-foot.png' });
 
 await a.context().close();
-await until('Anna gone', async () => (await b.evaluate(() => (window as unknown as G).game.multiplayer.peers.size)) === 0);
+await until('Anna gone', async () => !(await b.evaluate(() => [...(window as unknown as G).game.multiplayer.peers.values()].some((p) => p.name === 'Anna'))));
 
 await browser.close();
 console.log(failures ? `${failures} check(s) failed` : 'all checks passed');

@@ -53,6 +53,11 @@ Antwerp flavor:
 - Street names appear as you drive onto them.
 - Cars and vans have a radio (buses and trams don't) that plays real Belgian stations live (Studio Brussel, MNM, Qmusic, Joe, Willy, Radio 1, Radio 2 Antwerpen,
   Klara), straight from the broadcasters' public streams. R or a tap on the station name switches stations.
+- **Added (2026-10-11):** police cars and vans (white, the blue and fluo-yellow chequer, POLITIE, a blue lightbar),
+  ambulances, fire engines, taxis and box trucks, in traffic and parked. Some emergency vehicles are on a call: lights,
+  two-tone siren, a third over the limit, and drivers ahead pull over to the right while they overtake. Steal one and
+  Q (touch: the Punch button turns into Siren) works the lights and siren, and traffic pulls over for you too. Still
+  no wanted level and no chases.
 
 ## Map slice
 
@@ -71,7 +76,7 @@ Roughly 3 × 3.3 km, origin at the Grote Markt. Approximate bbox: lat 51.205 to 
 | Building heights | [3D GRB](https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb) (Digitaal Vlaanderen), fetched by `pnpm map:fetch-grb` via the download.vlaanderen.be order API | LOD1 only: one height per building (≈ ridge height, 2013 LiDAR), no roof shapes. License: Modellicentie Gratis Hergebruik v1.0; credit "Bron: Grootschalig Referentie Bestand Vlaanderen, Digitaal Vlaanderen". Priority: OSM `height` tag > 3D GRB > OSM levels > default |
 | Trees | OpenStreetMap (`natural=tree`, `tree_row`) | ~2k trees + 105 rows in the slice |
 | Street furniture | OpenStreetMap (crossings, traffic signals, benches, bollards, street lamps) | Only 65 lamps are mapped; the pipeline adds one every 28 m along streets |
-| People | [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) avatars + animations (MIT; licence shipped in `public/people/LICENSE.txt`), fetched by `tools/assets/fetch-people.ts`, baked by `pnpm assets:people` (dev server running) | 8 avatars, 3.2k triangles near / 900 far, walk/run/idle baked to bone-matrix textures, skinned per instance on the GPU |
+| People | [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) avatars + animations (MIT; licence shipped in `public/people/LICENSE.txt`), fetched by `tools/assets/fetch-people.ts`, baked by `pnpm assets:people` (dev server running) | 16 avatars (adults plus a few plain-clothed Professions ones), weighted to Antwerp's 2023 residents: ~60% Belgian, neighbouring or EU background, ~40% from outside the EU (`ROSTER` in `tools/assets/fetch-people.ts`). High quality loads all 16, others the first 4, whose weights absorb the dropped ones' by sex and background. Left out on purpose: children (cars hit pedestrians), the burqa (banned in public in Belgium), Gulf dress, and uniforms that aren't Belgian. Rocketbox has no Haredi Jewish or elderly women avatars. 3.2k triangles near / 900 far, walk/run/idle baked to bone-matrix textures, skinned per instance on the GPU |
 | Surface textures | [Poly Haven](https://polyhaven.com) (CC0), fetched by `pnpm assets:textures` | Brick, plaster, slate, clay tiles, cobbles, asphalt, paving, grass, sandstone; 1024 px colour + 512 px normal maps as WebP (~3.7 MB) |
 | Hero landmarks | Hand-built low-poly | Cathedral, Centraal Station, Het Steen, MAS, Boerentoren, Stadhuis, Brabo fountain |
 | Cars, characters | CC0 packs (Kenney, Quaternius) | No licensing worries |
@@ -95,7 +100,7 @@ src/
   systems/            wanted level, money/score, missions, respawn
   ui/                 HUD, minimap, mission text, touch controls, share card, title/credits
   net/                multiplayer: wire protocol, relay connection, snapshot interpolation, remote players
-server/               multiplayer relay (Node + ws): rooms of up to 16, forwards each player's state to the others
+server/               multiplayer relay (Node + ws): one world of up to 100, forwards each player's state to the others
 ```
 
 Key technical choices:
@@ -117,11 +122,11 @@ Key technical choices:
   from the post. A leaderboard would be a later add-on.
 - **Multiplayer (2026-10-10): shared players, local city.** Each game simulates its own traffic, pedestrians and trams,
   and is the authority on its own player. The relay (`server/relay.ts`) only forwards each player's state (15 Hz, ~80
-  bytes) to the others in their room. Others are shown ~100 ms in the past, interpolated along their velocities, as
+  bytes) to the others: in full to those within 500 m, once a second to those farther off (enough for the minimap). Others are shown ~100 ms in the past, interpolated along their velocities, as
   kinematic bodies: your car bounces off theirs, and their car knocks you over. Parked cars are the same in every
   game, so taking one removes it everywhere, and a car someone leaves behind becomes an ordinary parked car for
-  everyone. Players join public rooms (`antwerp-1`, `antwerp-2`…) automatically, or a private one with `?room=…`
-  (the online pill copies an invite link). Text chat (2026-10-11): T or the 💬 button opens it, and messages show in
+  everyone. There are no rooms (2026-10-11): everyone who opens the game joins the same open world (the online pill
+  copies an invite link to the game). Text chat (2026-10-11): T or the 💬 button opens it, and messages show in
   the chat log and in a bubble over the sender's head. Messages are plain text, up to 120 characters, rate-limited by
   the relay (a burst of 5, then one every 2 s). `pnpm dev` hosts the relay itself. For production, run `pnpm server` on
   a host that keeps WebSockets open (Vercel can't), then build with `VITE_MULTIPLAYER_URL=wss://…/net`. Without
@@ -152,9 +157,10 @@ Each milestone ends deployed to a Vercel preview URL and tested on a real phone.
 | **M3.8** | **Real places.** Every named shop, café, restaurant, bank, pharmacy, hotel, museum, theatre, school and office in OSM (3,204) has a sign with its real name on its real facade (chains in their house colours, text only; offices a nameplate by the door); café hanging boards and vertical HOTEL signs with text, pharmacy crosses; 1,077 blue street name plates on corners; shop windows by kind (fashion rails and mannequins, café interiors, supermarket shelves, bakeries, jewellers' cases, pharmacies); 1,121 café terrace sets; 88 Velo bike-share stations with docks and red bikes | Built |
 | **M3.9** | **Walk-in places.** A glass door under every place's sign; press E and you step into a room built on the spot inside the real building (fitted exactly to its footprint, clear of the neighbours: 2,890 of 3,200 doors), furnished for what it is — café bar and tables, supermarket aisles and fridges, boutique rails and mannequins, bakery counter, jeweller's cases, pharmacy, bank, salon, hotel lobby, gallery, nightclub, library, office reception — with staff and customers, its name on the back wall, and real window openings onto the live street; door chime, street sounds muffled indoors | Built |
 | **M3.10** | **Ride Velo bikes.** Take a bike from any of the 88 real stations (E), ride it (up to ~33 km/h, tight turns, leaning into corners, bell on H), leave it anywhere or ride it back into an empty dock. The rider pedals: a cycling animation baked per avatar with inverse kinematics (feet on the turning pedals, hands on the grips, saddle set to their leg length), since the Rocketbox library has none | Built |
-| **M3.11** | **Multiplayer.** Everyone who opens the game drives the same Antwerp: other players walk, drive and ride with name tags and blue minimap arrows, cars collide, carjacked parked cars vanish for everyone, text chat with bubbles over players' heads, invite links put friends in a private room. Tested with two headless players (`pnpm mp`); needs a hosted relay before it's live on the public URL | Built (dev); relay hosting pending |
+| **M3.11** | **Multiplayer.** Everyone who opens the game drives the same Antwerp: other players walk, drive and ride with name tags and blue minimap arrows, cars collide, carjacked parked cars vanish for everyone, text chat with bubbles over players' heads, everyone shares one open world. Tested with two headless players (`pnpm mp`); needs a hosted relay before it's live on the public URL | Built (dev); relay hosting pending |
 | **M3.12** | **E-scooters.** ~1,400 shared Lime, Bolt and Voi scooters on the pavements, laid out the same in every game: in twos and threes across the kerb, along the sides of pedestrian streets, the odd one alone at an angle or lying on its side. Take one (E), ride it standing (up to 38 km/h, quicker than a Velo bike; electric whine, bell on H, a lean into corners), leave it anywhere; drive a car into a parked one and it goes over. The rider's standing pose (feet on the deck, hands on the bars) is baked per avatar with inverse kinematics, like the cycling one. Other players see the same scooters, and see you ride one | Built |
 | **M3.13** | **Motorbikes.** Street motorbikes (MT-07 class: 0–100 km/h in under 3 s, ~200 km/h) and Vespa-style mopeds ("brommers" tuned to 55 km/h, in Vespa colours), about one vehicle in nine: parked at the kerb among the cars and riding in traffic with their riders. Steal one with E (traffic riders run off), ride it leaning hard into corners, with its own engine note and no radio; crash into something hard enough and you come off. Seated rider poses (feet on the pegs or the floorboard, hands round the grips) baked per avatar like the cycling one. Other players see you ride | Built |
+| **M3.14** | **Inside the landmarks** (the publicly open ones; Stadhuis and Boerentoren stay shut). Press E at the main door. **Centraal:** entrance hall, the marble dome hall with its gilt ribs, shops in the arcades and the grand staircase up to +1, the passage under the clock, then the glass train hall over platforms 1–6 with trains in, and the opening down to tracks 22–23 on −2 past level 0's shops. **Kathedraal:** seven aisles of round piers under ribbed vaults, stained glass, Rubens' *Kruisoprichting* and *Kruisafneming* in the transepts and the *Tenhemelopneming* over the high altar (painted as broad impressions, not copies), Schut's cupola over the crossing, pulpit, organ, choir stalls, rows of chairs. **MAS:** the free boulevard: ride the escalators up all ten turning floors behind the wavy glass to the open roof, with markers for the other landmarks; lifts to the roof and back down. **Het Steen:** the visitor centre: Visit Antwerpen desk, city shop, the big tapestries, a model of the old city and the *Antwerp Story* room. Visitors, staff and passers-by in all four; the camera can look up at the vaults. `pnpm tsx tools/dev/hall.ts <id>` screenshots each | Built |
 | **M4** | **Ship.** Title screen with controls, sound, OG image + meta for the LinkedIn preview, credits/attribution, real-phone test, final perf pass, deploy | Production URL live; short clip recorded; post published. (**Built (2026-10-11):** title card with the controls, up from the first paint and over the held opening shot until Play, skipped by headless runs unless `?title`, and by `?play`; OG/Twitter meta with absolute URLs from `SITE_URL` or Vercel's production domain (vite.config.ts); `public/og.jpg` rendered by `pnpm og`. Still to do: real-phone test, perf pass, deploy, clip, post) |
 
 ## Testing

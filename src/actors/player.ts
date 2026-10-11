@@ -14,6 +14,7 @@ const SWIM_LEAN = 1.15;
 const SWIM_RISE = 0.58;
 const PUNCH_TIME = 0.45; // s, and PUNCH_LANDS when the fist lands: the baked clip's timing
 const PUNCH_LANDS = 0.15;
+export const PLAYER_LOOK = 'Male_Adult_08';
 
 export class Player {
   readonly body: RAPIER.RigidBody;
@@ -26,6 +27,8 @@ export class Player {
   punch = 0;
   landed = false;
   avatar = 0;
+  elevation = 0; // m: the floor under you indoors (stairs, upper storeys)
+  private prevElevation = 0;
   private phase = 0;
   private aim = 0;
   private lean = 0;
@@ -45,10 +48,19 @@ export class Player {
     const v = this.body.linvel();
     return Math.hypot(v.x, v.y) > RUN + 1;
   }
+  get stride() {
+    const v = this.body.linvel();
+    return Math.min(1, Math.hypot(v.x, v.y) / RUN);
+  }
 
   savePrev() {
     this.prev.x = this.x;
     this.prev.z = this.z;
+    this.prevElevation = this.elevation;
+  }
+
+  elevationAt(alpha: number) {
+    return this.prevElevation + (this.elevation - this.prevElevation) * alpha;
   }
 
   startPunch(aim: number): boolean {
@@ -89,7 +101,7 @@ export class Player {
     this.sink += ((this.swimming ? TREAD_DEPTH : 0) - this.sink) * Math.min(1, 6 * dt);
   }
 
-  place(x: number, z: number, heading: number) {
+  place(x: number, z: number, heading: number, elevation = 0) {
     this.body.setTranslation({ x, y: z }, true);
     this.body.setLinvel({ x: 0, y: 0 }, true);
     this.body.setEnabled(true);
@@ -98,6 +110,7 @@ export class Player {
     this.down = this.sink = this.lean = this.punch = 0;
     this.swimming = false;
     this.prev = { x, z };
+    this.elevation = this.prevElevation = elevation;
   }
 
   hide() {
@@ -111,7 +124,7 @@ export class Player {
     const v = this.body.linvel();
     const speed = this.down > 0 ? 0 : Math.hypot(v.x, v.y);
     this.lean += ((this.swimming && speed > 0.8 ? 1 : 0) - this.lean) * Math.min(1, 5 * dt);
-    this.object.position.set(x, this.down > 0 ? 0.25 : -this.sink * (1 - this.lean * SWIM_RISE), z);
+    this.object.position.set(x, this.elevationAt(alpha) + (this.down > 0 ? 0.25 : -this.sink * (1 - this.lean * SWIM_RISE)), z);
     this.object.rotation.y = -this.heading;
     this.object.rotation.z = this.down > 0 ? -Math.PI / 2 : -this.lean * SWIM_LEAN;
 

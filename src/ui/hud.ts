@@ -33,6 +33,8 @@ export class Hud {
     this.fadeEl.className = 'fade';
     this.root.append(this.speed, this.hint, this.toastEl, this.street, this.fadeEl);
     document.body.append(this.root);
+    // A focused <summary> would toggle on the Enter/Space game keys.
+    document.querySelector('#credits summary')?.addEventListener('click', (e) => (e.currentTarget as HTMLElement).blur());
   }
 
   setSpeed(kmh: number | null) {
@@ -61,16 +63,24 @@ export class Hud {
   }
 
   radio(sound: Sound) {
-    const b = button('radio', () => sound.nextStation());
+    const bar = document.createElement('div');
+    bar.className = 'radio';
+    bar.hidden = true;
+    const power = button('power', () => sound.toggleRadio());
+    power.textContent = '📻';
+    const b = button('station', () => sound.nextStation());
     b.title = 'Next station (R)';
-    b.hidden = true;
+    bar.append(power, b);
+    document.body.append(bar);
     const touch = coarsePointer();
     sound.onRadio = () => {
       const r = sound.radioState;
-      b.hidden = !r;
+      bar.hidden = !r;
       if (!r) return;
+      power.classList.toggle('off', !r.name);
+      power.title = `Radio ${r.name ? 'off' : 'on'} (Shift+R)`;
       const status = r.status === 'no signal' ? ' · no signal' : r.status === 'blocked' ? (touch ? ' · tap to play' : ' · R to play') : '';
-      b.textContent = `📻 ${r.name ?? 'Radio off'}${status}${touch ? '' : ' [R]'}`;
+      b.textContent = `${r.name ?? 'Radio off'}${status}${touch ? '' : ' [R]'}`;
       b.classList.toggle('tuning', r.status === 'tuning');
     };
   }

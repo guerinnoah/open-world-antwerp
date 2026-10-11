@@ -196,10 +196,12 @@ export class Pedestrians {
     }
   }
 
-  spawnFleeing(x: number, z: number) {
+  spawnFleeing(x: number, z: number, avatar?: number): Ped {
     const p = this.create(x, z, { edge: 0, forward: true }, []);
     p.state = 'flee';
     p.timer = 6;
+    if (avatar !== undefined) p.avatar = avatar;
+    return p;
   }
 
   private spawn(px: number, pz: number, minD: number) {
@@ -221,7 +223,7 @@ export class Pedestrians {
     const body = personBody(this.physics.world, x, z, RADIUS, 70, 2);
     const p: Ped = {
       body, pts, i, last, speed: 1.1 + Math.random() * 0.5, state: 'walk', timer: 0, heading: 0, phase: Math.random(),
-      fall: 0, prev: { x, z }, avatar: Math.floor(Math.random() * this.crowd.avatarCount),
+      fall: 0, prev: { x, z }, avatar: this.crowd.pick(),
     };
     this.physics.owners.set(body.collider(0).handle, { kind: 'ped', entity: p });
     this.peds.push(p);

@@ -6,6 +6,9 @@
     <title>GTA Antwerp</title>
     <meta name="description" content="Steal a car, drive a tram, ride a Velo bike: a real 1:1 slice of Antwerp, playable in your browser. No install, no sign-up." />
     <meta name="theme-color" content="#1b1d22" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="GTA Antwerp" />
     <meta property="og:title" content="GTA Antwerp" />
@@ -29,7 +32,9 @@
           <dt><kbd>Space</kbd></dt><dd>Handbrake</dd>
           <dt><kbd>Shift</kbd></dt><dd>Sprint</dd>
           <dt><kbd>R</kbd></dt><dd>Punch on foot, next radio station in a car</dd>
+          <dt><kbd>Shift</kbd> <kbd>R</kbd></dt><dd>Radio on or off</dd>
           <dt><kbd>H</kbd></dt><dd>Horn, or the bell</dd>
+          <dt><kbd>Q</kbd></dt><dd>Siren: police car, ambulance or fire engine</dd>
           <dt><kbd>P</kbd></dt><dd>Map: click to set a waypoint and get a route</dd>
           <dt>Mouse</dt><dd>Drag to look around</dd>
         </dl>
@@ -37,20 +42,29 @@
           <dt>Joystick</dt><dd>Walk, drive (push all the way to sprint)</dd>
           <dt>E</dt><dd>Get in or out: any car, bike, scooter, tram or bus</dd>
           <dt>Swipe</dt><dd>Look around</dd>
-          <dt>Radio</dt><dd>Tap the station name to switch</dd>
+          <dt>Radio</dt><dd>Tap the station name to switch, 📻 to turn it off</dd>
+          <dt>Siren</dt><dd>In a police car, ambulance or fire engine, Punch becomes Siren</dd>
           <dt>Map</dt><dd>Tap the minimap, then tap where to go</dd>
         </dl>
         <div id="loading">Loading Antwerp…</div>
         <button class="play" type="button" hidden>Play</button>
+        <p class="fine">Not affiliated with Rockstar Games or Take-Two Interactive.</p>
       </div>
     </div>
     <div id="stats"></div>
     <div id="credits">
-      © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors ·
-      Source: <a href="https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb" target="_blank" rel="noopener">Grootschalig Referentie Bestand Vlaanderen, Digitaal Vlaanderen</a> ·
-      People: <a href="/people/LICENSE.txt" target="_blank" rel="noopener">Microsoft Rocketbox</a> ·
-      Radio: live streams from VRT and DPG Media ·
-      <a href="/map/logos.html" target="_blank" rel="noopener">Not affiliated with any brand shown</a>
+      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
+      <details>
+        <summary title="Credits">ⓘ</summary>
+        <div>
+          Map: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors<br />
+          Buildings: <a href="https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb" target="_blank" rel="noopener">GRB, Digitaal Vlaanderen</a><br />
+          People: <a href="/people/LICENSE.txt" target="_blank" rel="noopener">Microsoft Rocketbox</a><br />
+          Radio: live streams from VRT and DPG Media<br />
+          Not affiliated with Rockstar Games or Take-Two Interactive<br />
+          <a href="/map/logos.html" target="_blank" rel="noopener">Not affiliated with any brand shown</a>
+        </div>
+      </details>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

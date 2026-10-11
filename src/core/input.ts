@@ -10,6 +10,7 @@ export interface InputState {
   action: boolean;
   horn: boolean;
   punch: boolean;
+  siren: boolean;
 }
 
 const DEADZONE = 0.15;
@@ -22,12 +23,15 @@ export class Input {
   private keys = new Set<string>();
   private actionQueued = false;
   private punchQueued = false;
+  private sirenQueued = false;
+  private sirenButton: HTMLButtonElement | null = null;
   private look = { x: 0, y: 0 };
   private drag: { id: number; x: number; y: number; moved: number } | null = null;
   private stick = { id: -1, x: 0, y: 0, cx: 0, cy: 0 };
   private touchHandbrake = false;
   private padActionHeld = false;
   private padPunchHeld = false;
+  private padSirenHeld = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     addEventListener('keydown', (e) => {
@@ -35,6 +39,7 @@ export class Input {
       this.keys.add(e.code);
       if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') this.actionQueued = true;
       if (e.code === 'KeyR') this.punchQueued = true;
+      if (e.code === 'KeyQ') this.sirenQueued = true;
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -77,10 +82,11 @@ export class Input {
     let action = this.actionQueued;
     let horn = k('KeyH');
     let punch = this.punchQueued;
+    let siren = this.sirenQueued;
 
     for (const pad of navigator.getGamepads?.() ?? []) {
       if (!pad || pad.mapping !== 'standard') continue;
-      // Standard mapping: RT/LT gas/brake, A/RB handbrake (A sprints on foot), Y/B enter/exit, X punch, L3 horn.
+      // Standard mapping: RT/LT gas/brake, A/RB handbrake (A sprints on foot), Y/B enter/exit, X punch, L3 horn, R3 siren.
       const b = (i: number) => pad.buttons[i]?.value ?? 0;
       steer += dead(pad.axes[0] ?? 0);
       throttle += b(7) - b(6) - dead(pad.axes[1] ?? 0);
@@ -95,6 +101,9 @@ export class Input {
       const punchHeld = b(2) > 0.5;
       if (punchHeld && !this.padPunchHeld) punch = true;
       this.padPunchHeld = punchHeld;
+      const sirenHeld = b(11) > 0.5;
+      if (sirenHeld && !this.padSirenHeld) siren = true;
+      this.padSirenHeld = sirenHeld;
     }
 
     if (this.stick.id >= 0) {
@@ -105,8 +114,13 @@ export class Input {
     handbrake ||= this.touchHandbrake;
 
     this.look.x = this.look.y = 0;
-    this.actionQueued = this.punchQueued = false;
-    return { steer: clamp1(steer), throttle: clamp1(throttle), handbrake, sprint, lookX, lookY, action, horn, punch };
+    this.actionQueued = this.punchQueued = this.sirenQueued = false;
+    return { steer: clamp1(steer), throttle: clamp1(throttle), handbrake, sprint, lookX, lookY, action, horn, punch, siren };
+  }
+
+  /** On touch, the punch button works the siren while you drive something that has one. */
+  set sirenMode(on: boolean) {
+    if (this.sirenButton) this.sirenButton.textContent = on ? 'Siren' : 'Punch';
   }
 
   private createTouchControls() {
@@ -150,7 +164,11 @@ export class Input {
     stick.addEventListener('pointercancel', release);
 
     root.querySelector('.action')!.addEventListener('pointerdown', () => (this.actionQueued = true));
-    root.querySelector('.punch')!.addEventListener('pointerdown', () => (this.punchQueued = true));
+    this.sirenButton = root.querySelector<HTMLButtonElement>('.punch')!;
+    this.sirenButton.addEventListener('pointerdown', () => {
+      if (this.sirenButton!.textContent === 'Siren') this.sirenQueued = true;
+      else this.punchQueued = true;
+    });
     const handbrake = root.querySelector<HTMLButtonElement>('.handbrake')!;
     handbrake.addEventListener('pointerdown', () => (this.touchHandbrake = true));
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {

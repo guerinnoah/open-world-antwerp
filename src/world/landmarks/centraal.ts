@@ -21,25 +21,26 @@ export function centraal(_lm: Landmark): THREE.BufferGeometry {
 }
 
 function stationBuilding(kit: Kit) {
-  kit.box(64, 26, 60, 92, 0, 0, STONE).box(64.4, 1.2, 60.4, 92, 10, 0, STONE_BAND).hip(64, 60, 8, 92, 26, 0, ROOF);
+  kit.box(57.3, 26, 60, 88.65, 0, 0, STONE).box(57.7, 1.2, 60.4, 88.65, 10, 0, STONE_BAND).hip(57.3, 60, 8, 88.65, 26, 0, ROOF);
   for (const z of [-34.5, 34.5]) kit.box(22, 20, 9, 71, 0, z, STONE).hip(22, 9, 4, 71, 20, z, ROOF);
 
-  kit.box(16, 34, 26, 117, 0, 0, STONE).box(16.4, 1.2, 26.4, 117, 10, 0, STONE_BAND).gable(16, 26, 7, 117, 34, 0, ROOF, 'x');
-  kit.group(125.2, 0, 0, Math.PI / 2, () => {
+  // Entrance front on the footprint's facade line (x = 122.4), where halls/centraal.ts puts the doors.
+  kit.box(16, 34, 26, 114.2, 0, 0, STONE).box(16.4, 1.2, 26.4, 114.2, 10, 0, STONE_BAND).gable(16, 26, 7, 114.2, 34, 0, ROOF, 'x');
+  kit.group(122.4, 0, 0, Math.PI / 2, () => {
     kit.facade(roundArch(13, 9, 24, 12), GLASS, 0.3);
     kit.box(14, 1, 0.6, 0, 8, 0, STONE_BAND);
     for (const u of [-3.25, 0, 3.25]) kit.box(0.4, 15, 0.5, u, 9, 0, STONE_BAND);
     kit.cylinder(2.2, 2.2, 0.4, 0, 27, 0.2, GOLD, 16).cylinder(1.7, 1.7, 0.5, 0, 27, 0.25, STONE, 16);
-    for (const u of [-5.5, -1.8, 1.8, 5.5]) kit.box(2.2, 6, 0.6, u, 0, 0.3, 0x6b5f52);
+    for (const u of [-5.5, -1.8, 1.8, 5.5]) kit.box(2.2, 6, 0.2, u, 0, 0.15, 0x6b5f52);
   });
-  kit.cone(1, 3, 125, 41, 0, GOLD, 8);
+  kit.cone(1, 3, 122.2, 41, 0, GOLD, 8);
 
   for (const z of [-30.1, 30.1]) {
-    for (let x = 64; x <= 120; x += 6) {
+    for (let x = 64; x <= 114; x += 6) {
       kit.panel(2.4, 6, x, 3, z, GLASS).panel(2.4, 6.5, x, 13, z, GLASS).panel(2.4, 4, x, 21, z, GLASS);
     }
   }
-  for (const z of [-26, -21, 21, 26]) kit.panel(2.4, 6.5, 124.1, 13, z, GLASS, Math.PI / 2).panel(2.4, 6, 124.1, 3, z, GLASS, Math.PI / 2);
+  for (const z of [-26, 26]) kit.panel(2.4, 6.5, 117.4, 13, z, GLASS, Math.PI / 2).panel(2.4, 6, 117.4, 3, z, GLASS, Math.PI / 2);
 }
 
 function domedHall(kit: Kit, x: number, z: number) {

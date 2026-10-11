@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { attachRelay, type Relay } from '../server/relay';
 import {
-  CHAT_BURST, CHAT_EVERY, CHAT_MAX, ChatLimit, MAX_LEFT_BEHIND, PROTOCOL_VERSION, VEHICLE_KINDS, cleanChat, cleanName, cleanRoom, decodeState,
+  CHAT_BURST, CHAT_EVERY, CHAT_MAX, ChatLimit, MAX_LEFT_BEHIND, PROTOCOL_VERSION, VEHICLE_KINDS, cleanChat, cleanName, decodeState,
   encodeState, type PlayerState, type ServerMessage,
 } from '../src/net/protocol';
 import { DELAY, Timeline } from '../src/net/timeline';
@@ -51,12 +51,10 @@ describe('protocol', () => {
     expect(limit.take(1000 + CHAT_EVERY)).toBe(false);
   });
 
-  it('cleans names and room codes', () => {
+  it('cleans names', () => {
     expect(cleanName('  Noah \u0000<b>  ')).toBe('Noah b');
     expect(cleanName('a'.repeat(40))).toHaveLength(16);
     expect(cleanName(42)).toBe('');
-    expect(cleanRoom('Friday-Night')).toBe('friday-night');
-    expect(cleanRoom('../etc')).toBe('');
   });
 });
 
@@ -181,11 +179,10 @@ describe('relay', () => {
     await new Promise((resolve) => server.close(resolve));
   });
 
-  it('puts players in the same public room and relays their states to each other only', async () => {
+  it('puts everyone in one world and relays their states to the others only', async () => {
     await start();
     const a = await connect({ name: 'Anna' });
     const welcomeA = await a.next('welcome');
-    expect(welcomeA.room).toBe('antwerp-1');
     expect(welcomeA.peers).toEqual([]);
 
     const b = await connect({ name: 'Bram' });
@@ -220,27 +217,55 @@ describe('relay', () => {
     expect((await b.next('s')).s).toEqual(good);
   });
 
-  it('opens a second public room when the first is full, and refuses a full private room', async () => {
-    await start({ maxPerRoom: 2 });
-    for (const room of ['antwerp-1', 'antwerp-1', 'antwerp-2']) {
-      const c = await connect();
-      expect((await c.next('welcome')).room).toBe(room);
+  it('ignores the room an older game asks for, and turns players away once the world is full', async () => {
+    await start({ maxPlayers: 2 });
+    const a = await connect({ name: 'Anna' });
+    await a.next('welcome');
+    const b = await connect({ room: 'friends' });
+    expect((await b.next('welcome')).peers.map((p) => p.name)).toEqual(['Anna']);
+    expect(await (await connect()).next('refused')).toEqual({ t: 'refused', reason: 'full' });
+  });
+
+  it('sends states between far-apart players once a second, and getting in or out at once', async () => {
+    await start();
+    const a = await connect();
+    const idA = (await a.next('welcome')).id;
+    const near = await connect();
+    await near.next('welcome');
+    const far = await connect();
+    await far.next('welcome');
+    for (const [c, x] of [[near, 10], [far, 1000]] as const) {
+      c.send({ t: 's', s: encodeState(state({ x })) });
+      c.send({ t: 'chat', text: 'here' });
+      await a.next('chat'); // the relay knows where they are
     }
-    await (await connect({ room: 'Friends' })).next('welcome');
-    await (await connect({ room: 'friends' })).next('welcome');
-    const third = await connect({ room: 'friends' });
-    expect(await third.next('refused')).toEqual({ t: 'refused', reason: 'full' });
+    const times = (c: typeof a) => c.inbox.flatMap((m) => (m.t === 's' && m.id === idA ? [m.s[0]] : []));
+    const synced = (text: string) => {
+      a.send({ t: 'chat', text });
+      return Promise.all([near, far].map((c) => until(() => c.inbox.some((m) => m.t === 'chat' && m.text === text))));
+    };
+
+    for (const time of [1000, 1100, 1200]) a.send({ t: 's', s: encodeState(state({ time })) });
+    for (const time of [1300, 1400]) a.send({ t: 's', s: encodeState(state({ time, mode: 1, kind: 2 })) });
+    await synced('in');
+    expect(times(near)).toEqual([1000, 1100, 1200, 1300, 1400]);
+    expect(times(far)).toEqual([1000, 1200, 1300]); // 1200: where the car was when it got in
+
+    await new Promise((resolve) => setTimeout(resolve, 1050));
+    a.send({ t: 's', s: encodeState(state({ time: 2500, mode: 1, kind: 2 })) });
+    await synced('later');
+    expect(times(far).at(-1)).toBe(2500);
   });
 
   it('closes upgrade requests it cannot parse, and in standalone mode ones for other paths', async () => {
     await start({ standalone: true });
     await raw('http://[').closed;
     await raw('/elsewhere').closed;
-    expect((await (await connect()).next('welcome')).room).toBe('antwerp-1');
+    await (await connect()).next('welcome');
   });
 
   it('survives a bad frame from a connection it is refusing for being full', async () => {
-    await start({ maxClients: 1 });
+    await start({ maxPlayers: 1 });
     await (await connect()).next('welcome');
     const extra = raw('/net');
     expect(await extra.reply).toMatch(/^HTTP\/1.1 101/);
@@ -307,7 +332,7 @@ describe('relay', () => {
     expect(await old.next('refused')).toEqual({ t: 'refused', reason: 'version' });
   });
 
-  it('relays chat to the rest of the room, cleaned, and drops spam', async () => {
+  it('relays chat to everyone else, cleaned, and drops spam', async () => {
     await start();
     const a = await connect({ name: 'Anna' });
     const welcomeA = await a.next('welcome');
