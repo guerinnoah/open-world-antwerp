@@ -30,7 +30,7 @@ for (const name of names) {
   const inside = await state();
   console.log(name, sign[4], 'outside:', before.hint, '→ inside:', inside.indoors);
   if (!inside.indoors) continue;
-  await page.screenshot({ path: `screenshots/in-${slug}.png` });
+  await page.screenshot({ path: `screenshots/${process.env.SHOTS ?? ''}in-${slug}.png` });
   await hold(page, ['KeyW'], 900);
   await page.evaluate(() => {
     const g = (window as Any).game;
@@ -38,7 +38,7 @@ for (const name of names) {
     g.rig.pitch = 0.1;
   });
   await page.waitForTimeout(1200);
-  await page.screenshot({ path: `screenshots/in-${slug}-out.png` });
+  await page.screenshot({ path: `screenshots/${process.env.SHOTS ?? ''}in-${slug}-out.png` });
   await hold(page, ['KeyW'], 900);
   await page.waitForTimeout(300);
   const atDoor = await state();

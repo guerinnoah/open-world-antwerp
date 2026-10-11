@@ -5,7 +5,7 @@ import { clipForSpeed, phaseStep, type Crowd } from './crowd';
 import { personBody } from './pedestrians';
 
 const RUN = 6.5;
-const SPRINT = 11;
+const SPRINT = 9;
 const RADIUS = 0.35;
 const SWIM = 2.4;
 const SWIM_SPRINT = 3.6;

@@ -10,6 +10,7 @@ import { BUILDING_LAYERS } from '../src/world/textures';
 import { project } from '../src/world/projection';
 import { buildGraphData } from '../tools/map/graph';
 import { grbMatcher } from '../tools/map/grb';
+import { posts, solid, splitOutlines, type Mass } from '../tools/map/massing';
 import { logoItemsOf, placeSigns } from '../tools/map/signs';
 import { streetDetail } from '../tools/map/street';
 
@@ -100,12 +101,78 @@ describe('extrudeBuildings', () => {
     }
   });
 
+  it('closes the underside of a raised floor, facing down', () => {
+    const { position: p, normal, index } = extrudeBuildings([{ ...square, mh: 3, nw: 1 }]);
+    expect(index.length / 3).toBe(4 * 2 + 2 + 2);
+    const under = [...index].filter((v) => p[v * 3 + 1] === 3 && normal[v * 3 + 1] === -1);
+    expect(under).toHaveLength(6);
+  });
+
   it('draws windows on ordinary walls but not on roofs or plain landmark walls', () => {
     const windows = (surf: Float32Array) => [...surf].filter((_, i) => i % 2 === 1);
     expect(windows(extrudeBuildings([{ ...square, nw: 1 }]).surf).every((w) => w === 0)).toBe(true);
     const plain = windows(extrudeBuildings([square]).surf);
     expect(plain.filter((w) => w === 1)).toHaveLength(16);
     expect(plain.filter((w) => w === 0)).toHaveLength(4);
+  });
+});
+
+describe('massing', () => {
+  const rect = (x0: number, z0: number, x1: number, z1: number): Pt[] => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+  const mass = (ring: Pt[], h: number, extra: Partial<Building> = {}, canopy = false): Mass => ({
+    b: { h, c: 0, r: 0, rings: [ring.flat()], ...extra }, outer: ring, rings: [ring], isPart: true, canopy,
+  });
+  const outline = { ...mass(rect(0, 0, 20, 10), 12), isPart: false };
+  const areaOf = (m: Mass) => Math.abs(signedArea(m.outer));
+
+  it('keeps the part of an outline its parts leave uncovered, instead of dropping the whole building', () => {
+    const tower = mass(rect(0, 0, 5, 10), 30);
+    const { replaced, masses } = splitOutlines([outline], [tower], () => 11);
+    expect(replaced.has(outline)).toBe(true);
+    expect(masses).toHaveLength(1);
+    expect(masses[0].b.h).toBe(11);
+    expect(areaOf(masses[0])).toBeCloseTo(150);
+  });
+
+  it('fills in the ground floor under a part that starts in the air, but not under a canopy', () => {
+    const upper = mass(rect(0, 0, 20, 10), 20, { mh: 8 });
+    const { masses } = splitOutlines([outline], [upper], () => 12);
+    expect(masses).toHaveLength(1);
+    expect(masses[0].b).toMatchObject({ h: 8 });
+    expect(masses[0].b.mh).toBeUndefined();
+    expect(splitOutlines([outline], [mass(rect(0, 0, 20, 10), 4, { mh: 3.6 }, true)], () => 12).masses).toHaveLength(0);
+  });
+
+  it('only fills what no lower part already holds up', () => {
+    const plinth = mass(rect(0, 0, 10, 10), 6);
+    const upper = mass(rect(0, 0, 20, 10), 20, { mh: 6 });
+    const fill = splitOutlines([outline], [plinth, upper], () => 12).masses;
+    expect(fill).toHaveLength(1);
+    expect(areaOf(fill[0])).toBeCloseTo(100);
+  });
+
+  it('drops slivers that would stand as lone walls, but keeps a bus shelter', () => {
+    expect(solid([rect(0, 0, 44, 0.34)])).toBe(false);
+    expect(solid([rect(0, 0, 0.7, 0.6)])).toBe(false);
+    expect(solid([rect(0, 0, 3.8, 1.05)])).toBe(true);
+  });
+
+  it('puts posts under a free-standing canopy, but none where it rests on a building or over the road', () => {
+    const canopy = mass(rect(0, 0, 10, 6), 4, { mh: 3.6 }, true);
+    expect(posts([canopy], [], () => true)).toHaveLength(6);
+    const wall = mass(rect(0, -8, 10, 0), 9);
+    const held = posts([canopy], [wall], () => true);
+    expect(held).toHaveLength(3);
+    for (const p of held) expect(p.rings[0][1]).toBeGreaterThan(5);
+    expect(posts([canopy], [], ([x]) => x > 4)).toHaveLength(4);
+    expect(posts([canopy], [], () => true)[0]).toMatchObject({ h: 3.6, nw: 1 });
+  });
+
+  it('stands posts at the corners of a curved canopy, not at every vertex of the curve', () => {
+    const round: Pt[] = Array.from({ length: 48 }, (_, i) => [Math.cos((i / 48) * Math.PI * 2) * 8, Math.sin((i / 48) * Math.PI * 2) * 8]);
+    const n = posts([mass(round, 5, { mh: 4.6 }, true)], [], () => true).length;
+    expect(n).toBeGreaterThanOrEqual(5);
+    expect(n).toBeLessThanOrEqual(12);
   });
 });
 
@@ -312,8 +379,23 @@ describe('GRB heights', () => {
   });
 
   it('matches a concave building to its own GRB footprint, not the neighbour under its centroid', () => {
-    const height = grbMatcher([{ outer: courtyard, height: 20 }, { outer: u, height: 10 }]);
-    expect(height(u)).toBe(10);
-    expect(height(courtyard)).toBe(20);
+    const match = grbMatcher([{ outer: courtyard, height: 20 }, { outer: u, height: 10 }]);
+    expect(match(u)?.height).toBe(10);
+    expect(match(courtyard)?.height).toBe(20);
+  });
+
+  it("ignores a GRB footprint far bigger or smaller than the outline: it is another building's height", () => {
+    const block: Pt[] = [[0, 0], [40, 0], [40, 40], [0, 40]];
+    const shed: Pt[] = [[1, 1], [4, 1], [4, 4], [1, 4]];
+    expect(grbMatcher([{ outer: block, height: 30 }])(shed)).toBeUndefined();
+    expect(grbMatcher([{ outer: shed, height: 3 }])(block)).toBeUndefined();
+  });
+
+  it('measures how much of an overhang stands on ground-level buildings', () => {
+    const overhang: Pt[] = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    const halfUnder: Pt[] = [[0, 0], [5, 0], [5, 10], [0, 10]];
+    expect(grbMatcher([{ outer: overhang, height: 12, type: 'verdieping' }])(overhang)).toMatchObject({ height: 12, type: 'verdieping', ground: 0 });
+    const match = grbMatcher([{ outer: overhang, height: 12, type: 'verdieping' }, { outer: halfUnder, height: 9 }]);
+    expect(match(overhang)?.ground).toBeCloseTo(0.5);
   });
 });

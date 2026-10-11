@@ -176,7 +176,7 @@ if (params.has('fly')) {
     }
     const s0 = performance.now();
     // Fixed-rate physics; rendering interpolates between the last two steps (acc / STEP).
-    acc = Math.min(acc + dt, 0.25);
+    acc = game.paused ? 0 : Math.min(acc + dt, 0.25);
     while (acc >= STEP) {
       game.fixedUpdate(STEP);
       acc -= STEP;
@@ -184,7 +184,7 @@ if (params.has('fly')) {
     game.render(acc / STEP, playing || !start.intro ? dt : 0);
     const s1 = performance.now();
     environment.follow(game.focus);
-    draw();
+    if (!game.mapOpen) draw();
     timing.sim += s1 - s0;
     timing.render += performance.now() - s1;
   };

@@ -19,6 +19,7 @@ import type { Multiplayer } from '../net/multiplayer';
 import { GROUP, RAPIER, WHEELS, groups, type Owner, type Physics } from '../physics/physics';
 import { Hud } from '../ui/hud';
 import { Minimap } from '../ui/minimap';
+import { WorldMap } from '../ui/worldMap';
 import type { Breakables } from '../world/breakables';
 import type { CityData, GraphData } from '../world/cityData';
 import type { Interiors } from '../world/interiors';
@@ -27,6 +28,7 @@ import { NavGraph } from '../world/navGraph';
 import { TRAM_HALF, trackTest } from '../world/trackClearance';
 import { WaterMap } from '../world/water';
 import { CameraRig } from './cameraRig';
+import { Gps } from './gps';
 
 /** Where the player starts: local metres and facing (Rapier angle). */
 export interface Start {
@@ -39,6 +41,7 @@ export interface Start {
 export const CENTRAAL_START: Start = { x: 1491, z: 372, yaw: Math.PI / 2, intro: true };
 export const GROTE_MARKT_START: Start = { x: 12, z: 2, yaw: -3.09, intro: false };
 const ENTER_RANGE = 3.2;
+const IDLE: InputState = { steer: 0, throttle: 0, handbrake: false, sprint: false, lookX: 0, lookY: 0, action: false, horn: false, punch: false };
 const TRAM_EXIT_SPEED = 3; // m/s: fastest a tram can go for the driver to step out
 const PUNCH_SEEK = 2.2; // m, centre to centre: the player turns to face someone this close
 const PUNCH_REACH = 1.4; // m: how far the fist reaches
@@ -68,12 +71,14 @@ export class Game {
   private renderer: VehicleRenderer;
   private hud = new Hud();
   private minimap: Minimap;
+  private worldMap: WorldMap;
+  private gps: Gps;
   private sound = new Sound();
   private splash = new Splash();
   private water: WaterMap;
   private drive: NavGraph;
   private sinking: Vehicle[] = [];
-  private state: InputState = { steer: 0, throttle: 0, handbrake: false, sprint: false, lookX: 0, lookY: 0, action: false, horn: false, punch: false };
+  private state: InputState = { ...IDLE };
   private steps = 0;
   private street = { name: '', timer: 0 };
   private intro: { t: number; from: THREE.Vector3; look: THREE.Vector3 } | null = null;
@@ -100,10 +105,13 @@ export class Game {
     private start: Start = CENTRAAL_START,
   ) {
     this.water = new WaterMap(city);
-    this.minimap = new Minimap(city);
+    this.minimap = new Minimap(city, () => this.worldMap.toggle(true));
     this.hud.soundToggle(this.sound);
     this.hud.radio(this.sound);
     this.drive = new NavGraph(graph.drive, true);
+    const walk = new NavGraph(graph.walk, false);
+    this.gps = new Gps(this.drive, walk);
+    this.worldMap = new WorldMap(city, this.gps, this.drive, input.touch);
 
     this.player = new Player(physics.world, start.x, start.z);
     physics.owners.set(this.player.body.collider(0).handle, { kind: 'player', entity: this.player });
@@ -114,7 +122,7 @@ export class Game {
     this.parkCars(population.parkedCars, trackTest(graph.trams));
     this.traffic = new Traffic(physics, this.drive, this, population.traffic);
     this.peds = new Pedestrians(
-      physics, new NavGraph(graph.walk, false), this.drive, population.peds, population.pedView, crowd, city.landmarks,
+      physics, walk, this.drive, population.peds, population.pedView, crowd, city.landmarks,
     );
     this.player.avatar = crowd.indexOf('Male_Adult_08');
     this.trams = new Trams(physics, graph.trams, population.trams);
@@ -424,8 +432,21 @@ export class Game {
     this.sound.splash(x, z);
   }
 
+  /** Single player stops the world while the map is up; multiplayer can't. */
+  get paused() {
+    return this.worldMap.open && !this.multiplayer;
+  }
+
+  get mapOpen() {
+    return this.worldMap.open;
+  }
+
   sampleInput() {
     const s = this.input.sample();
+    if (this.worldMap.open) {
+      this.state = { ...IDLE };
+      return;
+    }
     // Keep an action press until a fixed step consumes it (a frame can have zero steps on fast displays).
     this.state = { ...s, action: s.action || this.state.action, punch: s.punch || this.state.punch };
     this.rig.look(s.lookX, s.lookY);
@@ -474,7 +495,10 @@ export class Game {
     if (this.intro) this.playIntro(dt);
     const t = car ?? this.player;
     const heading = car ? car.angle : this.player.heading;
-    this.minimap.update(t.x, t.z, this.rig.yaw, heading, this.multiplayer?.others);
+    const motor = car && !twoWheeled(car.spec) ? car : null;
+    if (this.gps.update(t.x, t.z, dt, !!motor, motor ? motor.angle : null)) this.hud.toast('You have arrived');
+    this.minimap.update(t.x, t.z, this.rig.yaw, heading, this.multiplayer?.others, this.gps);
+    this.worldMap.update(t.x, t.z, heading, this.multiplayer?.others);
     const camera = this.rig.camera.position;
     this.sound.listen(camera.x, camera.z, this.rig.yaw);
     const cycling = car?.spec.name === 'bike', scooting = car?.spec.name === 'scooter';

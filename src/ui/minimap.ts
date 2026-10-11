@@ -1,8 +1,11 @@
+import type { Gps } from '../game/gps';
 import type { CityData, LandmarkId } from '../world/cityData';
 import { MINIMAP_SCALE as SCALE } from './minimapConfig';
 
 const VIEW_RADIUS = 220;
 const SIZE = 170;
+
+const ROUTE_COLOUR = '#b04ce6';
 
 const LABELS: Partial<Record<LandmarkId, string>> = {
   cathedral: 'Cathedral', centraal: 'Centraal', mas: 'MAS', steen: 'Het Steen', boerentoren: 'Boerentoren', stadhuis: 'Stadhuis',
@@ -17,19 +20,21 @@ export class Minimap {
   private marks: { x: number; z: number; label: string }[];
   private frame = 0;
 
-  constructor(city: CityData) {
+  constructor(city: CityData, onClick: () => void) {
     const dpr = Math.min(devicePixelRatio, 2);
     this.canvas.id = 'minimap';
+    this.canvas.title = 'Map (P)';
+    this.canvas.addEventListener('click', onClick);
     this.canvas.width = this.canvas.height = SIZE * dpr;
     this.ctx = this.canvas.getContext('2d')!;
     this.ctx.scale(dpr, dpr);
     document.body.append(this.canvas);
     ({ minX: this.minX, minZ: this.minZ } = city.bounds);
     this.map.src = '/map/minimap.webp';
-    this.marks = city.landmarks.filter((l) => LABELS[l.id]).map((l) => ({ x: l.x, z: l.z, label: LABELS[l.id]! }));
+    this.marks = landmarkMarks(city);
   }
 
-  update(x: number, z: number, yaw: number, heading: number, others: { x: number; z: number; heading: number }[] = []) {
+  update(x: number, z: number, yaw: number, heading: number, others: { x: number; z: number; heading: number }[] = [], gps?: Gps) {
     if (this.frame++ % 2) return;
     const c = this.ctx, r = SIZE / 2, k = (r / VIEW_RADIUS) / SCALE;
     c.save();
@@ -42,6 +47,7 @@ export class Minimap {
     c.rotate(turn);
     c.scale(k, k);
     if (this.map.complete && this.map.naturalWidth) c.drawImage(this.map, -(x - this.minX) * SCALE, -(z - this.minZ) * SCALE);
+    if (gps?.route) drawRoute(c, gps.route.points, x, z, SCALE, 4 / k);
     c.restore();
 
     const toMap = (px: number, pz: number): [number, number, boolean] => {
@@ -64,30 +70,65 @@ export class Minimap {
         c.fillText(m.label, mx, my - 7);
       }
     }
+    if (gps?.waypoint) {
+      const [wx, wy] = toMap(gps.waypoint.x, gps.waypoint.z);
+      drawPin(c, wx, wy, 0.8);
+    }
     for (const o of others) {
       const [ox, oy] = toMap(o.x, o.z);
-      this.arrow(ox, oy, o.heading + turn, '#1e88e5', 0.75);
+      drawArrow(c, ox, oy, o.heading + turn, '#1e88e5', 0.75);
     }
-    this.arrow(r, r, heading + turn, '#e53935');
+    drawArrow(c, r, r, heading + turn, '#e53935');
   }
+}
 
-  private arrow(x: number, y: number, angle: number, colour: string, scale = 1) {
-    const c = this.ctx;
-    c.save();
-    c.translate(x, y);
-    c.rotate(angle + Math.PI / 2);
-    c.scale(scale, scale);
-    c.fillStyle = colour;
-    c.strokeStyle = '#fff';
-    c.lineWidth = 1.5;
-    c.beginPath();
-    c.moveTo(0, -8);
-    c.lineTo(6, 6);
-    c.lineTo(0, 3);
-    c.lineTo(-6, 6);
-    c.closePath();
-    c.fill();
-    c.stroke();
-    c.restore();
-  }
+export function landmarkMarks(city: CityData): { x: number; z: number; label: string }[] {
+  return city.landmarks.filter((l) => LABELS[l.id]).map((l) => ({ x: l.x, z: l.z, label: LABELS[l.id]! }));
+}
+
+export function drawRoute(c: CanvasRenderingContext2D, points: number[], x: number, z: number, scale: number, width: number) {
+  c.beginPath();
+  for (let i = 0; i < points.length; i += 2) c.lineTo((points[i] - x) * scale, (points[i + 1] - z) * scale);
+  c.strokeStyle = ROUTE_COLOUR;
+  c.lineWidth = width;
+  c.lineJoin = c.lineCap = 'round';
+  c.stroke();
+}
+
+export function drawArrow(c: CanvasRenderingContext2D, x: number, y: number, angle: number, colour: string, scale = 1) {
+  c.save();
+  c.translate(x, y);
+  c.rotate(angle + Math.PI / 2);
+  c.scale(scale, scale);
+  c.fillStyle = colour;
+  c.strokeStyle = '#fff';
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.moveTo(0, -8);
+  c.lineTo(6, 6);
+  c.lineTo(0, 3);
+  c.lineTo(-6, 6);
+  c.closePath();
+  c.fill();
+  c.stroke();
+  c.restore();
+}
+
+/** Waypoint blip, centred on (x, y). */
+export function drawPin(c: CanvasRenderingContext2D, x: number, y: number, scale = 1) {
+  c.save();
+  c.translate(x, y);
+  c.scale(scale, scale);
+  c.fillStyle = ROUTE_COLOUR;
+  c.strokeStyle = '#fff';
+  c.lineWidth = 2;
+  c.beginPath();
+  c.arc(0, 0, 7, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(0, 0, 2.5, 0, Math.PI * 2);
+  c.fill();
+  c.restore();
 }

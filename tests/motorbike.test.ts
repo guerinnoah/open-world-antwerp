@@ -12,14 +12,15 @@ const sedan = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
 const setup = (spec: VehicleSpec, DT: number) => testDrive(spec, DT, 0, 0x1c1d20);
 
 describe.each([60, 30])('motorbike feel at %i Hz', (hz) => {
-  it('beats any car off the line (0–100 km/h under 3.5 s) and tops out past 190 km/h', () => {
+  it('beats any car off the line (0–100 km/h under 3.5 s) and tops out past 140 km/h', () => {
     const { car: bike, run: ride } = setup(MOTORBIKE_SPEC, 1 / hz);
     const { car, run: drive } = setup(sedan, 1 / hz);
     const to100 = ride({ throttle: 1 }, 10, () => bike.forwardSpeed >= 100 / 3.6);
     expect(to100).toBeLessThan(3.5);
     expect(to100).toBeLessThan(drive({ throttle: 1 }, 10, () => car.forwardSpeed >= 100 / 3.6));
     ride({ throttle: 1 }, 15);
-    expect(bike.forwardSpeed * 3.6).toBeGreaterThan(190);
+    expect(bike.forwardSpeed * 3.6).toBeGreaterThan(140);
+    expect(bike.forwardSpeed * 3.6).toBeLessThanOrEqual(145);
   });
 
   it('leans hard into a fast right turn', () => {

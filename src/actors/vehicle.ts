@@ -48,8 +48,8 @@ const WATER_DRAG = 2.5;
 export const BIKE_SPEC: VehicleSpec = { name: 'bike', model: -1, length: 1.75, width: 0.6, maxSpeed: 33 / 3.6, accel: 3.3, mass: 100 };
 /** Up to 38 km/h: well over the Belgian 25. */
 export const SCOOTER_SPEC: VehicleSpec = { name: 'scooter', model: -1, length: 1.15, width: 0.55, maxSpeed: 38 / 3.6, accel: 3.8, mass: 105 };
-/** MT-07 class: maxSpeed 55 m/s ≈ 200 km/h. */
-export const MOTORBIKE_SPEC: VehicleSpec = { name: 'motorbike', model: -1, length: 2.1, width: 0.8, maxSpeed: 55, accel: 12.5, mass: 270 };
+/** MT-07 class, capped at 40 m/s ≈ 145 km/h: the real 200 is too much for city streets. */
+export const MOTORBIKE_SPEC: VehicleSpec = { name: 'motorbike', model: -1, length: 2.1, width: 0.8, maxSpeed: 40, accel: 10, mass: 270 };
 /** A class B "brommer" (45 km/h), tuned to 55. */
 export const MOPED_SPEC: VehicleSpec = { name: 'moped', model: -1, length: 1.8, width: 0.7, maxSpeed: 55 / 3.6, accel: 4.2, mass: 190 };
 

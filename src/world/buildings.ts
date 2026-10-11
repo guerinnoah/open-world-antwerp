@@ -89,6 +89,18 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
       continue;
     }
     const { flat, tris } = triangulate(b.rings);
+    if (y0 > 0) { // underside of a canopy or a raised floor, seen from the street
+      const v = pos.length / 3;
+      for (let i = 0; i < flat.length; i += 2) {
+        pos.push(flat[i], y0, flat[i + 1]);
+        nor.push(0, -1, 0);
+        col.push(wall.tint.r * 0.8, wall.tint.g * 0.8, wall.tint.b * 0.8);
+        uvm.push(flat[i], flat[i + 1]);
+        surf.push(wall.layer, 0);
+        fac.push(0, 0, 0, 0);
+      }
+      for (let i = 0; i < tris.length; i += 3) idx.push(v + tris[i], v + tris[i + 2], v + tris[i + 1]);
+    }
     const v = pos.length / 3;
     const roofShade = 1.1 + rand(b, 3) * 0.4;
     for (let i = 0; i < flat.length; i += 2) {

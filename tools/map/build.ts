@@ -9,11 +9,12 @@ import { markShopKinds, offRoad, placeSigns, placeStreetPlates, veloStations } f
 import { renderMinimap } from './minimap.ts';
 import { loadLogos } from './logos.ts';
 import { extractLandmarks } from './landmarks.ts';
+import { posts, solid, splitOutlines, type Mass } from './massing.ts';
 import { streetDetail } from './street.ts';
 import { WaterMap } from '../../src/world/water.ts';
 import {
-  besideRoad, centroid, flat, interiorPoint, outlineGrid, pointInRing, polygonsOf, project, round, roadGrid, toPts,
-  type OsmElement, type Outline, type Pt,
+  besideRoad, centroid, flat, interiorPoint, outlineGrid, pointInRing, polygonsOf, project, round, roadGrid, signedArea, toPts,
+  type OsmElement, type Pt,
 } from './geo.ts';
 
 const { elements } = JSON.parse(await readFile(`${RAW_DIR}/osm.json`, 'utf8')) as { elements: OsmElement[] };
@@ -67,50 +68,94 @@ function colourOf(v: string | undefined): number | undefined {
   return NAMED_COLOURS[v.toLowerCase()];
 }
 
-interface Candidate extends Outline {
-  isPart: boolean;
+/** Guessed heights for small things: a bus shelter or a kiosk is not a town house. */
+function smallHeight(t: Record<string, string>, area: number, h: number): number {
+  if (t.amenity === 'shelter') return 2.8;
+  return area < 12 ? Math.min(h, 3) : area < 30 ? Math.min(h, 4.5) : h;
+}
+
+interface Candidate extends Mass {
+  /** Height before any GRB measurement: OSM's own, or a guess. */
+  osmH: number;
+  source: HeightSource | 'grb';
 }
 const candidates: Candidate[] = [];
 const heightSources = { tag: 0, levels: 0, grb: 0, default: 0 };
-const grbHeight = await loadGrbHeights();
+const grbMatch = await loadGrbHeights();
+let slivers = 0;
 
 for (const e of elements) {
   const t = e.tags;
   if (!t || !(t.building || t['building:part'])) continue;
   if (e.type === 'relation' && t.type !== 'multipolygon') continue;
   if (t.building === 'no' || t['building:part'] === 'no' || t.location === 'underground') continue;
+  const isPart = !!t['building:part'];
   const { h, mh, source } = heightOf(t, e.id);
   const r = hash(e.id * 7 + 3);
   const c = colourOf(t['building:colour']) ?? WALLS[Math.floor(hash(e.id) * WALLS.length)];
   const roof = colourOf(t['roof:colour']) ?? ROOFS[Math.floor(r * ROOFS.length)];
   for (const rings of polygonsOf(e)) {
     if (!inBounds(centroid(rings[0]))) continue;
+    if (!solid(rings)) {
+      slivers++;
+      continue;
+    }
     // Height: explicit OSM height > measured 3D GRB (not for parts or raised sections) > OSM levels > default.
-    const measured = source !== 'tag' && !t['building:part'] && mh === 0 ? grbHeight?.(rings[0]) : undefined;
-    heightSources[measured ? 'grb' : source]++;
-    const b: Building = { h: round(measured ?? h), c, r: roof, rings: rings.map(flat) };
-    if (mh > 0) b.mh = round(mh);
+    const grb = source !== 'tag' && !isPart && mh === 0 ? grbMatch?.(rings[0]) : undefined;
+    heightSources[grb ? 'grb' : source]++;
+    let top = grb?.height ?? h;
+    let base = mh;
+    // A canopy (OSM roof, GRB afdak) is a slab on posts; a GRB upper floor with open ground below spans a passage.
+    const canopy = t.building === 'roof' || (t['building:part'] === 'roof' && mh === 0) || grb?.type === 'afdak';
+    const area = Math.abs(signedArea(rings[0]));
+    if (canopy) {
+      // LiDAR over an awning against a tall facade reads the facade: only a big canopy is measured, not a high one.
+      if (source === 'default' && (!grb || (grb.height > 8 && area < 1000))) top = area < 30 ? 3.5 : 4.5 + hash(e.id) * 2.5;
+      top = Math.max(top, 2.8);
+      if (base === 0) base = top - 0.4;
+    } else if (grb?.type === 'verdieping' && grb.ground < 0.35) {
+      base = Math.min(4, top * 0.4);
+    } else if (source === 'default' && !grb) {
+      top = smallHeight(t, area, top);
+    }
+    const b: Building = { h: round(top), c, r: roof, rings: rings.map(flat) };
+    if (base > 0) b.mh = round(base);
     // nw: no windows (churches, towers, raised parts); nc: no collider, so raised sections and canopies don't block the street.
-    if (PLAIN_WALLS.has(t.building) || PLAIN_PARTS.has(t['building:part']) || mh > 0) b.nw = 1;
-    if (mh > 0 || t.building === 'roof' || t['building:part'] === 'roof') b.nc = 1;
-    candidates.push({ b, outer: rings[0], isPart: !!t['building:part'] });
+    if (PLAIN_WALLS.has(t.building) || PLAIN_PARTS.has(t['building:part']) || base > 0) b.nw = 1;
+    if (base > 0) b.nc = 1;
+    candidates.push({ b, outer: rings[0], rings, isPart, canopy, osmH: h, source: grb ? 'grb' : source });
   }
 }
 
-const near = outlineGrid(candidates.filter((c) => !c.isPart));
-const inBuilding = (p: Pt) => near(p).some((o) => pointInRing(p, o.outer));
-// Simple 3D Buildings: an outline that contains building:parts is drawn via its parts only.
-const replaced = new Set<Candidate>();
-for (const part of candidates) {
-  if (!part.isPart) continue;
-  const c = interiorPoint(part.outer);
-  for (const outline of near(c)) {
-    if (pointInRing(c, outline.outer)) replaced.add(outline);
-  }
+const parts = candidates.filter((c) => c.isPart);
+const ownHeight = (c: Candidate) => c.source === 'tag' || c.source === 'levels';
+/**
+ * Height for what of an outline its parts leave uncovered. GRB's 99th percentile over a footprint with a tower on it is
+ * the tower, so when it matches the tallest part the rest gets OSM's guess, kept a few metres below that.
+ */
+function remainderHeight(o: Candidate, on: Mass[]): number {
+  const tallest = Math.max(0, ...(on as Candidate[]).filter(ownHeight).map((p) => p.b.h));
+  if (o.source !== 'grb' || !tallest || o.b.h < tallest - 1.5) return o.b.h;
+  return round(Math.max(3, Math.min(o.osmH, tallest - 3)));
 }
-const buildings = candidates.filter((c) => !replaced.has(c)).map((c) => c.b);
-const outlines = candidates.filter((c) => !c.isPart && !replaced.has(c));
-const landmarks = extractLandmarks(elements, candidates);
+// Parts with no height of their own take their outline's.
+for (const p of parts) {
+  if (ownHeight(p)) continue;
+  const c = interiorPoint(p.outer);
+  const host = candidates.find((o) => !o.isPart && o.source !== 'default' && pointInRing(c, o.outer));
+  if (!host) continue;
+  const h = remainderHeight(host, parts.filter((q) => pointInRing(interiorPoint(q.outer), host.outer)));
+  if (h > (p.b.mh ?? 0) + 2) p.b.h = h;
+}
+const landmarks = extractLandmarks(elements, candidates); // before splitting, so the pieces of a landmark stay hidden too
+const split = splitOutlines(candidates.filter((c) => !c.isPart), parts, (o, on) => remainderHeight(o as Candidate, on));
+const masses: Mass[] = [...candidates.filter((c) => !split.replaced.has(c)), ...split.masses];
+const buildings = masses.map((m) => m.b);
+const standing = masses.filter((m) => !m.b.mh && !m.b.nc);
+const outlines = masses.filter((m) => !m.isPart);
+const occupied = outlineGrid(candidates.filter((c) => !c.isPart));
+const inBuilding = (p: Pt) => occupied(p).some((o) => pointInRing(p, o.outer));
+const near = outlineGrid(masses.filter((m) => !m.b.mh));
 
 const ROAD_TYPES: Record<string, [RoadKind, number]> = {
   motorway: ['major', 14], trunk: ['major', 13], primary: ['major', 12], secondary: ['major', 11],
@@ -198,8 +243,11 @@ const plazas = areas.filter((a) => a.k === 'plaza').map((a) => ringPts(a.rings[0
 const onStreet = (p: Pt) => besideRoad(p, roadsNear(p), 8) || plazas.some((ring) => pointInRing(p, ring));
 markFacades(outlines, elements, near, (p) => waterMap.contains(...p), onStreet);
 
-const buildingIndex = new Map(buildings.map((b, i) => [b, i]));
 const clearOfRoads = offRoad(roads);
+const raised = masses.filter((m) => (m.b.mh ?? 0) > 0);
+const postsUnder = posts(raised, standing, (p) => inBounds(p) && clearOfRoads(p) && !waterMap.contains(...p));
+buildings.push(...postsUnder);
+const buildingIndex = new Map(buildings.map((b, i) => [b, i]));
 const logos = await loadLogos();
 const shopfronts = placeSigns(elements, buildingIndex, near, (p) => clearOfRoads(p) && open(p), logos.of);
 markShopKinds(shopfronts.signs, buildings);
@@ -253,7 +301,8 @@ await writeFile(`${OUT_DIR}/graph.json`, graphJson);
 
 const count = (k: AreaKind) => areas.filter((a) => a.k === k).length;
 console.log(
-  `buildings ${buildings.length} (heights: ${JSON.stringify(heightSources)}; ${replaced.size} outlines replaced by parts)\n` +
+  `buildings ${buildings.length} (heights: ${JSON.stringify(heightSources)}; ${split.replaced.size} outlines split around their parts into ${split.masses.length} pieces; ` +
+    `${masses.filter((m) => m.canopy).length} canopies, ${raised.length} raised, ${postsUnder.length} posts; ${slivers} slivers dropped)\n` +
     `roads ${roads.length}, trams ${trams.length}, water ${count('water')}, green ${count('green')}, plazas ${count('plaza')}\n` +
     `landmarks ${landmarks.map((l) => `${l.id}(${l.parts.length})`).join(' ')}, trees ${trees.length / 2}, ` +
     `street-facing ${buildings.filter((b) => b.sf).length}, shops ${buildings.filter((b) => b.sh && b.sh !== 2).length}, ` +
