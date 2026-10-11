@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>GTA Antwerp</title>
+    <meta name="description" content="Steal a car, drive a tram, ride a Velo bike: a real 1:1 slice of Antwerp, playable in your browser. No install, no sign-up." />
+    <meta name="theme-color" content="#1b1d22" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GTA Antwerp" />
+    <meta property="og:title" content="GTA Antwerp" />
+    <meta property="og:description" content="Steal a car, drive a tram, ride a Velo bike: a real 1:1 slice of Antwerp, playable in your browser. No install, no sign-up." />
+    <meta property="og:url" content="%SITE_URL%/" />
+    <meta property="og:image" content="%SITE_URL%/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Antwerp Centraal Station from above, with the GTA Antwerp title" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body class="on-title">
+    <canvas id="game"></canvas>
+    <div id="title">
+      <div class="card">
+        <h1>GTA <span>Antwerp</span></h1>
+        <p class="tagline">A real 1:1 slice of Antwerp, right in your browser. Steal a car, take the tram, ride a Velo bike, walk into any shop.</p>
+        <dl class="controls keys">
+          <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk, drive</dd>
+          <dt><kbd>E</kbd></dt><dd>Get in or out: any car, bike, scooter, tram or bus</dd>
+          <dt><kbd>Space</kbd></dt><dd>Handbrake</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Sprint</dd>
+          <dt><kbd>R</kbd></dt><dd>Punch on foot, next radio station in a car</dd>
+          <dt><kbd>H</kbd></dt><dd>Horn, or the bell</dd>
+          <dt>Mouse</dt><dd>Drag to look around</dd>
+        </dl>
+        <dl class="controls touch">
+          <dt>Joystick</dt><dd>Walk, drive (push all the way to sprint)</dd>
+          <dt>E</dt><dd>Get in or out: any car, bike, scooter, tram or bus</dd>
+          <dt>Swipe</dt><dd>Look around</dd>
+          <dt>Radio</dt><dd>Tap the station name to switch</dd>
+        </dl>
+        <div id="loading">Loading Antwerp…</div>
+        <button class="play" type="button" hidden>Play</button>
+      </div>
+    </div>
+    <div id="stats"></div>
+    <div id="credits">
+      © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors ·
+      Source: <a href="https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb" target="_blank" rel="noopener">Grootschalig Referentie Bestand Vlaanderen, Digitaal Vlaanderen</a> ·
+      People: <a href="/people/LICENSE.txt" target="_blank" rel="noopener">Microsoft Rocketbox</a> ·
+      Radio: live streams from VRT and DPG Media ·
+      <a href="/map/logos.html" target="_blank" rel="noopener">Not affiliated with any brand shown</a>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
