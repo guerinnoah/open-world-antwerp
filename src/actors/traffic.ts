@@ -272,7 +272,8 @@ export class Traffic {
 
     const error = target - speed;
     const throttle = error > 0.3 ? Math.min(1, 0.25 + error / 3) : error < -0.3 ? Math.max(-1, error / 4 - 0.2) : 0.12;
-    v.controls = { steer, throttle: target < 0.3 && speed < 0.3 ? 0 : throttle, handbrake: target < 0.3 && speed < 0.5 };
+    // boost: traffic isn't capped to the player's regular-speed limit — it already self-limits to each road's speed.
+    v.controls = { steer, throttle: target < 0.3 && speed < 0.3 ? 0 : throttle, handbrake: target < 0.3 && speed < 0.5, boost: true };
   }
 
   private blocks(v: Vehicle, other: Driver): boolean {

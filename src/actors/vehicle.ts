@@ -18,6 +18,7 @@ export interface VehicleSpec {
   siren?: number; // emergency vehicle: chance it's on a call when it joins traffic
   maxSpeed: number;
   accel: number; // m/s² from standstill, fading quadratically to 0 at maxSpeed (m/s)
+  sprintSpeed?: number; // m/s when boosting (Shift); defaults to maxSpeed. The pedal bike sprints above its cruise speed.
   mass?: number;
   pivot?: number; // m behind the middle: long vehicles turn about their rear axle
   trailer?: { length: number; axle: number; mass: number };
@@ -52,22 +53,23 @@ const HANDLING: Partial<Record<VehicleSpec['name'], Handling>> = {
 const TRAILER_GRIP = 12;
 const AFLOAT: Handling = { brake: 2.5, reverseSpeed: 3, reverseAccel: 1.5, coast: 1.5, grip: 2.5, handbrakeGrip: 1.5, yawLow: 1.1, yawHigh: 0.7 };
 const AFLOAT_SPEED = 0.3;
+const NORMAL_TOP = 55 / 3.6; // m/s: regular driving tops out here; holding boost (Shift) unlocks the vehicle's real top speed
 const WATER_DRAG = 2.5;
 
-export const BIKE_SPEC: VehicleSpec = { name: 'bike', model: -1, length: 1.75, width: 0.6, maxSpeed: 33 / 3.6, accel: 3.3, mass: 100 };
+export const BIKE_SPEC: VehicleSpec = { name: 'bike', model: -1, length: 1.75, width: 0.6, maxSpeed: 24 / 3.6, sprintSpeed: 32 / 3.6, accel: 2.8, mass: 100 };
 /** Up to 38 km/h: well over the Belgian 25. */
-export const SCOOTER_SPEC: VehicleSpec = { name: 'scooter', model: -1, length: 1.15, width: 0.55, maxSpeed: 38 / 3.6, accel: 3.8, mass: 105 };
+export const SCOOTER_SPEC: VehicleSpec = { name: 'scooter', model: -1, length: 1.15, width: 0.55, maxSpeed: 25 / 3.6, accel: 3, mass: 105 };
 /** MT-07 class, capped at 44 m/s ≈ 160 km/h: the real 200 is too much for city streets. */
-export const MOTORBIKE_SPEC: VehicleSpec = { name: 'motorbike', model: -1, length: 2.1, width: 0.8, maxSpeed: 44, accel: 11, mass: 270 };
+export const MOTORBIKE_SPEC: VehicleSpec = { name: 'motorbike', model: -1, length: 2.1, width: 0.8, maxSpeed: 180 / 3.6, accel: 10, mass: 270 };
 /** A class B "brommer" (45 km/h), tuned to 70. */
-export const MOPED_SPEC: VehicleSpec = { name: 'moped', model: -1, length: 1.8, width: 0.7, maxSpeed: 70 / 3.6, accel: 5, mass: 190 };
+export const MOPED_SPEC: VehicleSpec = { name: 'moped', model: -1, length: 1.8, width: 0.7, maxSpeed: 45 / 3.6, accel: 3, mass: 190 };
 
 export const BUS_SPEC: VehicleSpec = {
-  name: 'bus', model: -1, length: SECTION_LENGTH.solo, width: BUS_WIDTH, maxSpeed: 26, accel: 2.8, mass: 12000,
+  name: 'bus', model: -1, length: SECTION_LENGTH.solo, width: BUS_WIDTH, maxSpeed: 80 / 3.6, accel: 1.9, mass: 12000,
   pivot: SECTION_LENGTH.solo / 2 - AXLES.solo[1],
 };
 export const ARTIC_SPEC: VehicleSpec = {
-  name: 'artic', model: -1, length: SECTION_LENGTH.lead, width: BUS_WIDTH, maxSpeed: 26, accel: 2.5, mass: 11000,
+  name: 'artic', model: -1, length: SECTION_LENGTH.lead, width: BUS_WIDTH, maxSpeed: 78 / 3.6, accel: 1.7, mass: 11000,
   pivot: SECTION_LENGTH.lead / 2 - AXLES.lead[1], trailer: { length: SECTION_LENGTH.trailer, axle: AXLES.trailer[1], mass: 6000 },
 };
 
@@ -119,7 +121,7 @@ function savePose(pose: Posed) {
 export class Vehicle {
   readonly body: RAPIER.RigidBody;
   readonly trailer: (Posed & { body: RAPIER.RigidBody }) | null = null;
-  controls = { steer: 0, throttle: 0, handbrake: true };
+  controls: { steer: number; throttle: number; handbrake: boolean; boost?: boolean } = { steer: 0, throttle: 0, handbrake: true };
   driven = false;
   siren = false; // lights flash whenever on; the siren only sounds while someone drives it
   remote = false; // another player's: a kinematic body the network moves, so step() leaves it alone
@@ -183,6 +185,11 @@ export class Vehicle {
     if (this.trailer) readPose(this.trailer.body, this.trailer);
   }
 
+  /** m/s along the heading as last animated: for another player's car, what their game reports. */
+  get animatedSpeed(): number {
+    return this.lastForwardSpeed;
+  }
+
   get forwardSpeed(): number {
     const v = this.body.linvel();
     const a = this.body.rotation();
@@ -206,9 +213,11 @@ export class Vehicle {
     const vf = v.x * fx + v.y * fz;
     const vs = v.x * sx + v.y * sz;
     const mass = body.mass();
-    const { steer, throttle, handbrake } = this.driven ? this.controls : { steer: 0, throttle: 0, handbrake: true };
+    const { steer, throttle, handbrake, boost } = this.driven ? this.controls : { steer: 0, throttle: 0, handbrake: true, boost: false };
     const h = this.afloat ? AFLOAT : HANDLING[this.spec.name] ?? CAR;
-    const top = this.afloat ? this.spec.maxSpeed * AFLOAT_SPEED : this.spec.maxSpeed;
+    const cruise = this.afloat ? this.spec.maxSpeed * AFLOAT_SPEED : this.spec.maxSpeed;
+    const boosted = this.afloat ? cruise : this.spec.sprintSpeed ?? this.spec.maxSpeed;
+    const top = boost ? boosted : Math.min(cruise, NORMAL_TOP); // Shift lifts the regular cap to the real top (bike: sprint)
     const accel = this.afloat ? this.spec.accel / 2 : this.spec.accel;
 
     let dv = 0;
@@ -274,20 +283,20 @@ const WHITE = 0xf4f5f3;
 
 /** Roughly the Belgian street mix: [spec, relative frequency in traffic, parked (default the same)]. */
 export const VEHICLE_TYPES: [VehicleSpec, number, number?][] = [
-  [{ name: 'city', model: 0, length: 3.95, width: 1.75, maxSpeed: 28, accel: 8.5 }, 4],
-  [{ name: 'hatch', model: 1, length: 4.25, width: 1.79, maxSpeed: 31, accel: 9 }, 6],
-  [{ name: 'estate', model: 2, length: 4.75, width: 1.83, maxSpeed: 32, accel: 9 }, 4],
-  [{ name: 'sedan', model: 3, length: 4.75, width: 1.83, maxSpeed: 33, accel: 9.5 }, 3],
-  [{ name: 'suv', model: 4, length: 4.5, width: 1.86, maxSpeed: 30, accel: 8.5 }, 5],
-  [{ name: 'van', model: 5, length: 5.3, width: 2.05, maxSpeed: 25, accel: 6.5 }, 2],
+  [{ name: 'city', model: 0, length: 3.95, width: 1.75, maxSpeed: 150 / 3.6, accel: 3.3 }, 4],
+  [{ name: 'hatch', model: 1, length: 4.25, width: 1.79, maxSpeed: 170 / 3.6, accel: 3.5 }, 6],
+  [{ name: 'estate', model: 2, length: 4.75, width: 1.83, maxSpeed: 178 / 3.6, accel: 3.5 }, 4],
+  [{ name: 'sedan', model: 3, length: 4.75, width: 1.83, maxSpeed: 195 / 3.6, accel: 4 }, 3],
+  [{ name: 'suv', model: 4, length: 4.5, width: 1.86, maxSpeed: 172 / 3.6, accel: 3.3 }, 5],
+  [{ name: 'van', model: 5, length: 5.3, width: 2.05, maxSpeed: 140 / 3.6, accel: 2.6 }, 2],
   [MOTORBIKE_SPEC, 1.4],
   [MOPED_SPEC, 1.6],
-  [{ name: 'police', model: 6, label: 'police car', length: 4.75, width: 1.83, maxSpeed: 38, accel: 10.5, mass: 1600, paints: [WHITE], siren: 0.45 }, 0.9, 0.25],
-  [{ name: 'policevan', model: 7, label: 'police van', length: 5.3, width: 2.05, height: 2.3, maxSpeed: 30, accel: 7.5, mass: 2600, paints: [WHITE], siren: 0.3 }, 0.35, 0.1],
-  [{ name: 'taxi', model: 8, label: 'taxi', length: 4.75, width: 1.83, maxSpeed: 33, accel: 9.5, paints: [0x16171a, 0x1c1d20, 0x25272b, 0x16171a, 0x8e9196, WHITE] }, 1.6, 0.6],
-  [{ name: 'ambulance', model: 9, label: 'ambulance', length: 6.2, width: 2.15, height: 2.75, maxSpeed: 31, accel: 6.5, mass: 3800, paints: [0xf0cf0e], siren: 0.65 }, 0.3, 0],
-  [{ name: 'truck', model: 10, label: 'truck', length: 7.6, width: 2.45, height: 3.5, maxSpeed: 24, accel: 4.5, mass: 7500, pivot: 2.2, paints: [WHITE, WHITE, WHITE, 0xa3201c, 0x1f3559, 0x2f4d3a, 0xbfc2c5] }, 0.8, 0.35],
-  [{ name: 'firetruck', model: 11, label: 'fire engine', length: 8.2, width: 2.5, height: 3.3, maxSpeed: 27, accel: 5, mass: 13000, pivot: 2.35, paints: [0xb5121b], siren: 0.75 }, 0.15, 0],
+  [{ name: 'police', model: 6, label: 'police car', length: 4.75, width: 1.83, maxSpeed: 210 / 3.6, accel: 4.5, mass: 1600, paints: [WHITE], siren: 0.45 }, 0.9, 0.25],
+  [{ name: 'policevan', model: 7, label: 'police van', length: 5.3, width: 2.05, height: 2.3, maxSpeed: 160 / 3.6, accel: 3.1, mass: 2600, paints: [WHITE], siren: 0.3 }, 0.35, 0.1],
+  [{ name: 'taxi', model: 8, label: 'taxi', length: 4.75, width: 1.83, maxSpeed: 185 / 3.6, accel: 3.9, paints: [0x16171a, 0x1c1d20, 0x25272b, 0x16171a, 0x8e9196, WHITE] }, 1.6, 0.6],
+  [{ name: 'ambulance', model: 9, label: 'ambulance', length: 6.2, width: 2.15, height: 2.75, maxSpeed: 150 / 3.6, accel: 2.8, mass: 3800, paints: [0xf0cf0e], siren: 0.65 }, 0.3, 0],
+  [{ name: 'truck', model: 10, label: 'truck', length: 7.6, width: 2.45, height: 3.5, maxSpeed: 100 / 3.6, accel: 2.4, mass: 7500, pivot: 2.2, paints: [WHITE, WHITE, WHITE, 0xa3201c, 0x1f3559, 0x2f4d3a, 0xbfc2c5] }, 0.8, 0.35],
+  [{ name: 'firetruck', model: 11, label: 'fire engine', length: 8.2, width: 2.5, height: 3.3, maxSpeed: 110 / 3.6, accel: 2.8, mass: 13000, pivot: 2.35, paints: [0xb5121b], siren: 0.75 }, 0.15, 0],
 ];
 
 export const paintFor = (spec: VehicleSpec, rand = Math.random) => {

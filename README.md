@@ -24,13 +24,14 @@ The map and assets are committed under `public/`, so this is all you need. Open 
 | Move, drive | WASD or arrows | Joystick |
 | Get in or out | E | E |
 | Handbrake | Space | Handbrake |
-| Sprint | Shift | Push the joystick to the edge |
+| Sprint on foot, go faster in a vehicle | Shift | Push the joystick to the edge |
 | Punch, or next radio station in a car | R | Punch, or tap the station |
 | Horn or bell | H | |
 | Siren (emergency vehicles) | Q | Siren |
 | Map and waypoints | P | Tap the minimap |
 | Chat | T | 💬 |
 | Look around | Drag the mouse | Swipe |
+| First / third person | V | 👁 |
 
 Gamepads work too.
 
@@ -47,7 +48,6 @@ Gamepads work too.
 - [Map pipeline](docs/map-pipeline.md): rebuilding the city from open data
 - [Multiplayer](docs/multiplayer.md): the relay and deployment
 - [Development](docs/development.md): tests, headless tools, URL parameters
-- [PLAN.md](PLAN.md): design decisions and milestones
 
 ## Credits
 

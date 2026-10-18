@@ -4,7 +4,7 @@ import { Buses, type Bus } from '../actors/buses';
 import type { Crowd } from '../actors/crowd';
 import { Cyclists, type Rider } from '../actors/cyclists';
 import { Pedestrians, type Ped } from '../actors/pedestrians';
-import { PLAYER_LOOK, Player } from '../actors/player';
+import { MAX_HEALTH, PLAYER_LOOK, Player, TRAM_EXPOSURE, crashHurt, exposure } from '../actors/player';
 import type { Motorbikes } from '../actors/motorbikes';
 import { BRANDS, brandOf, type Parked, type Scooters } from '../actors/scooters';
 import { Traffic } from '../actors/traffic';
@@ -38,15 +38,18 @@ export interface Start {
   intro: boolean;
 }
 
-export const CENTRAAL_START: Start = { x: 1491, z: 372, yaw: Math.PI / 2, intro: true };
+export const CENTRAAL_START: Start = { x: 1491, z: 372, yaw: Math.PI, intro: true };
 export const GROTE_MARKT_START: Start = { x: 12, z: 2, yaw: -3.09, intro: false };
 const ENTER_RANGE = 3.2;
 const STEAL_RANGE = 2.6; // m, centre to centre: close enough to pull a cyclist off as they pass
-const IDLE: InputState = { steer: 0, throttle: 0, handbrake: false, sprint: false, lookX: 0, lookY: 0, action: false, horn: false, punch: false, siren: false };
+const IDLE: InputState = { steer: 0, throttle: 0, handbrake: false, sprint: false, lookX: 0, lookY: 0, action: false, horn: false, punch: false, siren: false, view: false };
 const TRAM_EXIT_SPEED = 3; // m/s: fastest a tram can go for the driver to step out
 const PUNCH_SEEK = 2.2; // m, centre to centre: the player turns to face someone this close
 const PUNCH_REACH = 1.4; // m: how far the fist reaches
 const FLOAT_DEPTH = 0.5; // m: how deep whatever you're driving floats in water
+const WASTED_TIME = 4.5; // s
+const CRASH_SETTLE = 0.1; // s without a hit before the next one is a new crash
+const DEAD: InputState = { ...IDLE, handbrake: true };
 
 export interface Population {
   traffic: number;
@@ -92,8 +95,12 @@ export class Game {
   private motorbikes: Motorbikes | null = null;
   private scooters: Scooters | null = null;
   private hornHeld = false;
+  private carTipShown = false;
   private rideStart = { x: 0, z: 0 };
   private openAir = false;
+  private hospital: [number, number, number];
+  private wasted = 0; // s left
+  private crash = { dv: 0, quiet: Infinity }; // m/s lost so far, s since the last hit
   /** Going in: the screen goes black for a frame first, so building the room doesn't show as a freeze. */
   private entering: { door: Entrance; from: { x: number; z: number }; frames: number } | null = null;
 
@@ -120,8 +127,11 @@ export class Game {
     this.player = new Player(physics.world, start.x, start.z);
     physics.owners.set(this.player.body.collider(0).handle, { kind: 'player', entity: this.player });
     this.player.heading = start.yaw;
+    this.hospital = graph.hospital;
     this.rig = new CameraRig(camera, physics);
     this.rig.yaw = start.yaw;
+    this.hud.viewToggle(() => this.toggleView());
+    this.hud.setView(this.rig.firstPerson);
 
     this.parkCars(population.parkedCars, trackTest(graph.trams));
     this.traffic = new Traffic(physics, this.drive, this, population.traffic);
@@ -185,8 +195,8 @@ export class Game {
   private welcome() {
     this.hud.toast(
       this.input.touch
-        ? 'Welcome to Antwerp! Joystick to walk (all the way out to sprint), E to steal a car, Punch to throw a punch.'
-        : 'Welcome to Antwerp! WASD to walk, Shift to sprint, E to steal a car, R or click to punch, Space = handbrake.',
+        ? 'Welcome to Antwerp! Joystick to walk, E to steal a car.'
+        : 'Welcome to Antwerp! WASD to walk, E to steal a car.',
       5000,
     );
   }
@@ -301,9 +311,15 @@ export class Game {
       input.siren = false;
       if (this.driving && isEmergency(this.driving.spec)) this.driving.siren = !this.driving.siren;
     }
-    if (this.driving) this.driving.controls = { steer: input.steer, throttle: input.throttle, handbrake: input.handbrake };
-    else if (this.tram) this.tram.controls = { throttle: input.throttle, brake: input.handbrake };
-    else this.player.step(input.throttle, input.steer, input.sprint, this.rig.yaw, dt);
+    if (this.driving) {
+      // The pedal bike sprints on the rider's stamina; motor vehicles boost freely (and the rider's legs recover).
+      const pedalBike = this.driving.spec.name === 'bike';
+      const pedalling = this.player.exert(pedalBike && input.sprint && input.throttle > 0.1, dt);
+      this.driving.controls = { steer: input.steer, throttle: input.throttle, handbrake: input.handbrake, boost: pedalBike ? pedalling : input.sprint };
+    } else if (this.tram) {
+      this.player.exert(false, dt);
+      this.tram.controls = { throttle: input.throttle, brake: input.handbrake };
+    } else this.player.step(input.throttle, input.steer, input.sprint, this.rig.yaw, dt);
     if (this.player.landed) this.landPunch();
 
     const focus = this.focus;
@@ -315,34 +331,44 @@ export class Game {
     for (const v of this.vehicles) v.step(dt);
     // A velocity change beyond what brakes can do means the player's car hit something.
     const car = this.driving, before = car && car.body.linvel();
+    const walking = !car && !this.tram ? this.player.body.linvel() : null;
     this.physics.step();
     this.syncVehicles();
     if (this.interiors) {
       this.interiors.step(dt);
       if (this.interiors.openAir !== this.openAir) this.sound.indoors(!(this.openAir = this.interiors.openAir));
     }
+    this.crash.quiet += dt;
     if (car && before) {
       const after = car.body.linvel();
       const impact = Math.hypot(after.x - before.x, after.y - before.y);
       if (impact > 2.5) {
         if (twoWheeled(car.spec)) this.sound.bump(car.x, car.z);
         else this.sound.crash(impact);
-        if (isMotorbike(car.spec) && impact > 9) this.throwOff(car, before);
+        const was = this.crash.quiet > CRASH_SETTLE ? 0 : this.crash.dv;
+        let dv = was + this.impactFelt(car, before, impact);
+        if (isMotorbike(car.spec) && impact > 9 && this.throwOff(car, before)) dv = Math.max(dv, Math.hypot(before.x, before.y));
+        const k = exposure(car);
+        this.hurt(crashHurt(dv, k) - crashHurt(was, k));
+        this.crash = { dv, quiet: 0 };
       }
     }
     if (this.tram) this.rideAlong(this.tram);
     this.knockThingsOver();
-    this.handleContacts();
+    this.handleContacts(walking);
     for (const [x, z] of this.trams.bells.splice(0)) this.sound.bell(x, z);
     for (const honks of [this.traffic.honks, this.buses.honks, this.multiplayer?.honks ?? []]) {
       for (const [x, z] of honks.splice(0)) this.sound.honk(x, z);
     }
     for (const [x, z] of [...(this.multiplayer?.bells.splice(0) ?? []), ...this.cyclists.bells.splice(0)]) this.sound.bikeBellAt(x, z);
     this.checkWater(dt);
+    if (this.wasted > 0) {
+      if ((this.wasted -= dt) <= 0) this.respawn();
+    } else this.player.recover(dt);
     this.steps++;
   }
 
-  private handleContacts() {
+  private handleContacts(walking: { x: number; y: number } | null) {
     const driven = this.tram;
     for (const [a, b] of this.physics.contacts) {
       for (const [who, what] of [[a, b], [b, a]] as [Owner, Owner][]) {
@@ -360,6 +386,11 @@ export class Game {
           const angle = it.sections[0].rotation();
           [vx, vz] = [Math.cos(angle) * it.speed, Math.sin(angle) * it.speed];
           from = it.sections[0].translation();
+        } else if (what.kind === 'vehicle' && (what.entity as Vehicle).remote) {
+          // Another player's car: its body's velocity is the network catching up, not how fast they drive.
+          const it = what.entity as Vehicle;
+          [vx, vz] = [Math.cos(it.angle) * it.animatedSpeed, Math.sin(it.angle) * it.animatedSpeed];
+          from = it.body.translation();
         } else {
           const body = (what.kind === 'cyclist' ? (what.entity as Rider) : (what.entity as Vehicle)).body;
           const v = body.linvel();
@@ -378,13 +409,61 @@ export class Game {
           if (ped.state !== 'down') this.sound.bump(ped.body.translation().x, ped.body.translation().y);
           this.peds.knockDown(ped, vx, vz, speed);
         }
-        if (who.kind === 'player' && speed > 4 && !this.driving && this.player.down <= 0) {
+        if (who.kind === 'player' && walking && this.player.down <= 0) {
+          // Closing speed, so a car rolling away or a tram brushing past doesn't floor you.
+          const dx = this.player.x - from.x, dz = this.player.z - from.y, d = Math.hypot(dx, dz) || 1;
+          const closing = ((vx - walking.x) * dx + (vz - walking.y) * dz) / d;
+          if (closing <= 4) continue;
           this.player.down = 1.6;
           this.player.body.setLinvel({ x: vx * 0.5, y: vz * 0.5 }, true);
           this.sound.bump(this.player.x, this.player.z);
+          const heavy = what.kind === 'tram' || what.kind === 'bus' || (what.kind === 'vehicle' && (isBus((what.entity as Vehicle).spec) || isTruck((what.entity as Vehicle).spec)));
+          this.hurt(closing * (heavy ? 7 : bike ? 2 : 4));
         }
       }
     }
+  }
+
+  private hurt(amount: number) {
+    if (amount <= 0 || this.wasted > 0) return;
+    const felt = amount >= 1;
+    if (felt) this.hud.hurt(amount / MAX_HEALTH);
+    if (this.player.hurt(amount, felt)) this.die();
+  }
+
+  /** A remote car is kinematic and won't give way: count the hit as two equal cars meeting. */
+  private impactFelt(car: Vehicle, before: { x: number; y: number }, impact: number): number {
+    const other = this.vehicles.find((v) => v.remote && Math.hypot(v.x - car.x, v.z - car.z) < (v.spec.length + car.spec.length) / 2 + 1);
+    return other ? Math.min(impact, (Math.hypot(before.x, before.y) + Math.abs(other.animatedSpeed)) / 2) : impact;
+  }
+
+  private die() {
+    this.wasted = WASTED_TIME;
+    this.state = { ...DEAD };
+    this.hud.wasted(WASTED_TIME);
+    this.worldMap.toggle(false);
+    // Dying mid-doorway: cancel, else the next frame carries the body inside.
+    if (this.entering) {
+      this.entering = null;
+      this.hud.fade();
+    }
+    if (!this.driving && !this.tram) this.player.down = WASTED_TIME + 1;
+  }
+
+  private respawn() {
+    this.dismount();
+    const [x, z, heading] = this.hospital;
+    this.player.place(x, z, heading);
+    this.player.revive();
+    this.traffic.update(0, x, z, true);
+    this.peds.update(0, x, z, true);
+    this.cyclists.update(0, x, z, true);
+    this.state = { ...IDLE };
+    this.rig.yaw = heading;
+    this.rig.snap();
+    this.hud.wasted(0);
+    this.hud.fade();
+    this.hud.toast(pick(['Patched up at ZNA Sint-Elisabeth.', 'Discharged. Look both ways this time.', 'The nurses say: mind the trams.']));
   }
 
   private throwPunch() {
@@ -474,6 +553,10 @@ export class Game {
 
   sampleInput() {
     const s = this.input.sample();
+    if (this.wasted > 0) {
+      this.state = { ...DEAD };
+      return;
+    }
     if (this.worldMap.open) {
       this.state = { ...IDLE };
       return;
@@ -481,6 +564,53 @@ export class Game {
     // Keep an action press until a fixed step consumes it (a frame can have zero steps on fast displays).
     this.state = { ...s, action: s.action || this.state.action, punch: s.punch || this.state.punch, siren: s.siren || this.state.siren };
     this.rig.look(s.lookX, s.lookY);
+    if (s.view) this.toggleView();
+  }
+
+  setFirstPerson(on: boolean) {
+    this.rig.setFirstPerson(on);
+    this.hud.setView(on);
+  }
+
+  /** Aim `cam` back over the vehicle for the first-person rear-view mirror; false when there's nothing to mirror. */
+  rearView(cam: THREE.PerspectiveCamera): boolean {
+    if (!this.rig.firstPerson) return false;
+    let x: number, z: number, heading: number, roof: number;
+    if (this.driving) {
+      const v = this.driving;
+      if (twoWheeled(v.spec) || isMotorbike(v.spec)) return false; // no mirror on bikes
+      x = v.x; z = v.z; heading = v.angle; roof = Math.max(1.4, v.spec.height ?? 1.5);
+    } else if (this.tram) {
+      const cab = this.trams.pose(this.tram, 0, 1);
+      x = cab.x; z = cab.z; heading = cab.angle; roof = 3;
+    } else return false;
+    // Above the roof looking back: high enough that the vehicle's own tail stays low in the mirror, road behind in view.
+    cam.position.set(x, roof + 1.1, z);
+    cam.lookAt(x - Math.cos(heading) * 30, roof - 0.5, z - Math.sin(heading) * 30);
+    return true;
+  }
+
+  private toggleView() {
+    this.setFirstPerson(!this.rig.firstPerson);
+  }
+
+  /** The actions available in the current context, for the on-screen controls list (keyboard). */
+  private controlLines(): string[] {
+    const common = ['V — Camera', 'P — Map', ...(this.multiplayer ? ['T — Chat'] : [])];
+    const v = this.driving;
+    if (v) {
+      const bike = twoWheeled(v.spec), moto = isMotorbike(v.spec);
+      const lines = [bike || moto ? 'WASD — Ride' : 'WASD — Drive'];
+      if (v.spec.sprintSpeed !== undefined || v.spec.maxSpeed > 15.3) lines.push(`Shift — ${v.spec.name === 'bike' ? 'Sprint' : 'Faster'}`);
+      if (!bike && !moto) lines.push('Space — Handbrake');
+      lines.push(`H — ${bike ? 'Bell' : 'Horn'}`);
+      if (isEmergency(v.spec)) lines.push('Q — Siren');
+      if (!bike && !moto && !isBus(v.spec) && !isEmergency(v.spec)) lines.push('R — Radio');
+      lines.push(`E — ${bike || moto ? 'Get off' : 'Get out'}`);
+      return [...lines, ...common];
+    }
+    if (this.tram) return ['WASD — Drive', 'Space — Brake', 'E — Get out', ...common];
+    return ['WASD — Move', 'Shift — Sprint', 'R — Punch', 'E — Enter / use', ...common];
   }
 
   render(alpha: number, dt: number) {
@@ -493,10 +623,14 @@ export class Game {
       const speed = Math.abs(car.forwardSpeed);
       const v = car.body.linvel();
       const heading = speed > 2 && car.forwardSpeed > 0 ? Math.atan2(v.y, v.x) : car.angle;
-      const bike = twoWheeled(car.spec), bus = isBus(car.spec), moto = isMotorbike(car.spec);
+      const bike = twoWheeled(car.spec), bus = isBus(car.spec), moto = isMotorbike(car.spec), truck = isTruck(car.spec);
       const distance = bike ? 4.4 : moto ? 5 : bus ? (car.trailer ? 17 : 14) : 6.5 + Math.max(0, car.spec.length - 4.75) * 1.3;
       const height = bike || moto ? 1.5 : bus ? 3.4 : Math.max(1.4, (car.spec.height ?? 0) - 0.2);
-      this.rig.update({ x, z, height, heading, speed, distance: distance * zoom }, dt);
+      // Camera at the front edge (body behind you): clear forward, nose only when you look down; bus/truck are solid so stay above their roof.
+      const bigFront = bus || truck;
+      const eye = bigFront ? height + 0.25 : bike || moto ? 1.5 : Math.max(1.1, height - 0.2);
+      const eyeForward = bike || moto ? 0.3 : car.spec.length / 2 - 0.25;
+      this.rig.update({ x, z, height, heading, speed, distance: distance * zoom, eye, eyeForward }, dt);
       this.hud.setSpeed(speed * 3.6);
       const verb = car.spec.name === 'bike' && this.dockToReturn(car) ? 'Return bike' : bike || moto ? 'Get off' : 'Get out';
       this.hud.setHint(speed < 8 ? this.keyHint(verb) : '');
@@ -505,16 +639,19 @@ export class Game {
       const tram = this.tram;
       const cab = this.trams.pose(tram, 0, alpha);
       const speed = Math.abs(tram.speed);
-      this.rig.update({ x: cab.x, z: cab.z, height: 2.4, heading: cab.angle, speed, distance: 13 * zoom }, dt);
+      // At the front of the 7.2 m cab section (half = 3.6), just above the roof: clear track ahead, nose only when looking down.
+      this.rig.update({ x: cab.x, z: cab.z, height: 2.4, heading: cab.angle, speed, distance: 13 * zoom, eye: 3.1, eyeForward: 3.35 }, dt);
       this.hud.setSpeed(speed * 3.6);
       const end = tram.s >= tram.run.len - 0.5 || tram.s <= tram.length + 0.5;
       this.hud.setHint(speed < TRAM_EXIT_SPEED ? this.keyHint(end ? 'End of the line. Get out' : 'Get out') : '');
       this.updateStreetName(cab.x, cab.z, dt);
     } else {
+      this.player.object.visible = !this.rig.firstPerson; // hide your own avatar in first person
       this.player.render(alpha, dt, this.crowd);
       const x = this.player.object.position.x, z = this.player.object.position.z;
       const room = this.interiors?.inside ? this.interiors : null;
-      this.rig.update({ x, z, height: (this.player.swimming ? 0.6 : 1.5) + this.player.elevationAt(alpha), heading: this.player.heading, stride: this.player.stride, speed: 0, distance: (room ? 3.2 : 4.2) * zoom, sprint: this.player.sprinting, room: room ?? undefined }, dt);
+      const elevation = this.player.elevationAt(alpha);
+      this.rig.update({ x, z, height: (this.player.swimming ? 0.6 : 1.5) + elevation, heading: this.player.heading, stride: this.player.stride, speed: 0, distance: (room ? 3.2 : 4.2) * zoom, sprint: this.player.sprinting, eye: (this.player.swimming ? 0.5 : 1.6) + elevation, room: room ?? undefined }, dt);
       this.hud.setSpeed(null);
       const door = this.doorNearby();
       if (room) {
@@ -530,6 +667,9 @@ export class Game {
     const t = car ?? this.player;
     const heading = car ? car.angle : this.player.heading;
     const motor = car && !twoWheeled(car.spec) ? car : null;
+    this.hud.setHealth(this.player.health / MAX_HEALTH);
+    this.hud.setStamina(this.player.stamina);
+    if (!this.input.touch) this.hud.setControls(this.controlLines()); // touch shows on-screen buttons instead
     if (this.gps.update(t.x, t.z, dt, !!motor, motor ? motor.angle : null)) this.hud.toast('You have arrived');
     this.minimap.update(t.x, t.z, this.rig.yaw, heading, this.multiplayer?.others, this.gps);
     this.worldMap.update(t.x, t.z, heading, this.multiplayer?.others);
@@ -667,15 +807,16 @@ export class Game {
 
   private nearestRide():
     | { dock: NonNullable<ReturnType<Bikes['dockedNear']>> } | { scooter: Parked } | { cyclist: Rider } | { vehicle: Vehicle } | { tram: Tram } | { bus: Bus } | null {
+    if (this.player.down > 0) return null;
     const [vehicle, vd] = this.nearestVehicle();
-    const cyclist = this.player.down > 0 ? null : this.cyclists.nearest(this.player.x, this.player.z, STEAL_RANGE);
+    const cyclist = this.cyclists.nearest(this.player.x, this.player.z, STEAL_RANGE);
     if (cyclist) {
       const t = cyclist.body.translation();
       if (!vehicle || Math.hypot(t.x - this.player.x, t.y - this.player.z) < vd) return { cyclist };
     }
-    const dock = this.player.down > 0 ? null : this.bikes?.dockedNear(this.player.x, this.player.z) ?? null;
+    const dock = this.bikes?.dockedNear(this.player.x, this.player.z) ?? null;
     if (dock && (!vehicle || Math.hypot(dock.x - this.player.x, dock.z - this.player.z) - 0.3 < vd)) return { dock };
-    const scooter = this.player.down > 0 ? null : this.scooters?.nearest(this.player.x, this.player.z) ?? null;
+    const scooter = this.scooters?.nearest(this.player.x, this.player.z) ?? null;
     if (scooter && (!vehicle || Math.hypot(scooter.x - this.player.x, scooter.z - this.player.z) - 0.3 < vd)) return { scooter };
     const tram = this.trams.near(this.player.x, this.player.z, ENTER_RANGE);
     const bus = this.buses.near(this.player.x, this.player.z, ENTER_RANGE);
@@ -685,7 +826,6 @@ export class Game {
   }
 
   private takeNearest() {
-    if (this.player.down > 0) return;
     const near = this.nearestRide();
     if (!near) return;
     if ('vehicle' in near) this.enterVehicle(near.vehicle);
@@ -729,14 +869,28 @@ export class Game {
 
   private takeWheel(v: Vehicle) {
     this.driving = v;
-    this.input.sirenMode = isEmergency(v.spec);
+    this.input.seat = isEmergency(v.spec) ? 'emergency' : 'vehicle';
     v.driven = true;
     v.body.wakeUp();
     this.player.hide();
   }
 
+  private dismount() {
+    if (this.driving) {
+      this.leaveSeat(this.driving);
+      this.sound.engineOff();
+      this.sound.radioOff();
+      this.sound.horn(false);
+    } else if (this.tram) {
+      this.trams.leave(this.tram);
+      this.tram = null;
+      this.input.seat = 'foot';
+      this.sound.engineOff();
+    }
+  }
+
   private leaveSeat(v: Vehicle) {
-    this.input.sirenMode = false;
+    this.input.seat = 'foot';
     v.driven = false;
     v.controls = { steer: 0, throttle: 0, handbrake: true };
     if (!v.afloat) v.sink = 0;
@@ -748,7 +902,7 @@ export class Game {
     if (toast) this.hud.toast(toast);
     else if (ride.spec.name === 'scooter') {
       const name = BRANDS[brandOf(ride.colour)].name;
-      this.hud.toast(pick([`${name} unlocked. Ride safe!`, `${name} unlocked. Mind the cobbles.`, `${name} unlocked. Max 38 km/h.`, `${name} unlocked. No passengers!`]));
+      this.hud.toast(pick([`${name} unlocked. Ride safe!`, `${name} unlocked. Mind the cobbles.`, `${name} unlocked. Max 25 km/h.`, `${name} unlocked. No passengers!`]));
       this.sound.engineOn('scooter');
     } else if (isVelo(ride)) {
       this.hud.toast(pick(['Velo time!', 'Pedal power.', 'Off you go, Antwerp style.', 'Mind the tram rails.']));
@@ -797,11 +951,18 @@ export class Game {
     } else {
       toast = pick(isMotorbike(v.spec) ? ['Vroom!', 'Hold on tight.', 'Two wheels, full throttle.', 'Not yours, but hey.'] : ['Vroom!', "Let's go!", 'Nice ride.', 'Not yours, but hey.']);
     }
-    this.hud.toast(isEmergency(v.spec) ? `${toast} ${this.input.touch ? 'Tap Siren' : 'Press Q'} for the lights.` : toast);
+    const radio = !isBus(v.spec) && !isMotorbike(v.spec) && !isEmergency(v.spec);
+    const tips = [toast];
+    if (isEmergency(v.spec)) tips.push(`${this.input.touch ? 'Tap Siren' : 'Press Q'} for the lights.`);
+    if (radio && !this.carTipShown) {
+      this.carTipShown = true;
+      tips.push(this.input.touch ? 'Tap the station name to change the radio.' : 'Space is the handbrake, H the horn, R the next radio station.');
+    }
+    this.hud.toast(tips.join(' '), tips.length > 1 ? 6000 : undefined);
     this.takeWheel(v);
     const moto = v.spec.name === 'motorbike' || v.spec.name === 'moped' ? v.spec.name : null;
     this.sound.engineOn(isBus(v.spec) || isTruck(v.spec) ? 'bus' : moto ?? 'car');
-    if (!isBus(v.spec) && !moto && !isEmergency(v.spec)) this.sound.radioOn();
+    if (radio) this.sound.radioOn();
   }
 
   private hijackBus(b: Bus) {
@@ -815,19 +976,18 @@ export class Game {
     this.sound.engineOn('bus');
   }
 
-  private throwOff(v: Vehicle, velocity: { x: number; y: number }) {
+  private throwOff(v: Vehicle, velocity: { x: number; y: number }): boolean {
     const c = Math.cos(v.angle), s = Math.sin(v.angle);
     const behind: [number, number] = [v.x - c * (v.spec.length / 2 + 0.6), v.z - s * (v.spec.length / 2 + 0.6)];
     const spot = this.beside(v.x, v.z, v.angle, v.spec.width / 2) ?? (this.standable(...behind) ? behind : null);
-    if (!spot) return;
-    this.leaveSeat(v);
-    this.sound.engineOff();
-    this.sound.horn(false);
+    if (!spot) return false;
+    this.dismount();
     this.player.place(spot[0], spot[1], v.angle);
     this.player.down = 2;
     this.player.body.setLinvel({ x: velocity.x * 0.35, y: velocity.y * 0.35 }, true);
     this.rig.yaw = v.angle;
     this.hud.toast(pick(['Ouch!', 'Wipeout!', 'Over the handlebars.']));
+    return true;
   }
 
   private exitVehicle() {
@@ -835,7 +995,7 @@ export class Game {
     if (Math.abs(v.forwardSpeed) > 8) return;
     const spot = this.beside(v.x, v.z, v.angle, v.spec.width / 2);
     if (!spot) return;
-    this.leaveSeat(v);
+    this.dismount();
     if (v.spec.name === 'bike') {
       const dock = this.dockToReturn(v);
       if (dock) {
@@ -843,12 +1003,7 @@ export class Game {
         this.removeVehicle(v);
         this.hud.toast('Bike returned. Thanks for riding Velo!');
       }
-    } else {
-      if (v.spec.name === 'scooter') this.hud.toast('Ride ended. Park it neatly!');
-      this.sound.engineOff();
-      this.sound.radioOff();
-      this.sound.horn(false);
-    }
+    } else if (v.spec.name === 'scooter') this.hud.toast('Ride ended. Park it neatly!');
     this.player.place(spot[0], spot[1], v.angle);
     this.rig.yaw = v.angle;
   }
@@ -856,6 +1011,7 @@ export class Game {
   private boardTram(t: Tram) {
     this.trams.board(t);
     this.tram = t;
+    this.input.seat = 'vehicle';
     this.player.hide();
     this.rideAlong(t);
     this.rig.yaw = t.sections[0].rotation();
@@ -868,7 +1024,10 @@ export class Game {
     const p = cab.translation();
     this.player.body.setTranslation({ x: p.x, y: p.y }, false);
     this.player.heading = cab.rotation();
-    if (t.impact > 2.5) this.sound.crash(t.impact);
+    if (t.impact > 2.5) {
+      this.sound.crash(t.impact);
+      this.hurt(crashHurt(t.impact, TRAM_EXPOSURE));
+    }
   }
 
   private exitTram() {
@@ -877,9 +1036,7 @@ export class Game {
     const cab = t.sections[0], p = cab.translation(), angle = cab.rotation();
     const spot = this.beside(p.x, p.y, angle, TRAM_WIDTH / 2);
     if (!spot) return;
-    this.trams.leave(t);
-    this.tram = null;
-    this.sound.engineOff();
+    this.dismount();
     this.player.place(spot[0], spot[1], angle);
     this.rig.yaw = angle;
   }

@@ -169,6 +169,7 @@ export class Pedestrians {
     const len = Math.hypot(dx, dz) || 1;
     const fling = Math.min(speed * 0.6, 9);
     p.body.setLinvel({ x: (dx / len) * fling, y: (dz / len) * fling }, true);
+    p.body.collider(0).setCollisionGroups(groups(GROUP.PED, GROUP.STATIC | GROUP.PED)); // no WHEELS: don't get dragged by the car
   }
 
   inFront(x: number, z: number, angle: number, range: number, cone: number): Ped | null {
@@ -271,6 +272,7 @@ export class Pedestrians {
       if (p.timer <= 0) {
         p.state = 'flee';
         p.timer = 5;
+        p.body.collider(0).setCollisionGroups(groups(GROUP.PED, GROUP.STATIC | WHEELS | GROUP.PED)); // back on their feet: solid to cars again
       }
     } else if (p.state === 'flee') {
       p.timer -= dt;

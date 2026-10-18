@@ -76,7 +76,7 @@ export class Physics {
     const { minX, minZ, maxX, maxZ } = city.bounds;
     addRing('edge', [minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ]);
 
-    for (let i = 0; i < city.trees.length; i += 2) {
+    for (let i = 0; i < city.trees.length; i += 4) {
       this.world.createCollider(
         RAPIER.ColliderDesc.ball(0.3)
           .setTranslation(city.trees[i], city.trees[i + 1])

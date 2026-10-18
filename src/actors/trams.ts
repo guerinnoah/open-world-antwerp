@@ -9,7 +9,7 @@ import {
   serveStops, spawnPoint, stack, stopAfter, type Obstacle, type Run, type Sectioned,
 } from './transit';
 
-const MAX_SPEED = 11;
+const MAX_SPEED = 14; // m/s ≈ 50 km/h, a city tram's cruising top
 const ACCEL = 1.1;
 const BRAKE = 1.6;
 const DWELL = 7;

@@ -29,6 +29,12 @@ Others run with `pnpm tsx tools/dev/<file>.ts`.
 | `?stats` | Show FPS and draw calls |
 | `?fly` | Free camera over the city, no game |
 | `?mp` | Join multiplayer from a headless browser or `pnpm preview` |
+| `?time=22` | Force the hour (0–23, Antwerp local) instead of the real clock |
+| `?weather=rain` | Force weather: `clear`, `cloudy`, `overcast`, `rain`, `storm` (or `?clouds=0..1&rain=0..1`) |
+| `?flat` | Drop the aerial-photo ground colour for the stylised surfaces |
+| `?fpv` | Start in first person (toggle any time with `V`) |
+
+By default the sky follows Antwerp's real sun for the current time and the live weather from Open-Meteo.
 
 ## Performance
 

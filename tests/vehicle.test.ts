@@ -14,12 +14,12 @@ beforeAll(async () => {
 // Desktops step physics at 60 Hz, phones at 30: the car must feel the same at both.
 describe.each([60, 30])('vehicle feel at %i Hz', (hz) => {
   const setup = (speed = 0) => testDrive(sedan, 1 / hz, speed);
-  it('pulls away quickly: 0–50 km/h under 2.5 s, 0–100 km/h under 6.5 s', () => {
+  it('pulls away at a realistic pace: 0–50 km/h under 4.5 s, 0–100 km/h under 9 s', () => {
     const { car, run } = setup();
     const to50 = run({ throttle: 1 }, 10, () => car.forwardSpeed >= 50 / 3.6);
     const to100 = to50 + run({ throttle: 1 }, 10, () => car.forwardSpeed >= 100 / 3.6);
-    expect(to50).toBeLessThan(2.5);
-    expect(to100).toBeLessThan(6.5);
+    expect(to50).toBeLessThan(4.5);
+    expect(to100).toBeLessThan(9);
   });
 
   it('tops out just under its max speed', () => {

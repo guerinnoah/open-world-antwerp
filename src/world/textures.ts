@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { track } from '../core/loadProgress';
 
 export const BUILDING_LAYERS = ['brick', 'plaster', 'yellowBrick', 'ashlar', 'slate', 'tiles', 'flatRoof'] as const;
 export type BuildingLayer = (typeof BUILDING_LAYERS)[number];
@@ -29,11 +30,13 @@ const GROUND: GroundTexture[] = ['asphalt', 'pavement', 'cobble', 'grass', 'pave
 
 export async function loadTextures(renderer: THREE.WebGLRenderer, size: number, maxAnisotropy: number): Promise<Textures> {
   const anisotropy = Math.min(maxAnisotropy, renderer.capabilities.getMaxAnisotropy());
+  // Phones (size 512) fetch the half-size colour maps: a quarter of the download.
+  const albedoUrl = (name: string) => `/textures/${name}_albedo${size < 1024 ? '_512' : ''}.webp`;
   const [albedo, normal, ground, stone] = await Promise.all([
-    arrayTexture(BUILDING_LAYERS.map((n) => `/textures/${n}_albedo.webp`), size, true, anisotropy),
+    arrayTexture(BUILDING_LAYERS.map(albedoUrl), size, true, anisotropy),
     arrayTexture(BUILDING_LAYERS.map((n) => `/textures/${n}_normal.webp`), Math.min(size, 512), false, anisotropy),
-    Promise.all(GROUND.map((n) => pair(n, anisotropy))),
-    pair('stone', anisotropy),
+    Promise.all(GROUND.map((n) => pair(albedoUrl(n), n, anisotropy))),
+    pair(albedoUrl('stone'), 'stone', anisotropy),
   ]);
   return {
     buildingAlbedo: albedo.texture,
@@ -57,11 +60,11 @@ function meanOf(rgba: Uint8ClampedArray | Uint8Array, from = 0, to = rgba.length
   return new THREE.Color(sum[0] / n, sum[1] / n, sum[2] / n);
 }
 
-async function pair(name: string, anisotropy: number): Promise<Pair> {
+async function pair(albedoUrl: string, name: string, anisotropy: number): Promise<Pair> {
   const loader = new THREE.TextureLoader();
   const [map, normalMap] = await Promise.all([
-    loader.loadAsync(`/textures/${name}_albedo.webp`),
-    loader.loadAsync(`/textures/${name}_normal.webp`),
+    track(loader.loadAsync(albedoUrl)),
+    track(loader.loadAsync(`/textures/${name}_normal.webp`)),
   ]);
   map.colorSpace = THREE.SRGBColorSpace;
   for (const t of [map, normalMap]) {
@@ -80,7 +83,7 @@ async function arrayTexture(urls: string[], size: number, srgb: boolean, anisotr
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  const images = await Promise.all(urls.map(async (url) => createImageBitmap(await (await fetch(url)).blob())));
+  const images = await Promise.all(urls.map(async (url) => createImageBitmap(await track(fetch(url).then((r) => r.blob())))));
   images.forEach((image, i) => {
     ctx.drawImage(image, 0, 0, size, size);
     data.set(ctx.getImageData(0, 0, size, size).data, i * size * size * 4);

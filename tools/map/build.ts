@@ -1,4 +1,5 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import type { MultiPolygon, Polygon } from 'polygon-clipping';
 import type { Area, AreaKind, Building, CityData, Road, RoadKind } from '../../src/world/cityData.ts';
 import { BBOX, ORIGIN, OUT_DIR, RAW_DIR } from './config.ts';
@@ -14,6 +15,7 @@ import { extractLandmarks } from './landmarks.ts';
 import { posts, solid, splitOutlines, type Mass } from './massing.ts';
 import { streetDetail } from './street.ts';
 import { WaterMap } from '../../src/world/water.ts';
+import { treeKind } from '../../src/world/treeKinds.ts';
 import { layWater } from './water.ts';
 import {
   besideRoad, centroid, flat, interiorPoint, outlineGrid, pointInRing, polygonsOf, project, round, roadGrid, signedArea, toPts,
@@ -218,21 +220,31 @@ const logos = await loadLogos();
 const shopfronts = placeSigns(elements, buildingIndex, near, (p) => clearOfRoads(p) && open(p), logos.of);
 markShopKinds(shopfronts.signs, buildings);
 
+// trees: flat [x, z, kind, girth] (kind = treeKind index, girth = trunk circumference in cm; 0 when unknown).
 const trees: number[] = [];
-const plantTree = (p: Pt) => {
-  if (inBounds(p) && open(p)) trees.push(round(p[0]), round(p[1]));
+const plantTree = (p: Pt, kind = 0, girth = 0) => {
+  if (inBounds(p) && open(p)) trees.push(round(p[0]), round(p[1]), kind, round(girth));
 };
-for (const e of elements) {
-  if (e.type === 'node' && e.tags?.natural === 'tree') plantTree(project(e.lat!, e.lon!));
-  if (e.type !== 'way' || e.tags?.natural !== 'tree_row' || !e.geometry) continue;
-  const pts = toPts(e.geometry);
-  for (let i = 0, carry = 0; i < pts.length - 1; i++) {
-    const [x0, z0] = pts[i];
-    const [x1, z1] = pts[i + 1];
-    const len = Math.hypot(x1 - x0, z1 - z0);
-    for (let d = carry; d < len; d += 9) plantTree([x0 + ((x1 - x0) * d) / len, z0 + ((z1 - z0) * d) / len]);
-    carry = (carry - len) % 9;
-    if (carry < 0) carry += 9;
+// Prefer Antwerp's real tree inventory (pnpm map:fetch-trees); fall back to OSM tree nodes and tree_row ways.
+const treeFile = `${RAW_DIR}/trees.json`;
+if (existsSync(treeFile)) {
+  const inventory = JSON.parse(await readFile(treeFile, 'utf8')) as [number, number, string | null, number][];
+  for (const [lat, lon, latin, girth] of inventory) plantTree(project(lat, lon), treeKind(latin), girth);
+  console.log(`trees: ${trees.length / 4} planted from the Antwerp inventory (${inventory.length} in the slice)`);
+} else {
+  console.warn('No tree inventory (run pnpm map:fetch-trees); falling back to OSM trees.');
+  for (const e of elements) {
+    if (e.type === 'node' && e.tags?.natural === 'tree') plantTree(project(e.lat!, e.lon!));
+    if (e.type !== 'way' || e.tags?.natural !== 'tree_row' || !e.geometry) continue;
+    const pts = toPts(e.geometry);
+    for (let i = 0, carry = 0; i < pts.length - 1; i++) {
+      const [x0, z0] = pts[i];
+      const [x1, z1] = pts[i + 1];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      for (let d = carry; d < len; d += 9) plantTree([x0 + ((x1 - x0) * d) / len, z0 + ((z1 - z0) * d) / len]);
+      carry = (carry - len) % 9;
+      if (carry < 0) carry += 9;
+    }
   }
 }
 
@@ -270,7 +282,7 @@ console.log(
   `buildings ${buildings.length} (heights: ${JSON.stringify(heightSources)}; ${split.replaced.size} outlines split around their parts into ${split.masses.length} pieces; ` +
     `${masses.filter((m) => m.canopy).length} canopies, ${raised.length} raised, ${postsUnder.length} posts; ${slivers} slivers dropped)\n` +
     `roads ${roads.length}, trams ${trams.length}, water ${count('water')}, green ${count('green')}, plazas ${count('plaza')}\n` +
-    `landmarks ${landmarks.map((l) => `${l.id}(${l.parts.length})`).join(' ')}, trees ${trees.length / 2}, ` +
+    `landmarks ${landmarks.map((l) => `${l.id}(${l.parts.length})`).join(' ')}, trees ${trees.length / 4}, ` +
     `street-facing ${buildings.filter((b) => b.sf).length}, shops ${buildings.filter((b) => b.sh && b.sh !== 2).length}, ` +
     `cafés ${buildings.filter((b) => b.sh === 2).length}, signs ${shopfronts.signs.length} (${shopfronts.signs.filter((s) => s[7] !== undefined).length} with ${logoRects.length} logos, ${JSON.stringify(Object.fromEntries(['hotel', 'culture', 'public', 'plate'].map((k) => [k, shopfronts.signs.filter((s) => s[4] === k).length])))}), street plates ${streetPlates.length}, velo ${velo.length / 4}, terraces ${shopfronts.terraces.length / 4}, crossings ${city.crossings.length}, lamps ${city.props.lamps.length / 2}, benches ${city.props.benches.length / 2}, ` +
     `bollards ${city.props.bollards.length / 2}, signals ${city.props.signals.length / 3}\n` +

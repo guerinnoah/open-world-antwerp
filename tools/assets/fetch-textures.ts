@@ -26,12 +26,15 @@ const only = process.argv.slice(2);
 for (const [name, asset] of Object.entries(TEXTURES)) {
   if (only.length && !only.includes(name)) continue;
   const files = await (await fetch(`https://api.polyhaven.com/files/${asset}`, ua)).json();
-  for (const [map, key, size, quality] of [['albedo', 'Diffuse', 1024, 80], ['normal', 'nor_gl', 512, 90]] as const) {
+  for (const [map, key, sizes, quality] of [['albedo', 'Diffuse', [1024, 512], 80], ['normal', 'nor_gl', [512], 90]] as const) {
     const url = files[key]?.['1k']?.jpg?.url;
     if (!url) throw new Error(`${asset}: no 1k ${key}`);
     const jpg = Buffer.from(await (await fetch(url, ua)).arrayBuffer());
-    const webp = await sharp(jpg).resize(size, size).webp({ quality }).toBuffer();
-    await writeFile(`${OUT}/${name}_${map}.webp`, webp);
-    console.log(`${name}_${map}.webp  ${(webp.length / 1024).toFixed(0)} KB  (${asset})`);
+    for (const size of sizes) {
+      const file = `${name}_${map}${size === sizes[0] ? '' : `_${size}`}.webp`;
+      const webp = await sharp(jpg).resize(size, size).webp({ quality }).toBuffer();
+      await writeFile(`${OUT}/${file}`, webp);
+      console.log(`${file}  ${(webp.length / 1024).toFixed(0)} KB  (${asset})`);
+    }
   }
 }

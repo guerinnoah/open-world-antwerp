@@ -9,6 +9,7 @@ import { Motorbikes } from './actors/motorbikes';
 import { Scooters } from './actors/scooters';
 import { Crowd } from './actors/crowd';
 import { Input } from './core/input';
+import { onLoadProgress, track } from './core/loadProgress';
 import { pickQuality } from './core/quality';
 import { FlyCam } from './debug/flyCam';
 import { CENTRAAL_START, GROTE_MARKT_START, Game } from './game/game';
@@ -19,6 +20,8 @@ import { Breakables } from './world/breakables';
 import { createBuildings } from './world/buildings';
 import type { CityData, GraphData } from './world/cityData';
 import { Environment } from './world/environment';
+import { Weather } from './world/weather';
+import { initialSky, liveWeather, useLiveWeather } from './world/daylight';
 import { createGround } from './world/ground';
 import { createLandmarks } from './world/landmarks';
 import { createFacadeDetail } from './world/facadeDetail';
@@ -65,6 +68,19 @@ canvas.addEventListener('webglcontextlost', () => {
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.3, quality.drawDistance);
 const environment = new Environment(scene, renderer, quality);
+const weather = new Weather();
+scene.add(weather.group);
+// Sun from Antwerp's real clock (or ?time=); weather from the URL, else fetched live and applied when it arrives.
+const sky = initialSky(params);
+environment.applySky(sky);
+weather.setIntensity(sky.rain);
+if (useLiveWeather(params)) {
+  void liveWeather().then((w) => {
+    if (!w) return;
+    environment.applySky({ ...sky, cloud: Math.max(w.cloud, w.rain * 0.9), rain: w.rain });
+    weather.setIntensity(w.rain);
+  });
+}
 
 let composer: EffectComposer | null = null;
 // AO through a multisampled target so edges stay smooth (desktop only; /?noao turns it off).
@@ -93,21 +109,31 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
+// Downloads fill the first 80% of the bar, building the city the rest.
+onLoadProgress((f) => title.progress(f * 0.8));
 const t0 = performance.now();
-const [city, graph, textures, crowd] = await Promise.all([
-  fetch('/map/city.json').then((r) => r.json() as Promise<CityData>),
-  fetch('/map/graph.json').then((r) => r.json() as Promise<GraphData>),
+const [city, graph, textures, crowd, aerial] = await Promise.all([
+  track(fetch('/map/city.json').then((r) => r.json() as Promise<CityData>), 14),
+  track(fetch('/map/graph.json').then((r) => r.json() as Promise<GraphData>), 4),
   loadTextures(renderer, quality.textureSize, quality.anisotropy),
   Crowd.load(quality.peds + 24, quality.level === 'high' ? Infinity : 4),
+  // Aerial ground by default (?flat skips it); .catch → null falls back to the stylised ground if the photo's missing.
+  params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync('/map/ortho.webp').catch(() => null), 9),
 ]);
+if (aerial) {
+  aerial.colorSpace = THREE.NoColorSpace; // sampled raw in the ground blend shader and linearised there
+  aerial.anisotropy = quality.anisotropy; // the ground is seen at a grazing angle
+  aerial.wrapS = aerial.wrapT = THREE.ClampToEdgeWrapping;
+}
 const t1 = performance.now();
 clearTramTracks(city, graph.trams);
-const ground = createGround(city, textures);
+const ground = createGround(city, textures, aerial);
 const props = createProps(city, quality.detailView);
 const facadeDetail = createFacadeDetail(city.buildings, quality.detailView);
 const signs = new Signs(city, renderer, 200 * quality.detailView);
 const bikes = new Bikes(city, crowd, 130 * quality.detailView);
 scene.add(bikes.group);
+title.progress(0.85);
 const landmarks = await createLandmarks(city.landmarks, textures);
 const scenery = [
   createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures),
@@ -128,6 +154,7 @@ const updateScenery = (dt: number, time: number) => {
   props.update(camera.position);
   facadeDetail.update(camera.position);
   signs.update(camera.position, dt);
+  weather.update(camera.position, dt);
 };
 let update: (dt: number, time: number) => void;
 const timing = { sim: 0, render: 0 };
@@ -144,6 +171,7 @@ if (params.has('fly')) {
     draw();
   };
 } else {
+  title.progress(0.9);
   const physics = await Physics.create(city);
   physics.world.timestep = 1 / quality.physicsHz;
   const breakables = new Breakables(physics, props); // before the game parks cars, so none park on a post
@@ -156,6 +184,7 @@ if (params.has('fly')) {
   const input = new Input(canvas);
   const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, start);
   (window as unknown as { game: Game }).game = game;
+  if (params.has('fpv')) game.setFirstPerson(true);
   const interiors = new Interiors(signs.doors, city.buildings, physics, environment, crowd);
   scene.add(interiors.group);
   game.attachInteriors(interiors);
@@ -169,6 +198,30 @@ if (params.has('fly')) {
   game.attachMotorbikes(motorbikes);
   const relay = relayUrl(params);
   if (relay) game.attachMultiplayer(new Multiplayer(relay, params, game, physics, crowd, camera));
+  // Rear-view mirror: a second pass from behind the vehicle, drawn into a strip at the top in first person.
+  const MIRROR = { w: 440, h: 120, top: 54 }; // below the radio bar
+  const rearCam = new THREE.PerspectiveCamera(74, MIRROR.w / MIRROR.h, 0.3, quality.drawDistance);
+  const mirrorFrame = Object.assign(document.createElement('div'), { id: 'mirror', hidden: true });
+  document.body.append(mirrorFrame);
+  const renderMirror = () => {
+    if (quality.level === 'low' || game.mapOpen || !game.rearView(rearCam)) {
+      mirrorFrame.hidden = true;
+      return;
+    }
+    mirrorFrame.hidden = false;
+    rearCam.updateMatrixWorld();
+    const x = (innerWidth - MIRROR.w) / 2, yGL = innerHeight - MIRROR.h - MIRROR.top;
+    renderer.setRenderTarget(null);
+    renderer.autoClear = false;
+    renderer.setScissorTest(true);
+    renderer.setViewport(x, yGL, MIRROR.w, MIRROR.h);
+    renderer.setScissor(x, yGL, MIRROR.w, MIRROR.h);
+    renderer.clear();
+    renderer.render(scene, rearCam);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, innerWidth, innerHeight);
+    renderer.autoClear = true;
+  };
   const STEP = 1 / quality.physicsHz;
   let acc = 0;
   let playing = false;
@@ -189,12 +242,16 @@ if (params.has('fly')) {
     game.render(acc / STEP, playing || !start.intro ? dt : 0);
     const s1 = performance.now();
     environment.follow(game.focus);
-    if (!game.mapOpen) draw();
+    if (!game.mapOpen) {
+      draw();
+      renderMirror();
+    }
     timing.sim += s1 - s0;
     timing.render += performance.now() - s1;
   };
 }
 // Compile every shader behind the loading screen, else the first second of play stutters.
+title.progress(0.95);
 if (!params.has('fly')) await renderer.compileAsync(scene, camera);
 // Draw all scenery once unculled so every chunk uploads now and can free its CPU copy (see freeAfterUpload).
 {
@@ -226,17 +283,19 @@ renderer.info.autoReset = false;
 // Adaptive resolution: down to 60% of the preset when fps sags, back up with headroom; checked once a second.
 const minPixelRatio = maxPixelRatio * 0.6;
 let adaptFrames = 0, adaptTime = 0, slowSeconds = 0, fastSeconds = 0;
+// Phones target 30 fps, where Low Power Mode caps them.
+const [slowFps, fastFps, upAfter] = quality.level === 'high' ? [45, 57, 4] : [25, 29, 8];
 function adaptResolution(dt: number) {
   adaptFrames++;
   adaptTime += dt;
   if (adaptTime < 1) return;
   const fps = adaptFrames / adaptTime;
   adaptFrames = adaptTime = 0;
-  slowSeconds = fps < 45 ? slowSeconds + 1 : 0;
-  fastSeconds = fps > 57 ? fastSeconds + 1 : 0;
+  slowSeconds = fps < slowFps ? slowSeconds + 1 : 0;
+  fastSeconds = fps > fastFps ? fastSeconds + 1 : 0;
   let next = pixelRatio;
   if (slowSeconds >= 2) next = Math.max(minPixelRatio, pixelRatio - 0.15);
-  else if (fastSeconds >= 4) next = Math.min(maxPixelRatio, pixelRatio + 0.1);
+  else if (fastSeconds >= upAfter) next = Math.min(maxPixelRatio, pixelRatio + 0.1);
   if (next !== pixelRatio) {
     pixelRatio = next;
     slowSeconds = fastSeconds = 0;

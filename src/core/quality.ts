@@ -31,7 +31,7 @@ const PRESETS: Record<QualityLevel, Omit<Quality, 'level'>> = {
     vehicleView: 350, pedView: 160, detailView: 1, physicsHz: 60,
   },
   medium: {
-    pixelRatio: 1.5, antialias: false, shadows: true, shadowMapSize: 1024, shadowRange: 80, ao: false, textureSize: 512,
+    pixelRatio: 2, antialias: true, shadows: true, shadowMapSize: 1024, shadowRange: 80, ao: false, textureSize: 512,
     anisotropy: 4, drawDistance: 1600, fogNear: 300, traffic: 20, peds: 45, cyclists: 16, trams: 3, buses: 4, parkedCars: 500,
     vehicleView: 220, pedView: 110, detailView: 0.7, physicsHz: 30,
   },
@@ -48,8 +48,11 @@ export function pickQuality(params: URLSearchParams): Quality {
   const asked = params.get('quality');
   if (asked === 'low' || asked === 'medium' || asked === 'high') return { level: asked, ...PRESETS[asked] };
   const touch = coarsePointer();
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   const cores = navigator.hardwareConcurrency ?? 8;
-  const level: QualityLevel = !touch ? 'high' : memory <= 3 || cores <= 4 ? 'low' : 'medium';
+  // Safari reports no deviceMemory and 4 cores on every iPhone; iOS 16 or older means an iPhone X or earlier.
+  const oldIPhone = Number(/iPhone OS (\d+)_/.exec(navigator.userAgent)?.[1] ?? Infinity) <= 16;
+  const lowEnd = oldIPhone || (memory !== undefined && (memory <= 3 || cores <= 4));
+  const level: QualityLevel = !touch ? 'high' : lowEnd ? 'low' : 'medium';
   return { level, ...PRESETS[level] };
 }

@@ -7,6 +7,9 @@
   "engines": {
     "node": "24.x"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp"]
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -17,6 +20,8 @@
     "shot": "tsx tools/dev/screenshot.ts",
     "map:fetch-grb": "tsx tools/map/fetch-grb.ts",
     "map:fetch-logos": "tsx tools/map/fetch-logos.ts",
+    "map:fetch-ortho": "tsx tools/map/fetch-ortho.ts",
+    "map:fetch-trees": "tsx tools/map/fetch-trees.ts",
     "drive": "tsx tools/dev/drive.ts",
     "mobile": "tsx tools/dev/mobile.ts",
     "m2": "tsx tools/dev/m2.ts",
@@ -37,6 +42,7 @@
     "@vercel/analytics": "^2.0.1",
     "earcut": "^3.2.4",
     "n8ao": "^2.0.1",
+    "obscenity": "^0.4.6",
     "postprocessing": "^6.39.5",
     "three": "^0.186.1",
     "ws": "^8.22.0"

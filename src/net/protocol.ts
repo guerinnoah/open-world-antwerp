@@ -1,4 +1,5 @@
-// Wire format shared by the game and the relay: JSON over one WebSocket. No imports: Node runs this file directly.
+// Wire format shared by the game and the relay: JSON over one WebSocket. No local imports: Node runs this file directly.
+import { RegExpMatcher, TextCensor, asteriskCensorStrategy, englishDataset, englishRecommendedTransformers } from 'obscenity';
 export const PROTOCOL_VERSION = 5;
 export const RELAY_PATH = '/net';
 export const CHAT_MAX = 120;
@@ -96,16 +97,25 @@ export function decodeState(a: unknown): PlayerState | null {
   };
 }
 
+const english = englishDataset.build();
+const profanity = new RegExpMatcher({
+  ...english, ...englishRecommendedTransformers, whitelistedTerms: [...(english.whitelistedTerms ?? []), 'cockpit'],
+});
+const censor = new TextCensor().setStrategy(asteriskCensorStrategy());
+
+/** '' for an offensive name, so the caller falls back to a generated one. */
 export function cleanName(raw: unknown): string {
   if (typeof raw !== 'string') return '';
-  return raw.replace(/[\p{C}<>]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16).trim();
+  const name = raw.replace(/[\p{C}<>]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16).trim();
+  return profanity.hasMatch(name) ? '' : name;
 }
 
 export function cleanChat(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   const text = raw.replace(/\s/g, ' ').replace(/\p{C}/gu, '').replace(/ +/g, ' ').trim();
   // Cut by code points, not UTF-16 units, so an emoji at the limit isn't split in half.
-  return [...text].slice(0, CHAT_MAX).join('').trim();
+  const cut = [...text].slice(0, CHAT_MAX).join('').trim();
+  return censor.applyTo(cut, profanity.getAllMatches(cut));
 }
 
 export function cleanLook(raw: unknown): string {

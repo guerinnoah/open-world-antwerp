@@ -24,7 +24,7 @@ const PASS_MARGIN = 0.35; // m between a rider and what they ride round
 const KNOCK = 5.5; // m/s closing speed that throws a rider off
 // Not walls or posts while riding: the routes keep clear of them, and a corner clipped by the map would wedge a rider for good.
 const RIDING = groups(GROUP.BIKE, WHEELS | GROUP.PED);
-const FALLEN = groups(GROUP.BIKE, GROUP.STATIC | WHEELS | GROUP.PED);
+const FALLEN = groups(GROUP.BIKE, GROUP.STATIC | GROUP.PED); // no WHEELS: a fallen rider isn't dragged along by the car
 
 const STAND_LEAN = 0.1; // rad, a bike left on its stand
 const PAINTS = [0x1b1c1e, 0x1b1c1e, 0x1b1c1e, 0x2d3034, 0x1d2b45, 0x23402f, 0x5a1f24, 0xd9d2c0, 0x7fa7c9, 0x8c8f93, 0x3a5a7a, 0xa8463b];

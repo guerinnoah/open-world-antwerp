@@ -47,8 +47,9 @@ for (const ids of chunks(items, 50)) {
 }
 console.log(`${logoFile.size} have a logo on Wikidata`);
 
-const FREE_LICENCE = /^(pd|cc0|cc-by(-sa)?-\d)/i;
-const FREE_NAME = /^(public domain|cc0|cc by(-sa)? \d)/i;
+// Public-domain only: a free licence (CC-BY/-SA) still means the logo is copyrighted, just reusable, so we skip those.
+const PD_LICENCE = /^(pd|cc0)/i;
+const PD_NAME = /^(public domain|cc0)/i;
 const info = new Map<string, any>();
 for (const files of chunks([...new Set(logoFile.values())], 50)) {
   const res = await api('https://commons.wikimedia.org/w/api.php', {
@@ -68,7 +69,7 @@ for (const [q, file] of logoFile) {
   const ii = info.get(file);
   const meta = ii?.extmetadata ?? {};
   const licence = plain(meta.LicenseShortName?.value);
-  if (!ii || !(FREE_LICENCE.test(meta.License?.value ?? '') || FREE_NAME.test(licence))) {
+  if (!ii || !(PD_LICENCE.test(meta.License?.value ?? '') || PD_NAME.test(licence))) {
     skipped.push(`${labels.get(q)} (${file}): ${licence || 'no licence found'}`);
     continue;
   }

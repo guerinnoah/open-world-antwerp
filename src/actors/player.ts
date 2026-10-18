@@ -3,17 +3,38 @@ import { wrapAngle } from '../core/util';
 import type { RAPIER } from '../physics/physics';
 import { clipForSpeed, phaseStep, type Crowd } from './crowd';
 import { personBody } from './pedestrians';
+import { isMotorbike, twoWheeled, type Vehicle } from './vehicle';
 
-const RUN = 6.5;
-const SPRINT = 9;
+const RUN = 4.2; // m/s ≈ 15 km/h, a steady run; sprint ≈ 25 km/h (a hard human sprint)
+const SPRINT = 7;
+const SPRINT_SECONDS = 6; // full stamina = this many seconds of flat-out sprint / hard pedalling
+const RECOVER_SECONDS = 12; // empty → full at rest
+const RECOVER_THRESHOLD = 0.3; // once spent, stamina must climb back to this before you can sprint again
 const RADIUS = 0.35;
-const SWIM = 2.4;
-const SWIM_SPRINT = 3.6;
+const SWIM = 1.2;
+const SWIM_SPRINT = 2;
 const TREAD_DEPTH = 1.3;
 const SWIM_LEAN = 1.15;
 const SWIM_RISE = 0.58;
 const PUNCH_TIME = 0.45; // s, and PUNCH_LANDS when the fist lands: the baked clip's timing
 const PUNCH_LANDS = 0.15;
+export const MAX_HEALTH = 100;
+const REGEN_DELAY = 6; // s unhurt before healing starts
+const REGEN = 2.5; // health/s
+const CRASH_FLOOR = 5; // m/s of speed lost that doesn't hurt
+const CRASH_HURT = 0.1; // per (m/s)² lost beyond CRASH_FLOOR, in a family car
+const FAMILY_CAR = 1300; // kg
+export const TRAM_EXPOSURE = 0.35;
+
+export function exposure(v: Vehicle): number {
+  if (twoWheeled(v.spec) || isMotorbike(v.spec)) return 2.5;
+  return Math.min(1.15, Math.max(TRAM_EXPOSURE, Math.sqrt(FAMILY_CAR / v.body.mass())));
+}
+
+export function crashHurt(dv: number, k: number): number {
+  return CRASH_HURT * k * Math.max(0, dv - CRASH_FLOOR) ** 2;
+}
+
 export const PLAYER_LOOK = 'Male_Adult_08';
 
 export class Player {
@@ -27,11 +48,15 @@ export class Player {
   punch = 0;
   landed = false;
   avatar = 0;
+  health = MAX_HEALTH;
+  stamina = 1; // 0..1 energy for sprinting on foot and sprint-pedalling a bike
+  private exhausted = false;
   elevation = 0; // m: the floor under you indoors (stairs, upper storeys)
   private prevElevation = 0;
   private phase = 0;
   private aim = 0;
   private lean = 0;
+  private unhurt = 0;
 
   constructor(world: RAPIER.World, x: number, z: number) {
     this.body = personBody(world, x, z, RADIUS, 80, 0);
@@ -70,6 +95,37 @@ export class Player {
     return true;
   }
 
+  /** True when this takes the last of the player's health. */
+  hurt(amount: number, felt = true): boolean {
+    if (amount <= 0 || this.health <= 0) return false;
+    this.health = Math.max(0, this.health - amount);
+    if (felt) this.unhurt = 0;
+    return this.health === 0;
+  }
+
+  recover(dt: number) {
+    this.unhurt += dt;
+    if (this.health > 0 && this.unhurt > REGEN_DELAY) this.health = Math.min(MAX_HEALTH, this.health + REGEN * dt);
+  }
+
+  revive() {
+    this.health = MAX_HEALTH;
+    this.unhurt = 0;
+  }
+
+  /** Spend stamina while exerting (sprinting / hard pedalling), recover otherwise; returns whether the exertion is on. */
+  exert(demand: boolean, dt: number): boolean {
+    const on = demand && !this.exhausted;
+    if (on) {
+      this.stamina = Math.max(0, this.stamina - dt / SPRINT_SECONDS);
+      if (this.stamina === 0) this.exhausted = true;
+    } else {
+      this.stamina = Math.min(1, this.stamina + dt / RECOVER_SECONDS);
+      if (this.exhausted && this.stamina >= RECOVER_THRESHOLD) this.exhausted = false;
+    }
+    return on;
+  }
+
   step(forward: number, right: number, sprint: boolean, cameraYaw: number, dt: number) {
     if (this.down > 0) {
       this.down -= dt;
@@ -91,7 +147,8 @@ export class Player {
       mx /= len;
       mz /= len;
     }
-    const speed = this.swimming ? (sprint ? SWIM_SPRINT : SWIM) : sprint ? SPRINT : RUN;
+    const sprinting = this.exert(sprint && len > 0.1, dt); // tires out; drops to a run when the stamina's gone
+    const speed = this.swimming ? (sprinting ? SWIM_SPRINT : SWIM) : sprinting ? SPRINT : RUN;
     const v = this.body.linvel();
     const k = Math.min(1, (this.swimming ? 3 : 12) * dt);
     this.body.setLinvel({ x: v.x + (mx * speed - v.x) * k, y: v.y + (mz * speed - v.y) * k }, true);

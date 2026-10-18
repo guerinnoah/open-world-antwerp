@@ -1,6 +1,13 @@
 import type { Sound } from '../audio/sound';
 import { coarsePointer } from '../core/quality';
 
+/** Restarts a class's CSS animation: reading offsetWidth forces the reflow. */
+function replay(el: HTMLElement, className: string, on = true) {
+  el.classList.remove(className);
+  void el.offsetWidth;
+  if (on) el.classList.add(className);
+}
+
 function button(className: string, onClick: () => void) {
   const b = document.createElement('button');
   b.className = className;
@@ -20,8 +27,18 @@ export class Hud {
   private toastEl = document.createElement('div');
   private street = document.createElement('div');
   private fadeEl = document.createElement('div');
+  private health = document.createElement('div');
+  private healthBars = [document.createElement('div'), document.createElement('div')]; // the lost chunk lingers behind the fill
+  private stamina = document.createElement('div');
+  private staminaBar = document.createElement('div');
+  private controlsEl = document.createElement('div');
+  private lastControls = '';
+  private hurtEl = document.createElement('div');
+  private wastedEl = document.createElement('div');
   private toastTimer = 0;
-  private last = { speed: '', hint: '' };
+  private dead = false;
+  private viewBtn: HTMLButtonElement | null = null;
+  private last = { speed: '', hint: '', health: -1, stamina: -1 };
 
   constructor() {
     this.root.id = 'hud';
@@ -31,7 +48,18 @@ export class Hud {
     this.street.className = 'street';
     this.speed.hidden = this.hint.hidden = true;
     this.fadeEl.className = 'fade';
-    this.root.append(this.speed, this.hint, this.toastEl, this.street, this.fadeEl);
+    this.health.className = 'health';
+    this.healthBars[0].className = 'lost';
+    this.health.append(...this.healthBars);
+    this.stamina.className = 'stamina';
+    this.stamina.hidden = true;
+    this.stamina.append(this.staminaBar);
+    this.controlsEl.className = 'controls-list';
+    this.controlsEl.hidden = true;
+    this.hurtEl.className = 'hurt';
+    this.wastedEl.className = 'wasted';
+    this.wastedEl.innerHTML = '<span>Wasted</span>';
+    this.root.append(this.hurtEl, this.speed, this.hint, this.toastEl, this.street, this.health, this.stamina, this.controlsEl, this.wastedEl, this.fadeEl);
     document.body.append(this.root);
     // A focused <summary> would toggle on the Enter/Space game keys.
     document.querySelector('#credits summary')?.addEventListener('click', (e) => (e.currentTarget as HTMLElement).blur());
@@ -46,10 +74,62 @@ export class Hud {
   }
 
   setHint(text: string) {
+    if (this.dead) text = '';
     if (text === this.last.hint) return;
     this.last.hint = text;
     this.hint.textContent = text;
     this.hint.hidden = !text;
+  }
+
+  setHealth(fraction: number) {
+    const pct = Math.round(fraction * 200) / 2;
+    if (pct === this.last.health) return;
+    this.last.health = pct;
+    for (const bar of this.healthBars) bar.style.width = `${pct}%`;
+    this.health.classList.toggle('low', pct < 25);
+  }
+
+  /** The actions available right now, one "KEY — action" per line (desktop; touch has on-screen buttons). */
+  setControls(lines: string[]) {
+    const text = lines.join('\n');
+    if (text === this.lastControls) return;
+    this.lastControls = text;
+    this.controlsEl.textContent = text;
+    this.controlsEl.hidden = lines.length === 0;
+  }
+
+  setStamina(fraction: number) {
+    const pct = Math.round(fraction * 200) / 2;
+    if (pct === this.last.stamina) return;
+    this.last.stamina = pct;
+    this.staminaBar.style.width = `${pct}%`;
+    this.stamina.hidden = pct > 99.5; // only show it once you've spent some
+    this.stamina.classList.toggle('low', pct < 20);
+  }
+
+  hurt(strength: number) {
+    this.hurtEl.style.setProperty('--hurt', String(Math.min(1, 0.3 + strength)));
+    replay(this.hurtEl, 'flash');
+  }
+
+  /** seconds: until the screen goes black; 0 clears it. */
+  wasted(seconds: number) {
+    this.dead = seconds > 0;
+    this.wastedEl.style.setProperty('--wasted', `${seconds}s`);
+    this.wastedEl.classList.toggle('show', this.dead);
+    document.body.classList.toggle('wasted', this.dead);
+    if (this.dead) this.setHint('');
+  }
+
+  /** First/third-person toggle button; label follows the current view (also switchable with V). */
+  viewToggle(onClick: () => void) {
+    this.viewBtn = button('view', onClick);
+  }
+
+  setView(firstPerson: boolean) {
+    if (!this.viewBtn) return;
+    this.viewBtn.textContent = firstPerson ? '1st' : '3rd';
+    this.viewBtn.title = `Switch to ${firstPerson ? 'third' : 'first'} person (V)`;
   }
 
   soundToggle(sound: Sound) {
@@ -87,9 +167,7 @@ export class Hud {
 
   fade() {
     this.fadeEl.style.opacity = '';
-    this.fadeEl.classList.remove('out');
-    void this.fadeEl.offsetWidth;
-    this.fadeEl.classList.add('out');
+    replay(this.fadeEl, 'out');
   }
 
   blackout() {
@@ -99,9 +177,7 @@ export class Hud {
 
   setStreet(name: string) {
     this.street.textContent = name;
-    this.street.classList.remove('show');
-    void this.street.offsetWidth;
-    if (name) this.street.classList.add('show');
+    replay(this.street, 'show', !!name);
   }
 
   toast(text: string, ms = 3500) {

@@ -84,12 +84,12 @@ describe('WaterMap', () => {
 describe('clearTramTracks', () => {
   it('drops trees and street furniture a tram would hit, and keeps what stands beside the track', () => {
     const city = {
-      trees: [50, 0.4, 30, -1.7, 101, 1, 50, 3, 300, 300],
+      trees: [50, 0.4, 0, 20, 30, -1.7, 0, 30, 101, 1, 0, 40, 50, 3, 2, 100, 300, 300, 1, 50],
       props: { lamps: [20, 1.5, 20, 2.5], benches: [], bollards: [], signals: [60, -0.5, 1.2, 60, -4, 1.2] },
       terraces: [70, 2.2, 0, 3, 70, 3, 0, 3],
     } as unknown as CityData;
     clearTramTracks(city, [{ p: [0, 0, 100, 0, 100, 100] }]);
-    expect(city.trees).toEqual([50, 3, 300, 300]);
+    expect(city.trees).toEqual([50, 3, 2, 100, 300, 300, 1, 50]);
     expect(city.props.lamps).toEqual([20, 2.5]);
     expect(city.props.signals).toEqual([60, -4, 1.2]);
     expect(city.terraces).toEqual([70, 3, 0, 3]);

@@ -1,9 +1,17 @@
 export class TitleScreen {
   started: boolean;
   private root = document.querySelector<HTMLDivElement>('#title')!;
+  private bar = this.root.querySelector<HTMLDivElement>('#loading .bar div');
+  private filled = 0;
 
   constructor(private skip: boolean) {
     this.started = skip;
+  }
+
+  /** Never moves back: more downloads join the count once the people list is in. */
+  progress(fraction: number) {
+    this.filled = Math.max(this.filled, Math.min(1, fraction));
+    this.bar?.style.setProperty('transform', `scaleX(${this.filled})`);
   }
 
   ready() {

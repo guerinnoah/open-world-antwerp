@@ -11,7 +11,10 @@ export interface InputState {
   horn: boolean;
   punch: boolean;
   siren: boolean;
+  view: boolean; // toggle first/third person (one-shot)
 }
+
+export type Seat = 'foot' | 'vehicle' | 'emergency';
 
 const DEADZONE = 0.15;
 const dead = (v: number) => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
@@ -24,14 +27,17 @@ export class Input {
   private actionQueued = false;
   private punchQueued = false;
   private sirenQueued = false;
+  private viewQueued = false;
+  private touchRoot: HTMLDivElement | null = null;
   private sirenButton: HTMLButtonElement | null = null;
   private look = { x: 0, y: 0 };
   private drag: { id: number; x: number; y: number; moved: number } | null = null;
-  private stick = { id: -1, x: 0, y: 0, cx: 0, cy: 0 };
+  private stick: { id: number | null; x: number; y: number; cx: number; cy: number } = { id: null, x: 0, y: 0, cx: 0, cy: 0 };
   private touchHandbrake = false;
   private padActionHeld = false;
   private padPunchHeld = false;
   private padSirenHeld = false;
+  private padViewHeld = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     addEventListener('keydown', (e) => {
@@ -40,6 +46,7 @@ export class Input {
       if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') this.actionQueued = true;
       if (e.code === 'KeyR') this.punchQueued = true;
       if (e.code === 'KeyQ') this.sirenQueued = true;
+      if (e.code === 'KeyV') this.viewQueued = true;
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -83,6 +90,7 @@ export class Input {
     let horn = k('KeyH');
     let punch = this.punchQueued;
     let siren = this.sirenQueued;
+    let view = this.viewQueued;
 
     for (const pad of navigator.getGamepads?.() ?? []) {
       if (!pad || pad.mapping !== 'standard') continue;
@@ -104,9 +112,12 @@ export class Input {
       const sirenHeld = b(11) > 0.5;
       if (sirenHeld && !this.padSirenHeld) siren = true;
       this.padSirenHeld = sirenHeld;
+      const viewHeld = b(12) > 0.5; // d-pad up
+      if (viewHeld && !this.padViewHeld) view = true;
+      this.padViewHeld = viewHeld;
     }
 
-    if (this.stick.id >= 0) {
+    if (this.stick.id !== null) {
       steer += this.stick.x;
       throttle -= this.stick.y;
       sprint ||= Math.hypot(this.stick.x, this.stick.y) > 0.95;
@@ -114,18 +125,22 @@ export class Input {
     handbrake ||= this.touchHandbrake;
 
     this.look.x = this.look.y = 0;
-    this.actionQueued = this.punchQueued = this.sirenQueued = false;
-    return { steer: clamp1(steer), throttle: clamp1(throttle), handbrake, sprint, lookX, lookY, action, horn, punch, siren };
+    this.actionQueued = this.punchQueued = this.sirenQueued = this.viewQueued = false;
+    return { steer: clamp1(steer), throttle: clamp1(throttle), handbrake, sprint, lookX, lookY, action, horn, punch, siren, view };
   }
 
-  /** On touch, the punch button works the siren while you drive something that has one. */
-  set sirenMode(on: boolean) {
-    if (this.sirenButton) this.sirenButton.textContent = on ? 'Siren' : 'Punch';
+  /** On touch, shows only the buttons that do something in this seat. */
+  set seat(seat: Seat) {
+    if (!this.touchRoot || this.touchRoot.dataset.seat === seat) return;
+    this.touchRoot.dataset.seat = seat;
+    this.sirenButton!.textContent = seat === 'emergency' ? 'Siren' : 'Punch';
+    this.touchHandbrake = false; // a hidden button never sees its pointerup
   }
 
   private createTouchControls() {
-    const root = document.createElement('div');
+    const root = (this.touchRoot = document.createElement('div'));
     root.id = 'touch';
+    root.dataset.seat = 'foot';
     root.innerHTML = `
       <div class="stick"><div class="knob"></div></div>
       <button class="btn action" type="button">E</button>
@@ -136,9 +151,8 @@ export class Input {
     const stick = root.querySelector<HTMLDivElement>('.stick')!;
     const knob = root.querySelector<HTMLDivElement>('.knob')!;
     const radius = 50;
-    const move = (e: PointerEvent) => {
-      if (e.pointerId !== this.stick.id) return;
-      let dx = e.clientX - this.stick.cx, dy = e.clientY - this.stick.cy;
+    const move = (t: Touch) => {
+      let dx = t.clientX - this.stick.cx, dy = t.clientY - this.stick.cy;
       const len = Math.hypot(dx, dy);
       if (len > radius) {
         dx *= radius / len;
@@ -148,25 +162,33 @@ export class Input {
       this.stick.y = dy / radius;
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
     };
-    stick.addEventListener('pointerdown', (e) => {
-      const rect = stick.getBoundingClientRect();
-      this.stick = { id: e.pointerId, x: 0, y: 0, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
-      stick.setPointerCapture(e.pointerId);
-      move(e);
-    });
-    stick.addEventListener('pointermove', move);
-    const release = (e: PointerEvent) => {
-      if (e.pointerId !== this.stick.id) return;
-      this.stick = { ...this.stick, id: -1, x: 0, y: 0 };
+    const ours = (e: TouchEvent) => [...e.changedTouches].find((t) => t.identifier === this.stick.id);
+    // Touch events with preventDefault: iOS Safari can claim a pointer drag as a page gesture and cancel it.
+    const opts = { passive: false };
+    stick.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (this.stick.id !== null) return;
+      const t = e.changedTouches[0], rect = stick.getBoundingClientRect();
+      this.stick = { id: t.identifier, x: 0, y: 0, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+      move(t);
+    }, opts);
+    stick.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const t = ours(e);
+      if (t) move(t);
+    }, opts);
+    const release = (e: TouchEvent) => {
+      if (!ours(e)) return;
+      this.stick = { ...this.stick, id: null, x: 0, y: 0 };
       knob.style.transform = '';
     };
-    stick.addEventListener('pointerup', release);
-    stick.addEventListener('pointercancel', release);
+    stick.addEventListener('touchend', release);
+    stick.addEventListener('touchcancel', release);
 
     root.querySelector('.action')!.addEventListener('pointerdown', () => (this.actionQueued = true));
     this.sirenButton = root.querySelector<HTMLButtonElement>('.punch')!;
     this.sirenButton.addEventListener('pointerdown', () => {
-      if (this.sirenButton!.textContent === 'Siren') this.sirenQueued = true;
+      if (root.dataset.seat === 'emergency') this.sirenQueued = true;
       else this.punchQueued = true;
     });
     const handbrake = root.querySelector<HTMLButtonElement>('.handbrake')!;

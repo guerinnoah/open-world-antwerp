@@ -42,6 +42,16 @@ describe('protocol', () => {
     expect(long.endsWith('🚲')).toBe(true);
   });
 
+  it('masks swearing in chat', () => {
+    expect(cleanChat('what the FUCK')).toBe('what the ****');
+    expect(cleanChat('fuuuuck, b1tch')).toBe('****, *****');
+  });
+
+  it('leaves ordinary words and Antwerp names alone', () => {
+    const fine = 'cockpit Scunthorpe Pakistan assassin Niger Kattendijkdok Schijnpoort Kipdorp Player 188';
+    expect(cleanChat(fine)).toBe(fine);
+  });
+
   it('limits chat to a burst, then one message every CHAT_EVERY ms', () => {
     const limit = new ChatLimit();
     for (let i = 0; i < CHAT_BURST; i++) expect(limit.take(1000)).toBe(true);
@@ -55,6 +65,12 @@ describe('protocol', () => {
     expect(cleanName('  Noah \u0000<b>  ')).toBe('Noah b');
     expect(cleanName('a'.repeat(40))).toHaveLength(16);
     expect(cleanName(42)).toBe('');
+  });
+
+  it('refuses offensive names', () => {
+    expect(cleanName('xXfuckXx')).toBe('');
+    expect(cleanName('fu ck')).toBe('');
+    expect(cleanName('Niger Delta')).toBe('Niger Delta');
   });
 });
 

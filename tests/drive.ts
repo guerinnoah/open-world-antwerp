@@ -10,7 +10,7 @@ export function testDrive(spec: VehicleSpec, DT: number, speed = 0, colour = 0xf
   car.trailer?.body.setLinvel({ x: speed, y: 0 }, true);
   car.awake = true;
   const run = (controls: Partial<Vehicle['controls']>, seconds: number, until?: () => boolean) => {
-    car.controls = { steer: 0, throttle: 0, handbrake: false, ...controls };
+    car.controls = { steer: 0, throttle: 0, handbrake: false, boost: true, ...controls }; // test full capability unless a case opts out
     let t = 0;
     for (; t < seconds && !until?.(); t += DT) {
       car.step(DT);

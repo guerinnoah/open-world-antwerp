@@ -98,7 +98,7 @@ export class WorldMap {
   }
 
   toggle(open: boolean) {
-    if (open && document.body.classList.contains('on-title')) return;
+    if (open && (document.body.classList.contains('on-title') || document.body.classList.contains('wasted'))) return;
     this.open = open;
     this.root.hidden = !open;
     this.pointers.clear();

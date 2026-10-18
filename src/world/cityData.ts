@@ -60,6 +60,7 @@ export interface CityData {
   areas: Area[];
   trams: number[][];
   landmarks: Landmark[];
+  /** Flat [x, z, kind, girth] per tree: kind indexes TREE_KINDS (treeKinds.ts), girth is trunk circumference in cm. */
   trees: number[];
   crossings: number[][];
   signs?: Sign[];

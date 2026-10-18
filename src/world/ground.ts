@@ -122,7 +122,12 @@ export interface Ground {
   update(time: number): void;
 }
 
-export function createGround(city: CityData, textures: Textures): Ground {
+// With an aerial photo (public/map/ortho.webp from map:fetch-ortho; the default, skipped by ?flat) each land layer keeps
+// its tiling detail, normal map and shadows but takes its colour from the aerial there, not one flat per-layer tint.
+const AERIAL_BOOST = 1.5; // the photo has its own shadows baked in; lift it a touch so the engine's shadows don't double up
+const AERIAL_SAT = 0.7; // mute the winter photo's blue-cast shadows in narrow streets, keeping grass/brick/stone colours
+
+export function createGround(city: CityData, textures: Textures, aerial: THREE.Texture | null): Ground {
   const builders = new Map<string, FlatBuilder>(LAYERS.map((l) => [l.key, new FlatBuilder()]));
   const { minX, minZ, maxX, maxZ } = city.bounds;
   const margin = 2000;
@@ -141,7 +146,9 @@ export function createGround(city: CityData, textures: Textures): Ground {
     const tex = layer.texture && textures.ground[layer.texture];
     const writesDepth = layer.key === 'water' || layer.key === 'base';
     const color = new THREE.Color(layer.tint);
-    if (tex) color.setRGB(color.r / tex.mean.r, color.g / tex.mean.g, color.b / tex.mean.b);
+    // Blend mode normalises the detail texture to ~white (1 / mean) so the aerial supplies the colour; else use the tint.
+    if (tex && aerial) color.setRGB(1 / tex.mean.r, 1 / tex.mean.g, 1 / tex.mean.b);
+    else if (tex) color.setRGB(color.r / tex.mean.r, color.g / tex.mean.g, color.b / tex.mean.b);
     const material = new THREE.MeshStandardMaterial({
       color,
       ...(tex ? { map: tex.map, normalMap: tex.normalMap } : {}),
@@ -166,6 +173,7 @@ export function createGround(city: CityData, textures: Textures): Ground {
       };
       water = material;
     }
+    if (tex && aerial) blendAerial(material, aerial, city.bounds);
     const geometry = builder.geometry(layer.key === 'water' ? 18 : layer.scale);
     freeAfterUpload(geometry);
     const mesh = new THREE.Mesh(geometry, material);
@@ -180,5 +188,25 @@ export function createGround(city: CityData, textures: Textures): Ground {
     update(time) {
       if (water?.normalMap) water.normalMap.offset.set(time * 0.006, time * 0.004);
     },
+  };
+}
+
+// Tint a ground layer's diffuse with the aerial, sampled by world position. North (min z) → v = 1 after the loader's flip.
+function blendAerial(material: THREE.MeshStandardMaterial, aerial: THREE.Texture, bounds: CityData['bounds']) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uAerial = { value: aerial };
+    shader.uniforms.uAerialOrigin = { value: new THREE.Vector2(bounds.minX, bounds.minZ) };
+    shader.uniforms.uAerialSize = { value: new THREE.Vector2(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vAerialUv;\nuniform vec2 uAerialOrigin;\nuniform vec2 uAerialSize;')
+      .replace('#include <begin_vertex>',
+        '#include <begin_vertex>\nvec3 aerialWp = (modelMatrix * vec4(position, 1.0)).xyz;\n'
+        + 'vAerialUv = vec2((aerialWp.x - uAerialOrigin.x) / uAerialSize.x, 1.0 - (aerialWp.z - uAerialOrigin.y) / uAerialSize.y);');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vAerialUv;\nuniform sampler2D uAerial;')
+      .replace('#include <map_fragment>',
+        '#include <map_fragment>\n{ vec3 aerial = pow(texture2D(uAerial, vAerialUv).rgb, vec3(2.2));\n'
+        + `aerial = mix(vec3(dot(aerial, vec3(0.299, 0.587, 0.114))), aerial, ${AERIAL_SAT.toFixed(2)});\n`
+        + `diffuseColor.rgb *= aerial * ${AERIAL_BOOST.toFixed(2)}; }`);
   };
 }

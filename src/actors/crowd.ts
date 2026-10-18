@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { uploadFirst } from '../core/instancing';
+import { track } from '../core/loadProgress';
 
 // Baked Rocketbox avatars: one InstancedMesh each, skinned in the vertex shader from a texture of per-frame bone matrices.
 export type Clip = 'walk' | 'run' | 'idle' | 'ride' | 'scoot' | 'punch' | 'moto' | 'moped';
@@ -99,8 +100,8 @@ export class Crowd {
     await Promise.all(
       picked.map(async (info) => {
         const [bin, atlas] = await Promise.all([
-          fetch(`/people/${info.name}.bin`).then((r) => r.arrayBuffer()),
-          loader.loadAsync(`/people/${info.name}.webp`),
+          track(fetch(`/people/${info.name}.bin`).then((r) => r.arrayBuffer()), 4),
+          track(loader.loadAsync(`/people/${info.name}.webp`), 2),
         ]);
         crowd.avatars.push(crowd.build(info, bin, atlas, capacity));
       }),

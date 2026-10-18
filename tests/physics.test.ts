@@ -12,7 +12,7 @@ const sedan = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
 const city = {
   bounds: { minX: -100, minZ: -100, maxX: 100, maxZ: 100 },
   buildings: [{ rings: [[10, -5, 20, -5, 20, 5, 10, 5]] }],
-  trees: [0, 6],
+  trees: [0, 6, 0, 30],
 } as unknown as CityData;
 
 let physics: Physics;

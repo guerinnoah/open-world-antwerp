@@ -12,7 +12,7 @@ export function clearTramTracks(city: CityData, tracks: { p: number[] }[]) {
     }
     return kept;
   };
-  city.trees = keep(city.trees, 2, 0.3);
+  city.trees = keep(city.trees, 4, 0.3);
   const { lamps, benches, bollards, signals } = city.props;
   city.props = { lamps: keep(lamps, 2, 0.14), benches: keep(benches, 2, 0.9), bollards: keep(bollards, 2, 0.12), signals: keep(signals, 3, 0.1) };
   if (city.terraces) city.terraces = keep(city.terraces, 4, 0.8);

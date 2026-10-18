@@ -16,12 +16,12 @@ describe.each([60, 30])('e-scooter feel at %i Hz', (hz) => {
     return { scooter, run };
   };
 
-  it('pulls away briskly and tops out at 38 km/h', () => {
+  it('pulls away briskly and tops out at 25 km/h', () => {
     const { scooter, run } = setup();
     expect(run({ throttle: 1 }, 10, () => scooter.forwardSpeed >= 15 / 3.6)).toBeLessThan(3);
     run({ throttle: 1 }, 15);
-    expect(scooter.forwardSpeed * 3.6).toBeGreaterThan(37);
-    expect(scooter.forwardSpeed * 3.6).toBeLessThanOrEqual(38.01);
+    expect(scooter.forwardSpeed * 3.6).toBeGreaterThan(24);
+    expect(scooter.forwardSpeed * 3.6).toBeLessThanOrEqual(25.01);
   });
 
   it('leans into a right turn, less than a bike would', () => {
