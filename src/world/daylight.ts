@@ -32,18 +32,34 @@ export function sunPosition(date: Date, lat = ANTWERP.lat, lon = ANTWERP.lon): {
   return { elevation, azimuth };
 }
 
+const antwerpParts = (date: Date, options: Intl.DateTimeFormatOptions) => Object.fromEntries(
+  new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Brussels', hour12: false, ...options }).formatToParts(date).map((x) => [x.type, x.value]),
+);
+
 // The instant at which Antwerp's wall clock reads `hour` today (DST-aware via Intl).
 function atAntwerpHour(hour: number): Date {
   const now = new Date();
-  const tz = 'Europe/Brussels';
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      .formatToParts(now).map((x) => [x.type, x.value]),
-  );
+  const p = antwerpParts(now, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const asIfUtc = Date.UTC(+p.year, +p.month - 1, +p.day, p.hour === '24' ? 0 : +p.hour, +p.minute, +p.second);
   const offsetMs = asIfUtc - now.getTime(); // how far Brussels is ahead of UTC right now
   const h = Math.floor(hour), m = Math.round((hour - h) * 60);
   return new Date(Date.UTC(+p.year, +p.month - 1, +p.day, h, m, 0) - offsetMs);
+}
+
+function clockDate(params: URLSearchParams): Date {
+  const t = params.get('time');
+  return t !== null && t !== '' && Number.isFinite(+t) ? atAntwerpHour(+t) : new Date();
+}
+
+export interface Clock {
+  hour: number; // 0–23, Antwerp local
+  weekend: boolean;
+}
+
+/** Antwerp's hour and weekday now (or at ?time=), for the De Lijn schedule. */
+export function antwerpClock(params: URLSearchParams): Clock {
+  const p = antwerpParts(clockDate(params), { hour: '2-digit', weekday: 'short' });
+  return { hour: +p.hour % 24, weekend: p.weekday === 'Sat' || p.weekday === 'Sun' };
 }
 
 const WEATHER_PRESETS: Record<string, { cloud: number; rain: number }> = {
@@ -53,9 +69,7 @@ const WEATHER_PRESETS: Record<string, { cloud: number; rain: number }> = {
 
 /** Sun from the real (or ?time=) clock, plus any weather the URL pins; live weather is fetched separately. */
 export function initialSky(params: URLSearchParams): SkyState {
-  const t = params.get('time');
-  const date = t !== null && t !== '' && Number.isFinite(+t) ? atAntwerpHour(+t) : new Date();
-  const sun = sunPosition(date);
+  const sun = sunPosition(clockDate(params));
   let cloud = 0, rain = 0;
   const preset = params.get('weather');
   if (preset && WEATHER_PRESETS[preset]) ({ cloud, rain } = WEATHER_PRESETS[preset]);

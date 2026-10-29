@@ -51,8 +51,6 @@ export class Player {
   health = MAX_HEALTH;
   stamina = 1; // 0..1 energy for sprinting on foot and sprint-pedalling a bike
   private exhausted = false;
-  elevation = 0; // m: the floor under you indoors (stairs, upper storeys)
-  private prevElevation = 0;
   private phase = 0;
   private aim = 0;
   private lean = 0;
@@ -81,11 +79,6 @@ export class Player {
   savePrev() {
     this.prev.x = this.x;
     this.prev.z = this.z;
-    this.prevElevation = this.elevation;
-  }
-
-  elevationAt(alpha: number) {
-    return this.prevElevation + (this.elevation - this.prevElevation) * alpha;
   }
 
   startPunch(aim: number): boolean {
@@ -158,7 +151,7 @@ export class Player {
     this.sink += ((this.swimming ? TREAD_DEPTH : 0) - this.sink) * Math.min(1, 6 * dt);
   }
 
-  place(x: number, z: number, heading: number, elevation = 0) {
+  place(x: number, z: number, heading: number) {
     this.body.setTranslation({ x, y: z }, true);
     this.body.setLinvel({ x: 0, y: 0 }, true);
     this.body.setEnabled(true);
@@ -167,7 +160,6 @@ export class Player {
     this.down = this.sink = this.lean = this.punch = 0;
     this.swimming = false;
     this.prev = { x, z };
-    this.elevation = this.prevElevation = elevation;
   }
 
   hide() {
@@ -181,7 +173,7 @@ export class Player {
     const v = this.body.linvel();
     const speed = this.down > 0 ? 0 : Math.hypot(v.x, v.y);
     this.lean += ((this.swimming && speed > 0.8 ? 1 : 0) - this.lean) * Math.min(1, 5 * dt);
-    this.object.position.set(x, this.elevationAt(alpha) + (this.down > 0 ? 0.25 : -this.sink * (1 - this.lean * SWIM_RISE)), z);
+    this.object.position.set(x, this.down > 0 ? 0.25 : -this.sink * (1 - this.lean * SWIM_RISE), z);
     this.object.rotation.y = -this.heading;
     this.object.rotation.z = this.down > 0 ? -Math.PI / 2 : -this.lean * SWIM_LEAN;
 

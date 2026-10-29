@@ -156,20 +156,20 @@ if (pose) {
 await a.keyboard.down('Space');
 await until('Anna stopped again', async () => Math.abs(await a.evaluate(() => (window as unknown as G).game.driving!.forwardSpeed)) < 0.5);
 await a.keyboard.up('Space');
+const leftAt = await a.evaluate(() => {
+  const v = (window as unknown as G).game.driving!;
+  return { x: v.x, z: v.z };
+});
 await a.keyboard.press('KeyE');
 await until('Anna on foot', async () => !(await self(a)).driving);
 await until('Bram sees Anna on foot', async () => (await other(b))?.mode === 0);
 const after = await self(a);
-const leftAt = await a.evaluate((c) => {
-  const v = (window as unknown as G).game.vehicles.find((v) => v.colour === c.colour && v.spec.name === c.kind && !v.driven)!;
-  return { x: v.x, z: v.z };
-}, parked);
 await b.waitForTimeout(1500);
 const left = await b.evaluate(
-  ([c, at]) => (window as unknown as G).game.vehicles.filter((v) => !v.remote && v.colour === c.colour && v.spec.name === c.kind && Math.hypot(v.x - at.x, v.z - at.z) < 3).length,
+  ([c, at]) => (window as unknown as G).game.vehicles.filter((v) => v.colour === c.colour && v.spec.name === c.kind && Math.hypot(v.x - at.x, v.z - at.z) < 3).length,
   [parked, leftAt] as const,
 );
-check(left === 1, "the car she left is an ordinary parked car in Bram's city");
+check(left === 0, "the car she left is gone from Bram's city");
 await watch(b, after, 0, 8);
 await b.waitForTimeout(600);
 await b.screenshot({ path: 'screenshots/mp-3-on-foot.png' });

@@ -52,10 +52,8 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #hud { position: fixed; inset: 0; pointer-events: none; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.6); }
 #hud .speed { position: absolute; right: 18px; bottom: 34px; font-size: 40px; font-variant-numeric: tabular-nums; }
 #hud .speed small { font-size: 16px; opacity: 0.8; }
-#hud .controls-list { position: absolute; left: 12px; top: 48px; font: 600 13px system-ui, sans-serif; color: #fff; opacity: 0.82; background: rgb(15 17 22 / 0.5); padding: 6px 10px; border-radius: 7px; white-space: pre-line; line-height: 1.55; text-shadow: 0 1px 2px rgb(0 0 0 / 0.5); }
+#hud .controls-list { position: absolute; left: 16px; bottom: 206px; font: 600 13px system-ui, sans-serif; color: #fff; opacity: 0.82; background: rgb(15 17 22 / 0.5); padding: 6px 10px; border-radius: 7px; white-space: pre-line; line-height: 1.55; text-shadow: 0 1px 2px rgb(0 0 0 / 0.5); }
 #hud .controls-list[hidden] { display: none; }
-#mirror { position: fixed; top: 54px; left: 50%; transform: translateX(-50%); width: 440px; height: 120px; border: 2px solid rgb(255 255 255 / 0.35); border-radius: 6px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.5); pointer-events: none; }
-#mirror[hidden] { display: none; }
 #hud .hint { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px; background: rgb(15 17 22 / 0.65); font-size: 16px; text-shadow: none; }
 #hud .toast { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); max-width: 90vw; text-align: center; font-size: 22px; opacity: 0; transition: opacity 0.4s; }
 #hud .toast.show { opacity: 1; }

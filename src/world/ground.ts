@@ -120,7 +120,13 @@ export class FlatBuilder {
 export interface Ground {
   group: THREE.Group;
   update(time: number): void;
+  setWetness(rain: number): void; // 0..1: glossier, darker paving and a choppier river
 }
+
+// Roughness when soaked: asphalt sheets with water, setts and paving stay rougher.
+const WET_ROUGHNESS: Partial<Record<Layer['key'], number>> = {
+  base: 0.5, foot: 0.5, plaza: 0.5, pedestrian: 0.5, cycle: 0.3, service: 0.3, minor: 0.3, major: 0.3, tram: 0.2,
+};
 
 // With an aerial photo (public/map/ortho.webp from map:fetch-ortho; the default, skipped by ?flat) each land layer keeps
 // its tiling detail, normal map and shadows but takes its colour from the aerial there, not one flat per-layer tint.
@@ -140,6 +146,7 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
   const group = new THREE.Group();
   group.name = 'ground';
   let water: THREE.MeshStandardMaterial | null = null;
+  const wettable: { mat: THREE.MeshStandardMaterial; dryRough: number; dryColor: THREE.Color; wetRough: number }[] = [];
   LAYERS.forEach((layer, i) => {
     const builder = builders.get(layer.key)!;
     if (!builder.idx.length) return;
@@ -173,6 +180,8 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
       };
       water = material;
     }
+    const wetRough = WET_ROUGHNESS[layer.key];
+    if (wetRough !== undefined) wettable.push({ mat: material, dryRough: material.roughness, dryColor: material.color.clone(), wetRough });
     if (tex && aerial) blendAerial(material, aerial, city.bounds);
     const geometry = builder.geometry(layer.key === 'water' ? 18 : layer.scale);
     freeAfterUpload(geometry);
@@ -183,10 +192,21 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
     group.add(mesh);
   });
 
+  let wetness = -1;
   return {
     group,
     update(time) {
       if (water?.normalMap) water.normalMap.offset.set(time * 0.006, time * 0.004);
+    },
+    setWetness(rain) {
+      const w = Math.min(1, Math.max(0, rain));
+      if (Math.abs(w - wetness) < 0.02) return;
+      wetness = w;
+      for (const l of wettable) {
+        l.mat.roughness = l.dryRough + (l.wetRough - l.dryRough) * w;
+        l.mat.color.copy(l.dryColor).multiplyScalar(1 - 0.24 * w);
+      }
+      if (water) water.normalScale.setScalar(0.35 + 0.4 * w);
     },
   };
 }

@@ -2,9 +2,10 @@ import { createServer, type Server } from 'node:http';
 import { connect as tcp, type AddressInfo, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
+import { safeChat, safeName } from '../server/profanity';
 import { attachRelay, type Relay } from '../server/relay';
 import {
-  CHAT_BURST, CHAT_EVERY, CHAT_MAX, ChatLimit, MAX_LEFT_BEHIND, PROTOCOL_VERSION, VEHICLE_KINDS, cleanChat, cleanName, decodeState,
+  CHAT_BURST, CHAT_EVERY, CHAT_MAX, ChatLimit, PROTOCOL_VERSION, cleanChat, cleanName, decodeState,
   encodeState, type PlayerState, type ServerMessage,
 } from '../src/net/protocol';
 import { DELAY, Timeline } from '../src/net/timeline';
@@ -43,13 +44,14 @@ describe('protocol', () => {
   });
 
   it('masks swearing in chat', () => {
-    expect(cleanChat('what the FUCK')).toBe('what the ****');
-    expect(cleanChat('fuuuuck, b1tch')).toBe('****, *****');
+    expect(safeChat('what the FUCK')).toBe('what the ****');
+    expect(safeChat('fuuuuck, b1tch')).toBe('****, *****');
   });
 
   it('leaves ordinary words and Antwerp names alone', () => {
     const fine = 'cockpit Scunthorpe Pakistan assassin Niger Kattendijkdok Schijnpoort Kipdorp Player 188';
-    expect(cleanChat(fine)).toBe(fine);
+    expect(safeChat(fine)).toBe(fine);
+    expect(safeName('Niger Delta')).toBe('Niger Delta');
   });
 
   it('limits chat to a burst, then one message every CHAT_EVERY ms', () => {
@@ -68,9 +70,9 @@ describe('protocol', () => {
   });
 
   it('refuses offensive names', () => {
-    expect(cleanName('xXfuckXx')).toBe('');
-    expect(cleanName('fu ck')).toBe('');
-    expect(cleanName('Niger Delta')).toBe('Niger Delta');
+    expect(safeName('xXfuckXx')).toBe('');
+    expect(safeName('fu ck')).toBe('');
+    expect(cleanName('xXfuckXx')).toBe('xXfuckXx'); // the game leaves filtering to the relay
   });
 });
 
@@ -307,7 +309,7 @@ describe('relay', () => {
     await expect(connect({}, { 'x-forwarded-for': '203.0.113.1' })).rejects.toThrow('429');
   });
 
-  it('tells late joiners which parked cars were taken or left behind', async () => {
+  it('tells late joiners which parked cars were taken', async () => {
     await start();
     const a = await connect();
     await a.next('welcome');
@@ -315,31 +317,13 @@ describe('relay', () => {
     await watcher.next('welcome');
     const red = { kind: 2, colour: 0xff0000 };
     a.send({ t: 'took', x: 10, z: 20, ...red });
+    // Getting out leaves nothing parked behind.
     a.send({ t: 's', s: encodeState(state({ mode: 1, x: 30, z: 40, angle: 1.5, ...red })) });
     a.send({ t: 's', s: encodeState(state({ x: 31, z: 40 })) });
-    // Bikes and sinking cars don't stay behind.
-    a.send({ t: 's', s: encodeState(state({ mode: 1, kind: VEHICLE_KINDS.indexOf('bike'), colour: 1 })) });
-    a.send({ t: 's', s: encodeState(state()) });
-    a.send({ t: 's', s: encodeState(state({ mode: 1, sink: 0.5, ...red })) });
-    a.send({ t: 's', s: encodeState(state()) });
     a.send({ t: 'chat', text: 'done' });
     await watcher.next('chat'); // the relay has handled everything before it
     const late = await connect();
-    expect((await late.next('welcome')).cars).toEqual([
-      { t: 'took', x: 10, z: 20, ...red },
-      { t: 'left', x: 30, z: 40, angle: 1.5, ...red },
-    ]);
-
-    // Games keep only the newest MAX_LEFT_BEHIND left-behind cars, so the relay does too.
-    for (let i = 0; i < MAX_LEFT_BEHIND; i++) {
-      a.send({ t: 's', s: encodeState(state({ mode: 1, x: 100 + i, ...red })) });
-      a.send({ t: 's', s: encodeState(state()) });
-    }
-    a.send({ t: 'chat', text: 'done' });
-    await watcher.next('chat');
-    const cars = (await (await connect()).next('welcome')).cars!;
-    expect(cars[0]).toEqual({ t: 'took', x: 10, z: 20, ...red });
-    expect(cars.slice(1).map((e) => e.x)).toEqual(Array.from({ length: MAX_LEFT_BEHIND }, (_, i) => 100 + i));
+    expect((await late.next('welcome')).taken).toEqual([{ x: 10, z: 20, ...red }]);
   });
 
   it('turns away an out-of-date game', async () => {

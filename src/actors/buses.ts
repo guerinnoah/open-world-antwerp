@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { lerpPose, type Pose } from '../core/util';
 import type { Physics } from '../physics/physics';
-import type { BusRun } from '../world/cityData';
+import type { BusRun, LineSchedule } from '../world/cityData';
+import type { Clock } from '../world/daylight';
 import { cumulative, pointAt } from '../world/polyline';
 import { AXLES, BUS_WIDTH as WIDTH, KINDS, LAYOUTS, SECTION_LENGTH, buildBus, type BusKind } from './busModel';
 import type { TrafficHost } from './traffic';
 import {
-  SectionMeshes, addSections, moveSections, noseDistance, obstacleAhead, occupied, outlineDistance, removeSectioned, savePrev, serveStops,
+  Scheduler, SectionMeshes, addSections, moveSections, noseDistance, obstacleAhead, occupied, outlineDistance, removeSectioned, savePrev, serveStops,
   spawnPoint, stack, stopAfter, type Run, type Sectioned,
 } from './transit';
 import { ARTIC_SPEC, BUS_SPEC, Vehicle } from './vehicle';
@@ -41,6 +42,7 @@ export class Buses {
   readonly honks: [number, number][] = [];
   readonly group = new THREE.Group();
   private runs: Run<BusRun>[];
+  private spawnRuns: Run<BusRun>[]; // lines in service this hour; the clock is fixed per session
   private vehicles: Vehicle[] = []; // out of service: the player's, parked and other players'; their colour is the display row
   private spawnTimer = 0;
   private nextId = 0;
@@ -51,9 +53,14 @@ export class Buses {
     runs: BusRun[],
     private target: number,
     private host: TrafficHost,
+    schedules: Record<string, LineSchedule> | undefined,
+    clock: Clock,
   ) {
     this.runs = runs.map((r) => ({ ...r, cum: cumulative(r.p) }));
     this.meshes = new SectionMeshes(this.group, runs, KINDS, buildBus, () => target + OUT_OF_SERVICE);
+    const scheduler = new Scheduler(schedules, clock, runs.map((r) => r.line));
+    this.spawnRuns = this.runs.filter((r) => scheduler.active(r.line));
+    this.target = scheduler.fleet(target);
   }
 
   update(dt: number, px: number, pz: number) {
@@ -75,7 +82,7 @@ export class Buses {
   }
 
   private spawn(px: number, pz: number) {
-    const at = spawnPoint(this.runs, px, pz, SPAWN_MIN, SPAWN_MAX, 30, 40);
+    const at = spawnPoint(this.spawnRuns, px, pz, SPAWN_MIN, SPAWN_MAX, 30, 40);
     if (!at) return;
     const [run, s] = at;
     const layout = LAYOUTS[Math.random() < ARTICULATED ? 1 : 0];

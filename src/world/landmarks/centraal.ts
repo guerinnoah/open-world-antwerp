@@ -24,7 +24,7 @@ function stationBuilding(kit: Kit) {
   kit.box(57.3, 26, 60, 88.65, 0, 0, STONE).box(57.7, 1.2, 60.4, 88.65, 10, 0, STONE_BAND).hip(57.3, 60, 8, 88.65, 26, 0, ROOF);
   for (const z of [-34.5, 34.5]) kit.box(22, 20, 9, 71, 0, z, STONE).hip(22, 9, 4, 71, 20, z, ROOF);
 
-  // Entrance front on the footprint's facade line (x = 122.4), where halls/centraal.ts puts the doors.
+  // Entrance front on the footprint's facade line (x = 122.4).
   kit.box(16, 34, 26, 114.2, 0, 0, STONE).box(16.4, 1.2, 26.4, 114.2, 10, 0, STONE_BAND).gable(16, 26, 7, 114.2, 34, 0, ROOF, 'x');
   kit.group(122.4, 0, 0, Math.PI / 2, () => {
     kit.facade(roundArch(13, 9, 24, 12), GLASS, 0.3);

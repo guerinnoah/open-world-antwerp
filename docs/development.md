@@ -9,7 +9,8 @@
 `tools/dev/` has Playwright scripts that play the game and take screenshots into `screenshots/`. Start `pnpm dev`
 first, and run `pnpm exec playwright install chromium` once. The most useful ones:
 
-- `pnpm shot`: views of the city from above
+- `pnpm shot`: views of the city from above; `--landmark centraal` circles one landmark, and
+  `--vary '|time=22|weather=rain'` repeats each view per query
 - `pnpm drive`: walk to a car and drive it
 - `pnpm mp`: two players testing chat and collisions
 - `pnpm perf`: frame rate on an emulated, throttled phone

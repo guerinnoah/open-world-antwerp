@@ -107,6 +107,12 @@ export interface BusRun extends TramRun {
   end?: 1;
 }
 
+/** De Lijn trips per hour (index 0–23) on a representative weekday / weekend day, baked from GTFS (tools/map/fetch-gtfs.ts). */
+export interface LineSchedule {
+  weekday: number[];
+  weekend: number[];
+}
+
 export interface GraphData {
   version: 1;
   drive: RoadGraph;
@@ -114,6 +120,7 @@ export interface GraphData {
   bike?: RoadGraph;
   trams: TramRun[];
   buses: BusRun[];
+  schedules?: Record<string, LineSchedule>; // keyed by line number; absent lines fall back to a default service
   hospital: [number, number, number]; // respawn outside ZNA Sint-Elisabeth: x, z, facing (Rapier angle)
 }
 

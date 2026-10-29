@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import type { MultiPolygon, Polygon } from 'polygon-clipping';
-import type { Area, AreaKind, Building, CityData, Road, RoadKind } from '../../src/world/cityData.ts';
+import type { Area, AreaKind, Building, CityData, GraphData, Road, RoadKind } from '../../src/world/cityData.ts';
 import { BBOX, ORIGIN, OUT_DIR, RAW_DIR } from './config.ts';
 import { buildGraphData, underground } from './graph.ts';
 import { loadGrbHeights } from './grb.ts';
@@ -249,6 +249,14 @@ if (existsSync(treeFile)) {
 }
 
 const graph = buildGraphData({ elements, buildings, inBounds, roadWidth });
+// Real De Lijn trips-per-hour (pnpm map:fetch-gtfs), keyed by line; the sim runs trams/buses to this schedule.
+const gtfsFile = `${RAW_DIR}/gtfs-schedules.json`;
+if (existsSync(gtfsFile)) {
+  graph.schedules = JSON.parse(await readFile(gtfsFile, 'utf8')) as GraphData['schedules'];
+  console.log(`schedules: ${Object.keys(graph.schedules!).length} lines from the De Lijn GTFS`);
+} else {
+  console.warn('No De Lijn schedules (run pnpm map:fetch-gtfs); trams/buses use a default service.');
+}
 const streetPlates = placeStreetPlates([graph.drive, graph.walk], buildingIndex, near);
 const velo = veloStations(elements, roads, (p) => inBounds(p) && clearOfRoads(p) && open(p));
 

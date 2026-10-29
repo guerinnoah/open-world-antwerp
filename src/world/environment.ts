@@ -19,6 +19,7 @@ export interface EnvironmentOptions {
 
 export class Environment {
   readonly sun: THREE.DirectionalLight;
+  night = 0; // 0 by day → 1 at night; the building and lamp shaders read it once, at scene build
   private indoor = false;
   private scene: THREE.Scene;
   private renderer: THREE.WebGLRenderer;
@@ -76,6 +77,7 @@ export class Environment {
       .normalize();
     const day = smoothstep(-0.1, 0.12, elevation); // night → day across civil twilight (≈ -6°…+7°)
     const low = 1 - smoothstep(0, 0.5, elevation); // 1 near the horizon, 0 high up
+    this.night = 1 - smoothstep(-0.05, 0.15, elevation);
 
     const sunCol = new THREE.Color(0xffedd6).lerp(new THREE.Color(0xff8a3c), low * 0.85).lerp(new THREE.Color(0xc8ccd2), cloud * 0.5);
     this.sunIntensity = 3.3 * day * (1 - 0.72 * cloud);

@@ -1,11 +1,9 @@
 // Wire format shared by the game and the relay: JSON over one WebSocket. No local imports: Node runs this file directly.
-import { RegExpMatcher, TextCensor, asteriskCensorStrategy, englishDataset, englishRecommendedTransformers } from 'obscenity';
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 export const RELAY_PATH = '/net';
 export const CHAT_MAX = 120;
 export const CHAT_BURST = 5;
 export const CHAT_EVERY = 2000; // ms: after a burst of CHAT_BURST, one message per this
-export const MAX_LEFT_BEHIND = 12; // cars others got out of that a game keeps parked; older ones are cleared away
 
 /** Sent by index: the order is part of the protocol, only append. */
 export const VEHICLE_KINDS = [
@@ -51,12 +49,6 @@ export interface Took {
   colour: number;
 }
 
-/** The world's parked-car history, oldest first, which a late joiner replays: cars taken (gone for everyone) and left behind (parked for everyone). */
-export type CarEvent = ({ t: 'took' } & Took) | ({ t: 'left'; angle: number } & Took);
-
-/** A car someone gets out of stays behind as a parked car, unless it's sinking or a bike. */
-export const staysParked = (kind: string | undefined, sink: number) => !!kind && kind !== 'bike' && sink <= 0;
-
 export type ClientMessage =
   | { t: 'hello'; v: number; name: string; look: string }
   | { t: 's'; s: number[] }
@@ -64,7 +56,7 @@ export type ClientMessage =
   | { t: 'chat'; text: string };
 
 export type ServerMessage =
-  | { t: 'welcome'; id: number; peers: PeerInfo[]; cars?: CarEvent[] } // cars: missing from older relays
+  | { t: 'welcome'; id: number; peers: PeerInfo[]; taken: Took[] } // parked cars taken so far, oldest first: gone for a late joiner too
   | { t: 'join'; peer: PeerInfo }
   | { t: 'leave'; id: number }
   | { t: 's'; id: number; s: number[] }
@@ -97,25 +89,17 @@ export function decodeState(a: unknown): PlayerState | null {
   };
 }
 
-const english = englishDataset.build();
-const profanity = new RegExpMatcher({
-  ...english, ...englishRecommendedTransformers, whitelistedTerms: [...(english.whitelistedTerms ?? []), 'cockpit'],
-});
-const censor = new TextCensor().setStrategy(asteriskCensorStrategy());
-
-/** '' for an offensive name, so the caller falls back to a generated one. */
+/** Swearing is filtered by the relay (server/profanity.ts), so the game doesn't ship the word list. */
 export function cleanName(raw: unknown): string {
   if (typeof raw !== 'string') return '';
-  const name = raw.replace(/[\p{C}<>]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16).trim();
-  return profanity.hasMatch(name) ? '' : name;
+  return raw.replace(/[\p{C}<>]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16).trim();
 }
 
 export function cleanChat(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   const text = raw.replace(/\s/g, ' ').replace(/\p{C}/gu, '').replace(/ +/g, ' ').trim();
   // Cut by code points, not UTF-16 units, so an emoji at the limit isn't split in half.
-  const cut = [...text].slice(0, CHAT_MAX).join('').trim();
-  return censor.applyTo(cut, profanity.getAllMatches(cut));
+  return [...text].slice(0, CHAT_MAX).join('').trim();
 }
 
 export function cleanLook(raw: unknown): string {

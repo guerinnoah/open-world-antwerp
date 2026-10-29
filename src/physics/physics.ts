@@ -4,8 +4,7 @@ import type { CityData } from '../world/cityData';
 
 export { RAPIER };
 
-/** HALL: a landmark's interior; whoever is inside collides with nothing else. */
-export const GROUP = { STATIC: 0x1, VEHICLE: 0x2, PED: 0x4, BIKE: 0x8, HALL: 0x10 } as const;
+export const GROUP = { STATIC: 0x1, VEHICLE: 0x2, PED: 0x4, BIKE: 0x8 } as const;
 export const WHEELS = GROUP.VEHICLE | GROUP.BIKE;
 
 export const groups = (member: number, filter: number) => (member << 16) | filter;

@@ -27,7 +27,6 @@ import { createLandmarks } from './world/landmarks';
 import { createFacadeDetail } from './world/facadeDetail';
 import { createMarkings } from './world/markings';
 import { createProps } from './world/props';
-import { Halls } from './world/halls';
 import { Interiors } from './world/interiors';
 import { Signs } from './world/signs';
 import { loadTextures } from './world/textures';
@@ -117,8 +116,8 @@ const [city, graph, textures, crowd, aerial] = await Promise.all([
   track(fetch('/map/graph.json').then((r) => r.json() as Promise<GraphData>), 4),
   loadTextures(renderer, quality.textureSize, quality.anisotropy),
   Crowd.load(quality.peds + 24, quality.level === 'high' ? Infinity : 4),
-  // Aerial ground by default (?flat skips it); .catch → null falls back to the stylised ground if the photo's missing.
-  params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync('/map/ortho.webp').catch(() => null), 9),
+  // Aerial ground on desktop (?flat skips it); .catch → null falls back to the stylised ground if the photo's missing.
+  !quality.aerial || params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync('/map/ortho.webp').catch(() => null), 9),
 ]);
 if (aerial) {
   aerial.colorSpace = THREE.NoColorSpace; // sampled raw in the ground blend shader and linearised there
@@ -128,7 +127,7 @@ if (aerial) {
 const t1 = performance.now();
 clearTramTracks(city, graph.trams);
 const ground = createGround(city, textures, aerial);
-const props = createProps(city, quality.detailView);
+const props = createProps(city, quality.detailView, environment.night);
 const facadeDetail = createFacadeDetail(city.buildings, quality.detailView);
 const signs = new Signs(city, renderer, 200 * quality.detailView);
 const bikes = new Bikes(city, crowd, 130 * quality.detailView);
@@ -136,7 +135,7 @@ scene.add(bikes.group);
 title.progress(0.85);
 const landmarks = await createLandmarks(city.landmarks, textures);
 const scenery = [
-  createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures),
+  createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures, environment.night),
   createTrees(city.trees), landmarks,
 ];
 scene.add(...scenery);
@@ -179,49 +178,17 @@ if (params.has('fly')) {
   // Rapier queries only see colliders after a step: step the empty world so spawns can check for walls and posts.
   physics.step();
   const scooters = new Scooters(graph.walk, crowd, 130 * quality.detailView, physics);
-  scene.add(scooters.group);
+  const motorbikes = new Motorbikes(crowd, quality.vehicleView);
+  const interiors = new Interiors(signs.doors, city.buildings, physics, environment, crowd);
+  scene.add(scooters.group, motorbikes.group, interiors.group);
+  breakables.extras = (b) => (b.parts[0]?.kind === 'veloDock' ? bikes.clearDocks(b.x, b.z, 0.6) : []);
   const start = params.get('spawn') === 'grotemarkt' ? GROTE_MARKT_START : CENTRAAL_START;
   const input = new Input(canvas);
-  const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, start);
+  const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, interiors, breakables, bikes, scooters, motorbikes, start);
   (window as unknown as { game: Game }).game = game;
   if (params.has('fpv')) game.setFirstPerson(true);
-  const interiors = new Interiors(signs.doors, city.buildings, physics, environment, crowd);
-  scene.add(interiors.group);
-  game.attachInteriors(interiors);
-  interiors.halls = new Halls(city.landmarks, landmarks, physics, environment, crowd, interiors, game.player);
-  game.attachBreakables(breakables);
-  breakables.extras = (b) => (b.parts[0]?.kind === 'veloDock' ? bikes.clearDocks(b.x, b.z, 0.6) : []);
-  game.attachBikes(bikes);
-  game.attachScooters(scooters);
-  const motorbikes = new Motorbikes(crowd, quality.vehicleView);
-  scene.add(motorbikes.group);
-  game.attachMotorbikes(motorbikes);
   const relay = relayUrl(params);
   if (relay) game.attachMultiplayer(new Multiplayer(relay, params, game, physics, crowd, camera));
-  // Rear-view mirror: a second pass from behind the vehicle, drawn into a strip at the top in first person.
-  const MIRROR = { w: 440, h: 120, top: 54 }; // below the radio bar
-  const rearCam = new THREE.PerspectiveCamera(74, MIRROR.w / MIRROR.h, 0.3, quality.drawDistance);
-  const mirrorFrame = Object.assign(document.createElement('div'), { id: 'mirror', hidden: true });
-  document.body.append(mirrorFrame);
-  const renderMirror = () => {
-    if (quality.level === 'low' || game.mapOpen || !game.rearView(rearCam)) {
-      mirrorFrame.hidden = true;
-      return;
-    }
-    mirrorFrame.hidden = false;
-    rearCam.updateMatrixWorld();
-    const x = (innerWidth - MIRROR.w) / 2, yGL = innerHeight - MIRROR.h - MIRROR.top;
-    renderer.setRenderTarget(null);
-    renderer.autoClear = false;
-    renderer.setScissorTest(true);
-    renderer.setViewport(x, yGL, MIRROR.w, MIRROR.h);
-    renderer.setScissor(x, yGL, MIRROR.w, MIRROR.h);
-    renderer.clear();
-    renderer.render(scene, rearCam);
-    renderer.setScissorTest(false);
-    renderer.setViewport(0, 0, innerWidth, innerHeight);
-    renderer.autoClear = true;
-  };
   const STEP = 1 / quality.physicsHz;
   let acc = 0;
   let playing = false;
@@ -242,10 +209,7 @@ if (params.has('fly')) {
     game.render(acc / STEP, playing || !start.intro ? dt : 0);
     const s1 = performance.now();
     environment.follow(game.focus);
-    if (!game.mapOpen) {
-      draw();
-      renderMirror();
-    }
+    if (!game.mapOpen) draw();
     timing.sim += s1 - s0;
     timing.render += performance.now() - s1;
   };

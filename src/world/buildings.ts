@@ -119,13 +119,14 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
   };
 }
 
-function createBuildingMaterial(textures: Textures): THREE.MeshStandardMaterial {
+function createBuildingMaterial(textures: Textures, night: number): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.tAlbedo = { value: textures.buildingAlbedo };
     shader.uniforms.tNormal = { value: textures.buildingNormal };
     shader.uniforms.uScale = { value: BUILDING_LAYERS.map((l) => BUILDING_SCALE[l]) };
     shader.uniforms.uMean = { value: textures.buildingMean };
+    shader.uniforms.uNight = { value: night };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -169,7 +170,7 @@ function createBuildingMaterial(textures: Textures): THREE.MeshStandardMaterial 
       )
       .replace(
         '#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += fc.lit * vec3(1.0, 0.68, 0.38) * 0.55 + fc.glow;',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += fc.lit * vec3(1.0, 0.68, 0.38) * (0.35 + 2.3 * uNight) + fc.glow;',
       );
   };
   return material;
@@ -181,6 +182,7 @@ uniform sampler2DArray tAlbedo;
 uniform sampler2DArray tNormal;
 uniform float uScale[${BUILDING_LAYERS.length}];
 uniform vec3 uMean[${BUILDING_LAYERS.length}];
+uniform float uNight; // 0 by day → 1 at night: more windows lit, glowing warmer
 varying vec2 vUvm;
 varying vec2 vSurf;
 varying vec4 vFacade;
@@ -248,7 +250,7 @@ void paneLook(vec2 p, float hw, float bot, float top, float id, inout vec3 c, in
   } else if (curtains < 0.45) {
     c = mix(c, vec3(0.42, 0.4, 0.36), (1.0 - smoothstep(mix(bot, top, 0.45) - 0.02, mix(bot, top, 0.45), p.y)) * 0.7);
   }
-  lit = step(hash2(vec2(id, 11.3)), 0.07);
+  lit = step(hash2(vec2(id, 11.3)), 0.05 + 0.38 * uNight);
 }
 
 Facade windowAt(vec2 p, float hw, float bot, float top, bool arched, float id, vec3 paint, vec3 sillStone, vec3 trim, float ledge, vec2 aa) {
@@ -428,7 +430,7 @@ Facade facadeAt(vec4 f, float h, float texLum) {
 
 const CHUNK = 500;
 
-export function createBuildings(buildings: Building[], textures: Textures): THREE.Group {
+export function createBuildings(buildings: Building[], textures: Textures, night = 0): THREE.Group {
   const chunks = new Map<string, Building[]>();
   for (const b of buildings) {
     if (b.hd) continue;
@@ -439,7 +441,7 @@ export function createBuildings(buildings: Building[], textures: Textures): THRE
     list.push(b);
   }
 
-  const material = createBuildingMaterial(textures);
+  const material = createBuildingMaterial(textures, night);
   const group = new THREE.Group();
   group.name = 'buildings';
   for (const list of chunks.values()) {

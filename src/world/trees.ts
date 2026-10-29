@@ -6,8 +6,21 @@ import { TREE_KINDS } from './treeKinds';
 const CHUNK = 250;
 const STRIDE = 4; // [x, z, kind, girth]
 
+/** A crown blob, each vertex pushed in or out a stable amount so it reads as a lumpy canopy rather than a gem. */
+function crown(r: number, sx: number, sy: number, sz: number, tx: number, ty: number, tz: number, hex: number) {
+  const geo = new THREE.IcosahedronGeometry(r, 1).scale(sx, sy, sz);
+  const pos = geo.getAttribute('position');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const s = 0.8 + stableRandom(x * 3.1 + y, z * 2.7 - y) * 0.4;
+    pos.setXYZ(i, x * s, y * s, z * s);
+  }
+  geo.computeVertexNormals();
+  return coloured(geo.translate(tx, ty, tz), hex);
+}
+
 // One crown shape per TREE_KINDS index, with colours baked into vertex colours (the per-instance colour only jitters
-// brightness). Trees are scaled per-tree from the real trunk girth, so old planes tower over fresh street saplings.
+// brightness/warmth). Trees are scaled per-tree from the real trunk girth, so old planes tower over fresh street saplings.
 function kindGeometry(kind: number): THREE.BufferGeometry {
   if (kind === 1) { // conifer: a narrow dark cone over a short trunk
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 2.0, 6).translate(0, 1.0, 0);
@@ -17,21 +30,15 @@ function kindGeometry(kind: number): THREE.BufferGeometry {
   }
   if (kind === 2) { // plane: tall pale trunk, broad spreading crown
     const trunk = new THREE.CylinderGeometry(0.22, 0.34, 4.2, 6).translate(0, 2.1, 0);
-    const crown = new THREE.IcosahedronGeometry(3.4, 0).scale(1.25, 0.95, 1.25).translate(0, 6.4, 0);
-    const top = new THREE.IcosahedronGeometry(2.2, 0).translate(0.6, 8.2, -0.3);
-    return mergeGeometries([coloured(trunk, 0x7d7362), coloured(crown, 0x7f9a46), coloured(top, 0x8caa52)]);
+    return mergeGeometries([coloured(trunk, 0x7d7362), crown(3.4, 1.25, 0.95, 1.25, 0, 6.4, 0, 0x7f9a46), crown(2.2, 1, 1, 1, 0.6, 8.2, -0.3, 0x8caa52)]);
   }
   if (kind === 3) { // blossom: small ornamental, light airy crown
     const trunk = new THREE.CylinderGeometry(0.1, 0.16, 2.0, 6).translate(0, 1.0, 0);
-    const crown = new THREE.IcosahedronGeometry(1.7, 0).scale(1.15, 0.95, 1.15).translate(0, 3.1, 0);
-    const top = new THREE.IcosahedronGeometry(1.05, 0).translate(0.3, 4.0, -0.2);
-    return mergeGeometries([coloured(trunk, 0x5b4636), coloured(crown, 0x9ab86a), coloured(top, 0xa6c478)]);
+    return mergeGeometries([coloured(trunk, 0x5b4636), crown(1.7, 1.15, 0.95, 1.15, 0, 3.1, 0, 0x9ab86a), crown(1.05, 1, 1, 1, 0.3, 4.0, -0.2, 0xa6c478)]);
   }
   // broadleaf (default): rounded medium crown
   const trunk = new THREE.CylinderGeometry(0.16, 0.24, 3.6, 6).translate(0, 1.8, 0);
-  const crown = new THREE.IcosahedronGeometry(2.6, 0).scale(1, 1.15, 1).translate(0, 5.6, 0);
-  const top = new THREE.IcosahedronGeometry(1.7, 0).translate(0.5, 7.4, -0.3);
-  return mergeGeometries([coloured(trunk, 0x5b4636), coloured(crown, 0x6f9a3e), coloured(top, 0x7cab49)]);
+  return mergeGeometries([coloured(trunk, 0x5b4636), crown(2.6, 1, 1.15, 1, 0, 5.6, 0, 0x6f9a3e), crown(1.7, 1, 1, 1, 0.5, 7.4, -0.3, 0x7cab49)]);
 }
 
 export function createTrees(trees: number[]): THREE.Group {
@@ -39,6 +46,19 @@ export function createTrees(trees: number[]): THREE.Group {
   group.name = 'trees';
   const geometries = TREE_KINDS.map((_, k) => kindGeometry(k));
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+
+  // Crowns sway, trunks don't; gently, as the shadow pass doesn't sway.
+  const time = { value: 0 };
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = time;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+float sway = smoothstep(1.8, 5.5, position.y) * 0.16;
+float wt = uTime * 1.15 + instanceMatrix[3].x * 0.07 + instanceMatrix[3].z * 0.05;
+transformed.x += (sin(wt) + 0.3 * sin(wt * 2.7)) * sway;
+transformed.z += cos(wt * 0.8) * sway * 0.55;`);
+  };
 
   // Group by chunk, then by kind: one InstancedMesh per (chunk, kind) keeps draw calls and culling local.
   const chunks = new Map<string, number[][]>();
@@ -63,15 +83,19 @@ export function createTrees(trees: number[]): THREE.Group {
       for (let i = 0; i < list.length; i += 3) {
         const x = list[i], z = list[i + 1], girth = list[i + 2];
         const r = stableRandom(x, z);
+        const r2 = stableRandom(z + 2.3, x - 5.1);
         // Girth (cm) → overall scale; unknown girth (0) falls back to an average street tree.
         const s = Math.min(Math.max(0.5 + (girth || 90) / 200, 0.55), 1.7) * (0.9 + r * 0.2);
         quat.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, r * Math.PI * 2);
         matrix.compose(position.set(x, 0, z), quat, scale.set(s, s * (0.92 + r * 0.2), s));
         mesh.setMatrixAt(i / 3, matrix);
-        mesh.setColorAt(i / 3, colour.setRGB(0.85 + r * 0.3, 0.85 + r * 0.3, 0.85 + r * 0.3)); // brightness jitter only
+        // Brightness and a slight warm/cool tint, near-neutral so trunks stay brown.
+        const b = 0.8 + r * 0.35;
+        mesh.setColorAt(i / 3, colour.setRGB(b * (0.96 + r2 * 0.08), b * (0.99 + r * 0.03), b * (0.95 + (1 - r2) * 0.06)));
       }
       mesh.computeBoundingSphere();
       mesh.castShadow = mesh.receiveShadow = true;
+      mesh.onBeforeRender = () => { time.value = performance.now() / 1000; };
       group.add(mesh);
     }
   }

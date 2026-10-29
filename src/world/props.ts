@@ -88,7 +88,7 @@ export interface Props {
   loose(part: PropRef): THREE.InstancedMesh;
 }
 
-export function createProps(city: CityData, viewScale = 1): Props {
+export function createProps(city: CityData, viewScale = 1, night = 0): Props {
   const items: Record<Kind, Item[]> = {
     lamp: [], lantern: [], bench: [], bollard: [], signal: [], terrace: [], parasol: [], veloDock: [], veloTerminal: [],
   };
@@ -167,6 +167,20 @@ export function createProps(city: CityData, viewScale = 1): Props {
       chunks.push({ mesh, x: cx, z: cz, view: VIEW[kind] * viewScale + size * 0.7 });
     }
   }
+  // An additive orb at each lamp head (m up) stands in for real lights at night.
+  if (night > 0.05) {
+    const heads = [...items.lamp.map((it) => [it[0], it[1], 7.4] as const), ...items.lantern.map((it) => [it[0], it[1], 3.9] as const)];
+    const glow = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.4, 8, 6),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc48a).multiplyScalar(0.6 + 1.3 * night), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+      heads.length,
+    );
+    heads.forEach(([x, z, y], i) => glow.setMatrixAt(i, matrix.makeTranslation(x, y, z)));
+    glow.computeBoundingSphere();
+    glow.name = 'lampGlow';
+    group.add(glow);
+  }
+
   const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   return {
     group,

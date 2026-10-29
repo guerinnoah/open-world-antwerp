@@ -2,9 +2,10 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  CHAT_BURST, ChatLimit, MAX_LEFT_BEHIND, PROTOCOL_VERSION, RELAY_PATH, VEHICLE_KINDS, cleanChat, cleanLook, cleanName, decodeState, staysParked,
-  type CarEvent, type ClientMessage, type PeerInfo, type ServerMessage,
+  CHAT_BURST, ChatLimit, PROTOCOL_VERSION, RELAY_PATH, cleanLook, decodeState,
+  type ClientMessage, type PeerInfo, type ServerMessage, type Took,
 } from '../src/net/protocol.ts';
+import { safeChat, safeName } from './profanity.ts';
 
 interface Client {
   id: number;
@@ -24,7 +25,7 @@ interface UpgradeSource {
 
 const MAX_PLAYERS = 100;
 const MAX_PER_ADDRESS = 20; // generous: mobile carriers put many players behind one address
-const CAR_LOG = 200; // parked-car events the world remembers for late joiners
+const CAR_LOG = 200; // parked cars taken that the world remembers for late joiners
 const NEAR = 500; // m: players farther apart get each other's state once a second (FAR_EVERY), enough for the minimap
 const FAR_EVERY = 1000;
 const HELLO_TIMEOUT = 10_000;
@@ -48,7 +49,7 @@ export function attachRelay(
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   const clients = new Set<Client>();
   const world = new Map<number, Client>(); // those past hello
-  const cars: CarEvent[] = [];
+  const taken: Took[] = [];
   const perAddress = new Map<string, number>();
   let nextId = 1;
 
@@ -76,18 +77,11 @@ export function attachRelay(
 
   function hello(c: Client, msg: Extract<ClientMessage, { t: 'hello' }>) {
     if (msg.v !== PROTOCOL_VERSION) return refuse(c, 'version');
-    c.name = cleanName(msg.name) || `Player ${c.id}`;
+    c.name = safeName(msg.name) || `Player ${c.id}`;
     c.look = cleanLook(msg.look);
-    send(c, { t: 'welcome', id: c.id, peers: [...world.values()].map(info), cars });
+    send(c, { t: 'welcome', id: c.id, peers: [...world.values()].map(info), taken });
     world.set(c.id, c);
     broadcast(c, { t: 'join', peer: info(c) });
-  }
-
-  function remember(event: CarEvent) {
-    // Games clear away all but the newest MAX_LEFT_BEHIND left-behind cars, so older ones needn't be replayed.
-    if (event.t === 'left' && cars.filter((e) => e.t === 'left').length >= MAX_LEFT_BEHIND) cars.splice(cars.findIndex((e) => e.t === 'left'), 1);
-    cars.push(event);
-    if (cars.length > CAR_LOG) cars.shift();
   }
 
   function receive(c: Client, raw: string) {
@@ -109,11 +103,7 @@ export function attachRelay(
       const s = decodeState(msg.s);
       if (!s) return;
       const was = c.state && decodeState(c.state);
-      // Got out: everyone has that car parked there now (Multiplayer.leaveCar), so late joiners need it too.
-      if (was && was.mode === 1 && s.mode === 0 && staysParked(VEHICLE_KINDS[was.kind], was.sink)) {
-        remember({ t: 'left', x: was.x, z: was.z, angle: was.angle, kind: was.kind, colour: was.colour });
-      }
-      // Getting in or out goes to everyone at once, after the state before it, so far-off games park the car where it stopped.
+      // Getting in or out goes to everyone at once, after the state before it, so far-off games see where it happened.
       const switched = !!was && was.mode !== s.mode;
       if (switched) relayState(c, c.state!, 'far');
       const everyone = switched || now - c.farAt >= FAR_EVERY;
@@ -123,10 +113,11 @@ export function attachRelay(
     } else if (msg.t === 'took') {
       const { x, z, kind, colour } = msg;
       if (![x, z, kind, colour].every((v) => typeof v === 'number' && Number.isFinite(v))) return;
-      remember({ t: 'took', x, z, kind, colour });
+      taken.push({ x, z, kind, colour });
+      if (taken.length > CAR_LOG) taken.shift();
       broadcast(c, { t: 'took', id: c.id, x, z, kind, colour });
     } else if (msg.t === 'chat') {
-      const text = cleanChat(msg.text);
+      const text = safeChat(msg.text);
       if (text && c.chat.take(now)) broadcast(c, { t: 'chat', id: c.id, text });
     }
   }
@@ -134,7 +125,7 @@ export function attachRelay(
   function leave(c: Client) {
     clients.delete(c);
     if (!world.delete(c.id)) return;
-    if (world.size === 0) cars.length = 0; // nobody's game has those cars any more: the next to join starts afresh
+    if (world.size === 0) taken.length = 0; // nobody's game has those cars any more: the next to join starts afresh
     else broadcast(c, { t: 'leave', id: c.id });
   }
 

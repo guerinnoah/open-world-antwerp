@@ -1,6 +1,5 @@
 import type * as THREE from 'three';
 import type { Landmark } from '../cityData';
-import { MAS_ESCALATOR_HOLE } from '../halls/escalators';
 import { Kit } from './kit';
 
 const SANDSTONE = 0x8e3d2c;
@@ -18,12 +17,7 @@ export function mas(_lm: Landmark): THREE.BufferGeometry {
       const zBox = -half + box / 2;
       kit.box(SIDE, fh - 0.35, box, 0, 0, zBox, SANDSTONE).box(SIDE + 0.1, 0.35, box + 0.1, 0, fh - 0.7, zBox, SANDSTONE_DARK);
       kit.extrude(galleryOutline(half - 0.6, half - box, half - 0.5), 0, fh - 0.35, GLASS);
-      // Gallery ceiling slab, holed where halls/mas.ts's escalator climbs through.
-      const [e0, e1, l0, l1] = MAS_ESCALATOR_HOLE, g0 = half - GALLERY;
-      kit.box(e0 + half, 0.35, GALLERY, (e0 - half) / 2, fh - 0.7, half - GALLERY / 2, SANDSTONE_DARK);
-      kit.box(half - e1, 0.35, GALLERY, (e1 + half) / 2, fh - 0.7, half - GALLERY / 2, SANDSTONE_DARK);
-      kit.box(e1 - e0, 0.35, l0 - g0, (e0 + e1) / 2, fh - 0.7, (g0 + l0) / 2, SANDSTONE_DARK);
-      kit.box(e1 - e0, 0.35, half - l1, (e0 + e1) / 2, fh - 0.7, (l1 + half) / 2, SANDSTONE_DARK);
+      kit.box(SIDE, 0.35, GALLERY, 0, fh - 0.7, half - GALLERY / 2, SANDSTONE_DARK); // gallery ceiling
       for (let x = -17; x <= 17; x += 3.4) kit.panel(0.35, 0.45, x + (i % 2) * 1.7, fh * 0.45, -half - 0.03, SILVER, 0, 0.06);
       for (let z = -half + 2; z < half - GALLERY; z += 3.4) {
         for (const x of [half + 0.03, -half - 0.03]) kit.panel(0.35, 0.45, x, fh * 0.45, z + (i % 2) * 1.7, SILVER, Math.PI / 2, 0.06);
@@ -32,12 +26,10 @@ export function mas(_lm: Landmark): THREE.BufferGeometry {
   }
   const roof = H - 0.35;
   kit.box(14, 3, 9, 0, roof, 0, GLASS);
-  // Roof railing without glass: halls/mas.ts draws the panes while you're up there.
   for (const z of [half - 0.2, -half + 0.2]) {
     kit.box(SIDE, 0.08, 0.08, 0, roof + 1.1, z, RAIL).box(0.08, 0.08, SIDE, z, roof + 1.1, 0, RAIL);
     for (let u = -half + 0.2; u <= half; u += 3.2) kit.box(0.06, 1.1, 0.06, u, roof, z, RAIL).box(0.06, 1.1, 0.06, z, roof, u, RAIL);
   }
-  // Ground-floor doors at halls/mas.ts's door.
   kit.box(2.8, 2.6, 0.2, -12, 0, 19.45, 0x2a2e33).box(2.4, 2.3, 0.22, -12, 0, 19.45, 0x7f97a6);
   return kit.build();
 }

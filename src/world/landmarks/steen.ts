@@ -25,7 +25,7 @@ export function steen(lm: Landmark): THREE.BufferGeometry {
   for (const z of [-1.5, 11.5]) kit.cylinder(3, 3, 15, 26, 0, z, STONE_LIGHT, 12).cone(3.5, 7, 26, 15, z, SLATE, 12);
 
   for (const [x, z] of [[-26, 13], [-12, -13]]) kit.cylinder(1.8, 1.8, 11, x, 0, z, STONE_LIGHT, 8).cone(2.1, 4, x, 11, z, SLATE, 8);
-  // Visitor centre door, where halls/steen.ts puts the hall's.
+  // Visitor centre door.
   kit.group(-3, 0, 15.8, -0.047, () => {
     kit.facade(roundArch(3.4, 2.9, 4.6), STONE_LIGHT, 0.5);
     kit.group(0, 0, 0.1, 0, () => kit.facade(roundArch(2.4, 2.4, 3.6), OPENING, 0.4));

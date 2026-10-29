@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { lerpPose, type Pose } from '../core/util';
 import type { Physics } from '../physics/physics';
-import type { TramRun } from '../world/cityData';
+import type { LineSchedule, TramRun } from '../world/cityData';
+import type { Clock } from '../world/daylight';
 import { cumulative, pointAt } from '../world/polyline';
 import { LAYOUTS, SECTION_LENGTH, TRAM_WIDTH as WIDTH, buildSection, type SectionKind } from './tramModel';
 import {
-  COLLIDES, SectionMeshes, addSections, moveSections, noseDistance, obstacleAhead, occupied, outlineDistance, removeSectioned, savePrev,
+  COLLIDES, Scheduler, SectionMeshes, addSections, moveSections, noseDistance, obstacleAhead, occupied, outlineDistance, removeSectioned, savePrev,
   serveStops, spawnPoint, stack, stopAfter, type Obstacle, type Run, type Sectioned,
 } from './transit';
 
@@ -55,6 +56,7 @@ export class Trams {
   readonly bells: [number, number][] = []; // where a tram rang its bell this step; drained by the game
   readonly group = new THREE.Group();
   private runs: Run[];
+  private spawnRuns: Run[]; // lines in service this hour; the clock is fixed per session
   private spawnTimer = 0;
   private meshes: SectionMeshes<SectionKind>;
 
@@ -62,9 +64,14 @@ export class Trams {
     private physics: Physics,
     runs: TramRun[],
     private target: number,
+    schedules: Record<string, LineSchedule> | undefined,
+    clock: Clock,
   ) {
     this.runs = runs.map((r) => ({ ...r, cum: cumulative(r.p) }));
     this.meshes = new SectionMeshes(this.group, runs, KINDS, buildSection, (kind) => target * (kind === 'mid' ? 5 : 1));
+    const scheduler = new Scheduler(schedules, clock, runs.map((r) => r.line));
+    this.spawnRuns = this.runs.filter((r) => scheduler.active(r.line));
+    this.target = scheduler.fleet(target);
   }
 
   update(dt: number, px: number, pz: number) {
@@ -91,7 +98,7 @@ export class Trams {
   }
 
   private spawn(px: number, pz: number) {
-    const at = spawnPoint(this.runs, px, pz, SPAWN_MIN, SPAWN_MAX, 45, 60);
+    const at = spawnPoint(this.spawnRuns, px, pz, SPAWN_MIN, SPAWN_MAX, 45, 60);
     if (!at) return;
     const [run, s] = at;
     if (this.trams.some((t) => t.run.p === run.p && Math.abs(t.s - s) < 80)) return;

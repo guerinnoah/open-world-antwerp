@@ -13,11 +13,10 @@ interface CameraFocus {
   sprint?: boolean;
   eye?: number; // first person: eye height
   eyeForward?: number; // first person: seat offset forward along `heading` (so the view sits in the cab, not the centre)
-  room?: { free(x: number, z: number, dx: number, dz: number): number; confine(p: THREE.Vector3): void; lookUp?: boolean };
+  room?: { free(x: number, z: number, dx: number, dz: number): number; confine(p: THREE.Vector3): void };
 }
 
 const MIN_PITCH = -0.05;
-const LOOK_UP = -0.75; // rad: in halls the camera may drop to the floor to look up at the vaults
 const MAX_PITCH = 1.1;
 const WALK_FOLLOW = 1.5; // 1/s at run pace
 
@@ -58,7 +57,6 @@ export class CameraRig {
   update(focus: CameraFocus, dt: number) {
     this.manualTimer -= dt;
     if (this.firstPerson) return this.updateFirstPerson(focus, dt);
-    this.minPitch = focus.room?.lookUp ? LOOK_UP : MIN_PITCH;
     if (this.pitch < this.minPitch) this.pitch += (this.minPitch - this.pitch) * Math.min(1, dt * 4);
     if (focus.heading !== undefined && this.manualTimer <= 0) {
       const d = wrapAngle(focus.heading - this.yaw);

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { uploadFirst } from '../core/instancing';
 import { pick, type Pose } from '../core/util';
 import { GROUP, RAPIER, WHEELS, groups, type Owner, type Physics } from '../physics/physics';
-import type { TramRun } from '../world/cityData';
+import type { LineSchedule, TramRun } from '../world/cityData';
+import type { Clock } from '../world/daylight';
 import { pointAt } from '../world/polyline';
 import { probeRoute } from './trackProbe';
 import { displayAtlas, displayMaterial, type SectionModel } from './tramModel';
@@ -210,5 +211,42 @@ export class SectionMeshes<K extends string> {
       }
       m.count = 0;
     }
+  }
+}
+
+const DEFAULT_TPH = [2, 1, 0, 0, 0, 1, 3, 5, 5, 4, 4, 4, 4, 4, 4, 5, 5, 5, 4, 3, 2, 2, 1, 1]; // trips per hour for a line the GTFS didn't match
+
+/** De Lijn's baked trips per hour: which lines run now, and how much of the peak-hour fleet to keep out. */
+export class Scheduler {
+  private factor: number; // now vs the busiest hour, over the given lines
+
+  constructor(
+    private schedules: Record<string, LineSchedule> | undefined,
+    private clock: Clock,
+    lines: Iterable<string>,
+  ) {
+    const set = [...new Set(lines)];
+    let peak = 1, now = 0;
+    for (let h = 0; h < 24; h++) {
+      let sum = 0;
+      for (const l of set) sum += this.tph(l, h);
+      peak = Math.max(peak, sum);
+      if (h === clock.hour) now = sum;
+    }
+    this.factor = now / peak;
+  }
+
+  private tph(line: string, hour: number): number {
+    const s = this.schedules?.[line];
+    return (s ? (this.clock.weekend ? s.weekend : s.weekday)[hour] : DEFAULT_TPH[hour]) ?? 0;
+  }
+
+  active(line: string): boolean {
+    return this.tph(line, this.clock.hour) > 0;
+  }
+
+  /** At least one while any line runs, so a quiet night hour still shows a vehicle. */
+  fleet(target: number): number {
+    return this.factor > 0 ? Math.max(1, Math.round(target * this.factor)) : 0;
   }
 }

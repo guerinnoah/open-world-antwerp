@@ -450,7 +450,9 @@ export class VehicleRenderer {
   private colour = new THREE.Color();
 
   constructor(capacity: number, private viewDistance = 350) {
-    const paintMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.24, metalness: 0.5 });
+    const paintMat = new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.38, metalness: 0.4, clearcoat: 1, clearcoatRoughness: 0.1,
+    });
     const trimMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.16, metalness: 0.25 });
     const decalMat = new THREE.MeshStandardMaterial({
       map: atlas().texture, transparent: true, depthWrite: false, roughness: 0.3, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -2,

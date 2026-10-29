@@ -23,8 +23,10 @@ import { Minimap } from '../ui/minimap';
 import { WorldMap } from '../ui/worldMap';
 import type { Breakables } from '../world/breakables';
 import type { CityData, GraphData } from '../world/cityData';
-import type { Entrance, Interiors } from '../world/interiors';
+import { antwerpClock } from '../world/daylight';
+import type { Interiors } from '../world/interiors';
 import { NavGraph } from '../world/navGraph';
+import type { Door } from '../world/signs';
 import { TRAM_HALF, trackTest } from '../world/trackClearance';
 import { WaterMap } from '../world/water';
 import { CameraRig } from './cameraRig';
@@ -88,21 +90,15 @@ export class Game {
   private steps = 0;
   private street = { name: '', timer: 0 };
   private intro: { t: number; from: THREE.Vector3; look: THREE.Vector3 } | null = null;
-  private interiors: Interiors | null = null;
   multiplayer: Multiplayer | null = null;
-  private breakables: Breakables | null = null;
-  private bikes: Bikes | null = null;
-  private motorbikes: Motorbikes | null = null;
-  private scooters: Scooters | null = null;
   private hornHeld = false;
   private carTipShown = false;
   private rideStart = { x: 0, z: 0 };
-  private openAir = false;
   private hospital: [number, number, number];
   private wasted = 0; // s left
   private crash = { dv: 0, quiet: Infinity }; // m/s lost so far, s since the last hit
   /** Going in: the screen goes black for a frame first, so building the room doesn't show as a freeze. */
-  private entering: { door: Entrance; from: { x: number; z: number }; frames: number } | null = null;
+  private entering: { door: Door; from: { x: number; z: number }; frames: number } | null = null;
 
   constructor(
     scene: THREE.Scene,
@@ -113,6 +109,11 @@ export class Game {
     graph: GraphData,
     population: Population,
     private crowd: Crowd,
+    private interiors: Interiors,
+    private breakables: Breakables,
+    private bikes: Bikes,
+    private scooters: Scooters,
+    private motorbikes: Motorbikes,
     private start: Start = CENTRAAL_START,
   ) {
     this.water = new WaterMap(city);
@@ -140,8 +141,9 @@ export class Game {
     );
     this.cyclists = new Cyclists(physics, new NavGraph(graph.bike ?? { nodes: [], edges: [] }, true), crowd, population.cyclists, population.pedView);
     this.player.avatar = crowd.indexOf(PLAYER_LOOK);
-    this.trams = new Trams(physics, graph.trams, population.trams);
-    this.buses = new Buses(physics, graph.buses, population.buses, this);
+    const clock = antwerpClock(new URLSearchParams(location.search)); // trams/buses run on De Lijn's real schedule for this hour
+    this.trams = new Trams(physics, graph.trams, population.trams, graph.schedules, clock);
+    this.buses = new Buses(physics, graph.buses, population.buses, this, graph.schedules, clock);
     this.renderer = new VehicleRenderer(population.parkedCars + population.traffic + 20, population.vehicleView);
     scene.add(this.player.object, this.renderer.group, crowd.group, this.cyclists.group, this.trams.group, this.buses.group, this.splash.points);
 
@@ -156,28 +158,8 @@ export class Game {
     if (!this.intro) this.welcome();
   }
 
-  attachBikes(bikes: Bikes) {
-    this.bikes = bikes;
-  }
-
-  attachMotorbikes(motorbikes: Motorbikes) {
-    this.motorbikes = motorbikes;
-  }
-
-  attachScooters(scooters: Scooters) {
-    this.scooters = scooters;
-  }
-
   removeParkedScooter(x: number, z: number, colour: number): boolean {
-    return this.scooters?.takeAt(x, z, colour) ?? false;
-  }
-
-  attachInteriors(interiors: Interiors) {
-    this.interiors = interiors;
-  }
-
-  attachBreakables(breakables: Breakables) {
-    this.breakables = breakables;
+    return this.scooters.takeAt(x, z, colour);
   }
 
   attachMultiplayer(multiplayer: Multiplayer) {
@@ -185,7 +167,7 @@ export class Game {
   }
 
   get indoors(): boolean {
-    return !!this.interiors?.inside;
+    return this.interiors.inside;
   }
 
   get honking(): boolean {
@@ -293,13 +275,7 @@ export class Game {
       if (this.driving) this.exitVehicle();
       else if (this.tram) this.exitTram();
       else if (this.indoors) {
-        const use = this.interiors!.use(this.player.x, this.player.z);
-        if (use === 'leave') this.leaveBuilding();
-        else if (use === 'moved') {
-          this.rig.yaw = this.player.heading;
-          this.rig.snap();
-          this.hud.fade();
-        }
+        if (this.interiors.atExit(this.player.x, this.player.z)) this.leaveBuilding();
       } else if (door) this.enterBuilding(door);
       else this.takeNearest();
     }
@@ -334,10 +310,6 @@ export class Game {
     const walking = !car && !this.tram ? this.player.body.linvel() : null;
     this.physics.step();
     this.syncVehicles();
-    if (this.interiors) {
-      this.interiors.step(dt);
-      if (this.interiors.openAir !== this.openAir) this.sound.indoors(!(this.openAir = this.interiors.openAir));
-    }
     this.crash.quiet += dt;
     if (car && before) {
       const after = car.body.linvel();
@@ -483,18 +455,17 @@ export class Game {
   }
 
   private knockThingsOver() {
-    const breakables = this.breakables;
     for (const v of this.vehicles) {
       // Not traffic: AI drivers clip a post at many corners and would wreck the street. Bikes go round things.
       if (!v.awake || v.sink > 0 || twoWheeled(v.spec) || this.traffic.has(v)) continue;
-      breakables?.touching(v.x, v.z, v.angle, v.spec.length / 2, v.spec.width / 2, (id) => this.knockOver(id, v));
-      if (this.scooters?.knock(v)) this.sound.knock(v.x, v.z, Math.abs(v.forwardSpeed), true);
+      this.breakables.touching(v.x, v.z, v.angle, v.spec.length / 2, v.spec.width / 2, (id) => this.knockOver(id, v));
+      if (this.scooters.knock(v)) this.sound.knock(v.x, v.z, Math.abs(v.forwardSpeed), true);
     }
   }
 
   private knockOver(id: number, car: Vehicle) {
     const v = car.body.linvel();
-    const thing = this.breakables?.knock(id, car.x, car.z, v.x, v.y);
+    const thing = this.breakables.knock(id, car.x, car.z, v.x, v.y);
     if (!thing) return;
     car.body.setLinvel({ x: v.x * thing.keep, y: v.y * thing.keep }, true);
     this.sound.knock(thing.x, thing.z, Math.hypot(v.x, v.y), thing.metal);
@@ -572,24 +543,6 @@ export class Game {
     this.hud.setView(on);
   }
 
-  /** Aim `cam` back over the vehicle for the first-person rear-view mirror; false when there's nothing to mirror. */
-  rearView(cam: THREE.PerspectiveCamera): boolean {
-    if (!this.rig.firstPerson) return false;
-    let x: number, z: number, heading: number, roof: number;
-    if (this.driving) {
-      const v = this.driving;
-      if (twoWheeled(v.spec) || isMotorbike(v.spec)) return false; // no mirror on bikes
-      x = v.x; z = v.z; heading = v.angle; roof = Math.max(1.4, v.spec.height ?? 1.5);
-    } else if (this.tram) {
-      const cab = this.trams.pose(this.tram, 0, 1);
-      x = cab.x; z = cab.z; heading = cab.angle; roof = 3;
-    } else return false;
-    // Above the roof looking back: high enough that the vehicle's own tail stays low in the mirror, road behind in view.
-    cam.position.set(x, roof + 1.1, z);
-    cam.lookAt(x - Math.cos(heading) * 30, roof - 0.5, z - Math.sin(heading) * 30);
-    return true;
-  }
-
   private toggleView() {
     this.setFirstPerson(!this.rig.firstPerson);
   }
@@ -649,15 +602,12 @@ export class Game {
       this.player.object.visible = !this.rig.firstPerson; // hide your own avatar in first person
       this.player.render(alpha, dt, this.crowd);
       const x = this.player.object.position.x, z = this.player.object.position.z;
-      const room = this.interiors?.inside ? this.interiors : null;
-      const elevation = this.player.elevationAt(alpha);
-      this.rig.update({ x, z, height: (this.player.swimming ? 0.6 : 1.5) + elevation, heading: this.player.heading, stride: this.player.stride, speed: 0, distance: (room ? 3.2 : 4.2) * zoom, sprint: this.player.sprinting, eye: (this.player.swimming ? 0.5 : 1.6) + elevation, room: room ?? undefined }, dt);
+      const room = this.interiors.inside ? this.interiors : null;
+      this.rig.update({ x, z, height: this.player.swimming ? 0.6 : 1.5, heading: this.player.heading, stride: this.player.stride, speed: 0, distance: (room ? 3.2 : 4.2) * zoom, sprint: this.player.sprinting, eye: this.player.swimming ? 0.5 : 1.6, room: room ?? undefined }, dt);
       this.hud.setSpeed(null);
       const door = this.doorNearby();
-      if (room) {
-        const use = room.usable(this.player.x, this.player.z);
-        this.hud.setHint(use ? this.keyHint(use) : '');
-      } else if (door) this.hud.setHint(this.keyHint(`Enter ${door.name}`));
+      if (room) this.hud.setHint(room.atExit(this.player.x, this.player.z) ? this.keyHint('Leave') : '');
+      else if (door) this.hud.setHint(this.keyHint(`Enter ${door.name}`));
       else {
         const verb = this.rideVerb();
         this.hud.setHint(verb && this.keyHint(verb));
@@ -686,18 +636,18 @@ export class Game {
     }
     this.hornHeld = this.state.horn;
     this.renderer.update(this.vehicles, camera, alpha);
-    this.bikes?.update(camera, this.vehicles, cycling && isVelo(car) ? car : null, this.player.avatar, alpha, dt);
-    this.scooters?.update(camera, this.vehicles, scooting ? car : null, this.player.avatar, alpha, dt);
-    this.motorbikes?.update(camera, this.vehicles, car && isMotorbike(car.spec) ? car : null, this.player.avatar, alpha, dt);
+    this.bikes.update(camera, this.vehicles, cycling && isVelo(car) ? car : null, this.player.avatar, alpha, dt);
+    this.scooters.update(camera, this.vehicles, scooting ? car : null, this.player.avatar, alpha, dt);
+    this.motorbikes.update(camera, this.vehicles, car && isMotorbike(car.spec) ? car : null, this.player.avatar, alpha, dt);
     this.peds.render(alpha, camera);
     this.cyclists.render(alpha, camera, this.vehicles, cycling && !isVelo(car) ? car : null, this.player.avatar);
-    this.interiors?.render(dt, camera);
+    this.interiors.render(dt, camera);
     this.multiplayer?.render(alpha, dt);
     this.crowd.finish();
     this.trams.render(alpha);
     this.buses.render(alpha);
     this.splash.update(dt);
-    this.breakables?.update(dt, t.x, t.z);
+    this.breakables.update(dt, t.x, t.z);
   }
 
   private keyHint(verb: string) {
@@ -750,12 +700,12 @@ export class Game {
     return new THREE.Vector3(t.x, 0, t.z);
   }
 
-  private doorNearby(): Entrance | null {
-    if (!this.interiors || this.driving || this.tram || this.indoors || this.player.down > 0) return null;
+  private doorNearby(): Door | null {
+    if (this.driving || this.tram || this.indoors || this.player.down > 0) return null;
     return this.interiors.doorAt(this.player.x, this.player.z);
   }
 
-  private enterBuilding(door: Entrance) {
+  private enterBuilding(door: Door) {
     if (this.entering) return;
     this.hud.blackout();
     this.entering = { door, from: { x: this.player.x, z: this.player.z }, frames: 2 };
@@ -764,7 +714,7 @@ export class Game {
   private finishEntering() {
     const { door, from } = this.entering!;
     this.entering = null;
-    const spot = this.interiors!.enter(door, from.x, from.z, this.player.avatar);
+    const spot = this.interiors.enter(door, from.x, from.z, this.player.avatar);
     this.hud.fade();
     if (!spot) return;
     this.player.place(spot.x, spot.z, spot.heading);
@@ -777,7 +727,7 @@ export class Game {
   }
 
   private leaveBuilding() {
-    const spot = this.interiors!.leave();
+    const spot = this.interiors.leave();
     this.player.place(spot.x, spot.z, spot.heading);
     this.rig.yaw = spot.heading;
     this.rig.snap();
@@ -814,9 +764,9 @@ export class Game {
       const t = cyclist.body.translation();
       if (!vehicle || Math.hypot(t.x - this.player.x, t.y - this.player.z) < vd) return { cyclist };
     }
-    const dock = this.bikes?.dockedNear(this.player.x, this.player.z) ?? null;
+    const dock = this.bikes.dockedNear(this.player.x, this.player.z);
     if (dock && (!vehicle || Math.hypot(dock.x - this.player.x, dock.z - this.player.z) - 0.3 < vd)) return { dock };
-    const scooter = this.scooters?.nearest(this.player.x, this.player.z) ?? null;
+    const scooter = this.scooters.nearest(this.player.x, this.player.z);
     if (scooter && (!vehicle || Math.hypot(scooter.x - this.player.x, scooter.z - this.player.z) - 0.3 < vd)) return { scooter };
     const tram = this.trams.near(this.player.x, this.player.z, ENTER_RANGE);
     const bus = this.buses.near(this.player.x, this.player.z, ENTER_RANGE);
@@ -833,13 +783,13 @@ export class Game {
     else if ('tram' in near) this.boardTram(near.tram);
     else if ('bus' in near) this.hijackBus(near.bus);
     else if ('scooter' in near) {
-      const pose = this.scooters!.take(near.scooter);
+      const pose = this.scooters.take(near.scooter);
       const scooter = new Vehicle(this.physics.world, SCOOTER_SPEC, pose.colour, pose.x, pose.z, pose.heading);
       this.addVehicle(scooter);
       this.mount(scooter);
       this.rig.yaw = pose.heading;
     } else {
-      const pose = this.bikes!.take(near.dock);
+      const pose = this.bikes.take(near.dock);
       const bike = new Vehicle(this.physics.world, BIKE_SPEC, VELO_RED, pose.x, pose.z, pose.heading);
       this.addVehicle(bike);
       this.mount(bike);
@@ -864,7 +814,7 @@ export class Game {
   private dockToReturn(bike: Vehicle) {
     if (!isVelo(bike)) return null;
     if (Math.hypot(bike.x - this.rideStart.x, bike.z - this.rideStart.z) < 4) return null;
-    return this.bikes?.emptyDockNear(bike.x, bike.z) ?? null;
+    return this.bikes.emptyDockNear(bike.x, bike.z);
   }
 
   private takeWheel(v: Vehicle) {
@@ -999,7 +949,7 @@ export class Game {
     if (v.spec.name === 'bike') {
       const dock = this.dockToReturn(v);
       if (dock) {
-        this.bikes!.dock(dock);
+        this.bikes.dock(dock);
         this.removeVehicle(v);
         this.hud.toast('Bike returned. Thanks for riding Velo!');
       }

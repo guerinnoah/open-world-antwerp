@@ -9,7 +9,7 @@ import { GROUP, RAPIER, groups, type Physics } from '../physics/physics';
 import { Chat } from './chat';
 import { Connection, type Status } from './connection';
 import {
-  FLAG, MAX_LEFT_BEHIND, RELAY_PATH, VEHICLE_KINDS, cleanChat, cleanName, decodeState, encodeState, staysParked, type CarEvent, type PeerInfo,
+  FLAG, RELAY_PATH, VEHICLE_KINDS, cleanChat, cleanName, decodeState, encodeState, type PeerInfo,
   type PlayerState, type ServerMessage, type Took,
 } from './protocol';
 import { Timeline } from './timeline';
@@ -76,7 +76,6 @@ export class Multiplayer {
   private clock = 0;
   private lastSent = { time: -Infinity, mode: -1, kind: -1, flags: -1 };
   private lastDriving: Vehicle | null = null;
-  private leftBehind: Vehicle[] = [];
   private status: Status = 'connecting';
   private object = new THREE.Object3D();
   private projected = new THREE.Vector3();
@@ -198,10 +197,7 @@ export class Multiplayer {
     const now = performance.now();
     switch (msg.t) {
       case 'welcome':
-        for (const e of msg.cars ?? []) {
-          if (e.t === 'took') this.removeTakenCar(e);
-          else if (e.t === 'left') this.parkLeftCar(e);
-        }
+        for (const took of msg.taken) this.removeTakenCar(took);
         for (const p of msg.peers) this.addPeer(p, now);
         if (msg.peers.length) this.chat.system(msg.peers.length === 1 ? `${msg.peers[0].name} is here too.` : `${msg.peers.length} other players are here.`);
         if (!this.greeted) this.chat.system(coarsePointer() ? 'Tap 💬 to chat.' : 'Press T to chat.');
@@ -322,7 +318,6 @@ export class Multiplayer {
     if (car === this.lastDriving) return;
     this.lastDriving = car;
     if (!car || car.remote) return;
-    this.forget(car); // ours now: not to be cleared away as a left-behind car
     this.connection.send({ t: 'took', x: car.x, z: car.z, kind: VEHICLE_KINDS.indexOf(car.spec.name), colour: car.colour });
   }
 
@@ -334,7 +329,6 @@ export class Multiplayer {
       if (v.remote || v.driven || v.sink > 0 || v === this.host.driving) continue;
       if (v.spec.name !== kind || v.colour !== took.colour || Math.hypot(v.x - took.x, v.z - took.z) > 2) continue;
       this.host.removeVehicle(v);
-      this.forget(v);
       return;
     }
   }
@@ -409,47 +403,10 @@ export class Multiplayer {
     }
   }
 
+  /** Another player's car goes when they get out of it: it isn't left parked in anyone's world. */
   private leaveCar(peer: Peer) {
-    const car = peer.car!;
+    this.host.removeVehicle(peer.car!);
     peer.car = null;
-    if (!staysParked(car.spec.name, car.sink)) {
-      this.host.removeVehicle(car);
-      return;
-    }
-    car.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-    car.remote = car.driven = false;
-    car.controls = { steer: 0, throttle: 0, handbrake: true };
-    car.awake = true;
-    this.park(car);
-  }
-
-  /** A car someone left behind before we joined (or while we were reconnecting). */
-  private parkLeftCar(left: Extract<CarEvent, { t: 'left' }>) {
-    const kind = VEHICLE_KINDS[left.kind];
-    if (!staysParked(kind, 0)) return;
-    for (const v of this.host.vehicles) {
-      if (!v.remote && v.spec.name === kind && v.colour === left.colour && Math.hypot(v.x - left.x, v.z - left.z) < 3) return; // have it already
-    }
-    const car = new Vehicle(this.physics.world, specFor(kind), left.colour, left.x, left.z, left.angle);
-    car.body.sleep();
-    this.host.addVehicle(car);
-    this.park(car);
-  }
-
-  /** Keeps the newest MAX_LEFT_BEHIND cars others left behind, clearing away older ones. */
-  private park(car: Vehicle) {
-    const vehicles = this.host.vehicles;
-    this.leftBehind = this.leftBehind.filter((v) => vehicles.includes(v)); // drop ones gone since: sunk, or taken by someone
-    this.leftBehind.push(car);
-    if (this.leftBehind.length <= MAX_LEFT_BEHIND) return;
-    const old = this.leftBehind.shift()!;
-    // A sinking car is the game's to remove: removing it here as well would remove its body twice.
-    if (old !== this.host.driving && !old.driven && old.sink <= 0) this.host.removeVehicle(old);
-  }
-
-  private forget(car: Vehicle) {
-    const i = this.leftBehind.indexOf(car);
-    if (i >= 0) this.leftBehind.splice(i, 1);
   }
 
   private placeLabel(peer: Peer, x: number, y: number, z: number) {

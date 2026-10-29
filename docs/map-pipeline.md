@@ -29,10 +29,10 @@ stay text only. To remove a logo, add its Wikidata id to `BLOCKED` in `tools/map
 
 - **Aerial photo:** `pnpm map:fetch-ortho` tiles the most recent Digitaal Vlaanderen orthophoto over the map area and
   stitches it into `public/map/ortho.webp`. Run it after `map:build`, since it reads the bounds from
-  `public/map/city.json`. The game loads it **by default**: the ground layers take their colour from the aerial (sampled
-  by world position) while keeping their tiling cobble/asphalt detail, normal maps and shadows — real Antwerp colours up
-  close and from above. Load with `?flat` to fall back to the stylised surfaces. Tune `AERIAL_BOOST`/`AERIAL_SAT` in
-  `src/world/ground.ts`.
+  `public/map/city.json`. The game loads it **by default on desktop** (phones skip the download): the ground layers take
+  their colour from the aerial (sampled by world position) while keeping their tiling cobble/asphalt detail, normal maps
+  and shadows — real Antwerp colours up close and from above. Load with `?flat` to fall back to the stylised surfaces.
+  Tune `AERIAL_BOOST`/`AERIAL_SAT` in `src/world/ground.ts`.
 - **Textures:** `pnpm assets:textures` downloads them from Poly Haven into `public/textures/`, with the colour maps also at 512 px (`_512`) for phones.
 - **People:** run `pnpm tsx tools/assets/fetch-people.ts`, then `pnpm assets:people` with `pnpm dev` running. This
   writes `public/people/`. Re-bake after changing a bike or scooter frame in `src/actors/*Geometry.ts`, since the
