@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { coloured } from '../core/util';
 import type { TramRun } from '../world/cityData';
 
-// Albatros (Flexity 2) sections. Frame: +x forward, y up, +z the right-hand side (doors on the right only).
+// Albatros (Flexity 2). Frame: +x forward, y up, +z right (doors right only).
 export type SectionKind = 'cab' | 'mid' | 'rear';
 
 export const LAYOUTS: SectionKind[][] = [
@@ -227,12 +227,12 @@ export function displayAtlas(runs: TramRun[]): { texture: THREE.CanvasTexture; r
 export function displayMaterial(texture: THREE.Texture, rowCount: number): THREE.MeshBasicMaterial {
   const material = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
   material.onBeforeCompile = (shader) => {
-    // Row 0 is the top of the canvas; the texture is flipped, so v counts up from the bottom row.
+    // the texture is flipped: v counts up from the bottom row
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float iRow;')
       .replace('#include <uv_vertex>', `#include <uv_vertex>\nvMapUv.y = 1.0 - (iRow + 1.0 - vMapUv.y) / ${rowCount.toFixed(1)};`);
   };
-  // The row count is baked into the shader, and trams and buses have different atlases.
+  // rowCount is baked in, and trams and buses differ
   material.customProgramCacheKey = () => `display-${rowCount}`;
   return material;
 }

@@ -4,7 +4,7 @@ import { Router, snap } from '../src/game/gps';
 import type { GraphData, RoadGraph } from '../src/world/cityData';
 import { NavGraph } from '../src/world/navGraph';
 
-/** A one-way 0 → 1 along the bottom, and a two-way detour over node 2. */
+// one-way 0 → 1 along the bottom, two-way detour over node 2
 const triangle: RoadGraph = {
   nodes: [0, 0, 100, 0, 50, 80],
   edges: [
@@ -49,7 +49,7 @@ describe('gps router', () => {
         return { a, b, p, len: Math.hypot(p[2] - p[0], p[3] - p[1]), s: 10, w: 6 };
       }),
     }, true);
-    // At (30, 0) with the goal 20 m behind: facing +x it goes round (120 m); facing -x it goes straight back.
+    // goal 20 m behind: facing +x goes round (120 m), facing -x straight back
     expect(plan(block, [30, 1], [10, 1], true, 0)!.length).toBeCloseTo(120);
     expect(plan(block, [30, 1], [10, 1], true, Math.PI)!.length).toBeCloseTo(20);
   });

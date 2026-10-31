@@ -20,7 +20,7 @@ export class Chat {
     this.button.textContent = '💬';
     this.button.title = 'Chat (T)';
     this.button.hidden = true;
-    // Pressing the button blurs the field, which closes the chat before 'click': go by whether it was open at the press.
+    // the press blurs the field, closing the chat before 'click'
     let openAtPress = false;
     this.button.addEventListener('pointerdown', () => (openAtPress = this.isOpen));
     this.button.addEventListener('click', (e) => ((e.detail ? openAtPress : this.isOpen) ? this.close() : this.open())); // detail 0: keyboard

@@ -47,7 +47,7 @@ for (const ids of chunks(items, 50)) {
 }
 console.log(`${logoFile.size} have a logo on Wikidata`);
 
-// Public-domain only: a free licence (CC-BY/-SA) still means the logo is copyrighted, just reusable, so we skip those.
+// public domain only: CC-BY/-SA logos are still copyrighted
 const PD_LICENCE = /^(pd|cc0)/i;
 const PD_NAME = /^(public domain|cc0)/i;
 const info = new Map<string, any>();

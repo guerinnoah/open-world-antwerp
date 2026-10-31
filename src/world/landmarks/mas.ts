@@ -17,7 +17,7 @@ export function mas(_lm: Landmark): THREE.BufferGeometry {
       const zBox = -half + box / 2;
       kit.box(SIDE, fh - 0.35, box, 0, 0, zBox, SANDSTONE).box(SIDE + 0.1, 0.35, box + 0.1, 0, fh - 0.7, zBox, SANDSTONE_DARK);
       kit.extrude(galleryOutline(half - 0.6, half - box, half - 0.5), 0, fh - 0.35, GLASS);
-      kit.box(SIDE, 0.35, GALLERY, 0, fh - 0.7, half - GALLERY / 2, SANDSTONE_DARK); // gallery ceiling
+      kit.box(SIDE, 0.35, GALLERY, 0, fh - 0.7, half - GALLERY / 2, SANDSTONE_DARK);
       for (let x = -17; x <= 17; x += 3.4) kit.panel(0.35, 0.45, x + (i % 2) * 1.7, fh * 0.45, -half - 0.03, SILVER, 0, 0.06);
       for (let z = -half + 2; z < half - GALLERY; z += 3.4) {
         for (const x of [half + 0.03, -half - 0.03]) kit.panel(0.35, 0.45, x, fh * 0.45, z + (i % 2) * 1.7, SILVER, Math.PI / 2, 0.06);

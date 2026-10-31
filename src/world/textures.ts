@@ -3,14 +3,14 @@ import { track } from '../core/loadProgress';
 
 export const BUILDING_LAYERS = ['brick', 'plaster', 'yellowBrick', 'ashlar', 'slate', 'tiles', 'flatRoof'] as const;
 export type BuildingLayer = (typeof BUILDING_LAYERS)[number];
-/** Metres per texture repeat: each scan's real size, so bricks and slates come out life-size. */
+/** m per texture repeat: each scan's real size. */
 export const BUILDING_SCALE: Record<BuildingLayer, number> = {
   brick: 1.4, plaster: 2, yellowBrick: 2, ashlar: 2, slate: 3, tiles: 2.6, flatRoof: 20,
 };
 
 export type GroundTexture = 'asphalt' | 'pavement' | 'cobble' | 'grass' | 'pavers';
 
-/** mean: the albedo's average linear colour. Materials divide by it, so a tint is the surface's real average colour. */
+/** mean: average linear albedo; materials divide by it, so a tint is the real average colour. */
 interface Pair {
   map: THREE.Texture;
   normalMap: THREE.Texture;
@@ -30,7 +30,7 @@ const GROUND: GroundTexture[] = ['asphalt', 'pavement', 'cobble', 'grass', 'pave
 
 export async function loadTextures(renderer: THREE.WebGLRenderer, size: number, maxAnisotropy: number): Promise<Textures> {
   const anisotropy = Math.min(maxAnisotropy, renderer.capabilities.getMaxAnisotropy());
-  // Phones (size 512) fetch the half-size colour maps: a quarter of the download.
+  // Phones (size 512) fetch half-size colour maps: a quarter of the download.
   const albedoUrl = (name: string) => `/textures/${name}_albedo${size < 1024 ? '_512' : ''}.webp`;
   const [albedo, normal, ground, stone] = await Promise.all([
     arrayTexture(BUILDING_LAYERS.map(albedoUrl), size, true, anisotropy),

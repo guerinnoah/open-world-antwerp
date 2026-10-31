@@ -13,7 +13,7 @@ interface Client {
   name: string;
   look: string;
   state: number[] | null;
-  farAt: number; // ms: when its state last went to far-off players too
+  farAt: number;
   limit: ChatLimit;
   chat: ChatLimit;
   alive: boolean;
@@ -24,22 +24,19 @@ interface UpgradeSource {
 }
 
 const MAX_PLAYERS = 100;
-const MAX_PER_ADDRESS = 20; // generous: mobile carriers put many players behind one address
-const CAR_LOG = 200; // parked cars taken that the world remembers for late joiners
-const NEAR = 500; // m: players farther apart get each other's state once a second (FAR_EVERY), enough for the minimap
+const MAX_PER_ADDRESS = 20; // mobile carriers share addresses
+const CAR_LOG = 200;
+const NEAR = 500; // m; farther apart, states go once per FAR_EVERY
 const FAR_EVERY = 1000;
 const HELLO_TIMEOUT = 10_000;
 const HEARTBEAT = 15_000;
-const RATE = 40; // messages/s per client on average, BURST at once; states alone are 15/s
+const RATE = 40; // msg/s per client; states alone are 15/s
 const BURST = 80;
-const SLOW_CLIENT = 256 * 1024; // bytes queued: skip state updates to a client this far behind, the next one catches up
+const SLOW_CLIENT = 256 * 1024; // bytes queued before states are skipped
 
 export type Relay = ReturnType<typeof attachRelay>;
 
-/**
- * `standalone`: no other upgrade handler shares the server, so requests for other paths are closed rather than left open.
- * `trustProxy` (TRUST_PROXY=1): count players by the first X-Forwarded-For hop rather than the proxy's own address.
- */
+/** standalone: close other paths' upgrades; trustProxy: count players by the first X-Forwarded-For hop. */
 export function attachRelay(
   server: UpgradeSource,
   {
@@ -48,7 +45,7 @@ export function attachRelay(
 ) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   const clients = new Set<Client>();
-  const world = new Map<number, Client>(); // those past hello
+  const world = new Map<number, Client>();
   const taken: Took[] = [];
   const perAddress = new Map<string, number>();
   let nextId = 1;
@@ -70,7 +67,7 @@ export function attachRelay(
     const data = JSON.stringify({ t: 's', id: from.id, s } satisfies ServerMessage);
     for (const c of world.values()) {
       if (c === from || c.ws.readyState !== WebSocket.OPEN || c.ws.bufferedAmount > SLOW_CLIENT) continue;
-      const far = !!c.state && Math.hypot(c.state[2] - s[2], c.state[3] - s[3]) > NEAR; // [2], [3]: x, z; no position yet counts as near
+      const far = !!c.state && Math.hypot(c.state[2] - s[2], c.state[3] - s[3]) > NEAR; // [2], [3]: x, z
       if (to === 'all' || far === (to === 'far')) c.ws.send(data);
     }
   }
@@ -86,7 +83,7 @@ export function attachRelay(
 
   function receive(c: Client, raw: string) {
     const now = Date.now();
-    if (!c.limit.take(now)) return; // drop, don't disconnect: a burst after a frozen tab is normal
+    if (!c.limit.take(now)) return; // drop, don't kick: frozen tabs burst
 
     let msg: ClientMessage;
     try {
@@ -103,7 +100,7 @@ export function attachRelay(
       const s = decodeState(msg.s);
       if (!s) return;
       const was = c.state && decodeState(c.state);
-      // Getting in or out goes to everyone at once, after the state before it, so far-off games see where it happened.
+      // mode switch: send the prior state to all first, so far games see where
       const switched = !!was && was.mode !== s.mode;
       if (switched) relayState(c, c.state!, 'far');
       const everyone = switched || now - c.farAt >= FAR_EVERY;
@@ -125,12 +122,12 @@ export function attachRelay(
   function leave(c: Client) {
     clients.delete(c);
     if (!world.delete(c.id)) return;
-    if (world.size === 0) taken.length = 0; // nobody's game has those cars any more: the next to join starts afresh
+    if (world.size === 0) taken.length = 0;
     else broadcast(c, { t: 'leave', id: c.id });
   }
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    // First: a bad frame emits 'error', even on a socket being refused, and an unhandled one would crash the process.
+    // first: an unhandled 'error' from a bad frame crashes the process
     ws.on('error', () => ws.terminate());
     const address = addressOf(req, trustProxy);
     perAddress.set(address, (perAddress.get(address) ?? 0) + 1);
@@ -141,7 +138,7 @@ export function attachRelay(
     });
     const c: Client = {
       id: nextId++, ws, name: '', look: '', state: null, farAt: 0, limit: new ChatLimit(BURST, 1000 / RATE),
-      // A little over the game's own chat limit, so network jitter never drops a message the game let through.
+      // over the game's limit, so jitter never drops an allowed message
       chat: new ChatLimit(CHAT_BURST + 2), alive: true,
     };
     if (clients.size >= maxPlayers) return refuse(c, 'full');
@@ -172,11 +169,11 @@ export function attachRelay(
     try {
       path = new URL(req.url ?? '/', 'http://relay').pathname;
     } catch {
-      socket.destroy(); // e.g. `GET http://[`: a throw here would crash the process
+      socket.destroy(); // e.g. `GET http://[`; a throw would crash the process
       return;
     }
     if (path !== RELAY_PATH) {
-      if (standalone) socket.destroy(); // nobody else will answer it
+      if (standalone) socket.destroy();
       return; // leave Vite's HMR socket alone
     }
     if ((perAddress.get(addressOf(req, trustProxy)) ?? 0) >= maxPerAddress) return deny(socket, '429 Too Many Requests');
@@ -189,7 +186,7 @@ export function attachRelay(
     },
     close() {
       clearInterval(heartbeat);
-      for (const ws of [...wss.clients]) ws.terminate(); // refused ones too, still closing
+      for (const ws of [...wss.clients]) ws.terminate(); // refused ones too
       wss.close();
     },
   };
@@ -200,9 +197,8 @@ function addressOf(req: IncomingMessage, trustProxy: boolean): string {
   return (typeof forwarded === 'string' && forwarded.split(',')[0].trim()) || req.socket.remoteAddress || '';
 }
 
-/** Answers an upgrade request without upgrading it. */
 function deny(socket: Duplex, status: string) {
-  socket.on('error', () => socket.destroy()); // Node stops handling the socket's errors once it's handed to 'upgrade'
+  socket.on('error', () => socket.destroy()); // Node stops handling its errors after 'upgrade'
   socket.once('finish', () => socket.destroy());
   socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 }

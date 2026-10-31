@@ -49,7 +49,7 @@ function stoneMaterial(textures: Textures): THREE.MeshStandardMaterial {
         '#include <color_fragment>',
         `#include <color_fragment>
         {
-          // Triplanar stone grain, strongest on pale unsaturated parts; only its luminance, so the model's colours stay.
+          // Luminance only, so the model's colours stay.
           vec3 w = pow(abs(vWorldNormal), vec3(4.0));
           w /= w.x + w.y + w.z;
           vec3 stone = texture2D(tStone, vWorldPos.zy / 3.0).rgb * w.x

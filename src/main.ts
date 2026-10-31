@@ -24,6 +24,7 @@ import { Weather } from './world/weather';
 import { initialSky, liveWeather, useLiveWeather } from './world/daylight';
 import { createGround } from './world/ground';
 import { createLandmarks } from './world/landmarks';
+import { Districts, type District } from './world/districts';
 import { createFacadeDetail } from './world/facadeDetail';
 import { createMarkings } from './world/markings';
 import { createProps } from './world/props';
@@ -50,8 +51,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.9;
 renderer.shadowMap.enabled = quality.shadows;
 renderer.shadowMap.type = THREE.PCFShadowMap;
-// Scenery frees its CPU copy once uploaded (freeAfterUpload), so a lost WebGL context (a backgrounded phone tab, low GPU
-// memory) can't be restored: stop and offer a reload. Not an automatic one, which could loop if the GPU keeps losing it.
+// Scenery frees its CPU copy (freeAfterUpload), so a lost context can't be restored; no auto-reload, it could loop.
 canvas.addEventListener('webglcontextlost', () => {
   renderer.setAnimationLoop(null);
   const note = document.createElement('div');
@@ -69,7 +69,6 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.3, quality.drawDistance);
 const environment = new Environment(scene, renderer, quality);
 const weather = new Weather();
 scene.add(weather.group);
-// Sun from Antwerp's real clock (or ?time=); weather from the URL, else fetched live and applied when it arrives.
 const sky = initialSky(params);
 environment.applySky(sky);
 weather.setIntensity(sky.rain);
@@ -82,11 +81,10 @@ if (useLiveWeather(params)) {
 }
 
 let composer: EffectComposer | null = null;
-// AO through a multisampled target so edges stay smooth (desktop only; /?noao turns it off).
 if (quality.ao && !params.has('noao')) {
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }));
   const ao = new N8AOPass(scene, camera, innerWidth, innerHeight);
-  // transparencyAware off: else splash particles and shop glass make N8AO re-render the scene twice more per frame.
+  // transparencyAware off: else splash and shop glass re-render the scene twice more per frame.
   Object.assign(ao.configuration, {
     aoRadius: 3, distanceFalloff: 1, intensity: 3, halfRes: true, gammaCorrection: false, transparencyAware: false,
   });
@@ -98,7 +96,7 @@ const draw = () => (composer ? composer.render() : renderer.render(scene, camera
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
-  // Else the composer keeps its first pixel ratio and adaptive resolution wouldn't shrink the AO buffers.
+  // Else adaptive resolution wouldn't shrink the AO buffers.
   composer?.setPixelRatio(renderer.getPixelRatio());
   composer?.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
@@ -108,7 +106,6 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// Downloads fill the first 80% of the bar, building the city the rest.
 onLoadProgress((f) => title.progress(f * 0.8));
 const t0 = performance.now();
 const [city, graph, textures, crowd, aerial] = await Promise.all([
@@ -116,12 +113,11 @@ const [city, graph, textures, crowd, aerial] = await Promise.all([
   track(fetch('/map/graph.json').then((r) => r.json() as Promise<GraphData>), 4),
   loadTextures(renderer, quality.textureSize, quality.anisotropy),
   Crowd.load(quality.peds + 24, quality.level === 'high' ? Infinity : 4),
-  // Aerial ground on desktop (?flat skips it); .catch → null falls back to the stylised ground if the photo's missing.
   !quality.aerial || params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync('/map/ortho.webp').catch(() => null), 9),
 ]);
 if (aerial) {
-  aerial.colorSpace = THREE.NoColorSpace; // sampled raw in the ground blend shader and linearised there
-  aerial.anisotropy = quality.anisotropy; // the ground is seen at a grazing angle
+  aerial.colorSpace = THREE.NoColorSpace; // linearised in the ground shader
+  aerial.anisotropy = quality.anisotropy;
   aerial.wrapS = aerial.wrapT = THREE.ClampToEdgeWrapping;
 }
 const t1 = performance.now();
@@ -139,7 +135,6 @@ const scenery = [
   createTrees(city.trees), landmarks,
 ];
 scene.add(...scenery);
-// The scenery never moves: compose its matrices once instead of thousands every frame.
 for (const root of scenery) {
   root.traverse((o) => {
     o.updateMatrix();
@@ -175,7 +170,7 @@ if (params.has('fly')) {
   physics.world.timestep = 1 / quality.physicsHz;
   const breakables = new Breakables(physics, props); // before the game parks cars, so none park on a post
   scene.add(breakables.group);
-  // Rapier queries only see colliders after a step: step the empty world so spawns can check for walls and posts.
+  // Rapier queries only see colliders after a step, so spawns can check for walls and posts.
   physics.step();
   const scooters = new Scooters(graph.walk, crowd, 130 * quality.detailView, physics);
   const motorbikes = new Motorbikes(crowd, quality.vehicleView);
@@ -186,6 +181,7 @@ if (params.has('fly')) {
   const input = new Input(canvas);
   const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, interiors, breakables, bikes, scooters, motorbikes, start);
   (window as unknown as { game: Game }).game = game;
+  fetch('/map/districts.json').then((r) => r.json() as Promise<District[]>).then((d) => game.attachDistricts(new Districts(d))).catch(() => {});
   if (params.has('fpv')) game.setFirstPerson(true);
   const relay = relayUrl(params);
   if (relay) game.attachMultiplayer(new Multiplayer(relay, params, game, physics, crowd, camera));
@@ -200,7 +196,6 @@ if (params.has('fly')) {
       playing = title.started;
     }
     const s0 = performance.now();
-    // Fixed-rate physics; rendering interpolates between the last two steps (acc / STEP).
     acc = game.paused ? 0 : Math.min(acc + dt, 0.25);
     while (acc >= STEP) {
       game.fixedUpdate(STEP);
@@ -214,10 +209,10 @@ if (params.has('fly')) {
     timing.render += performance.now() - s1;
   };
 }
-// Compile every shader behind the loading screen, else the first second of play stutters.
+// Compile shaders behind the loading screen, else play starts with a stutter.
 title.progress(0.95);
 if (!params.has('fly')) await renderer.compileAsync(scene, camera);
-// Draw all scenery once unculled so every chunk uploads now and can free its CPU copy (see freeAfterUpload).
+// Draw scenery once unculled so every chunk uploads now and frees its CPU copy.
 {
   const unculled: THREE.Object3D[] = [];
   for (const root of scenery) {
@@ -244,10 +239,9 @@ const timer = new THREE.Timer();
 timer.connect(document);
 let frames = 0, fpsTime = 0;
 renderer.info.autoReset = false;
-// Adaptive resolution: down to 60% of the preset when fps sags, back up with headroom; checked once a second.
 const minPixelRatio = maxPixelRatio * 0.6;
 let adaptFrames = 0, adaptTime = 0, slowSeconds = 0, fastSeconds = 0;
-// Phones target 30 fps, where Low Power Mode caps them.
+// Phones target 30 fps: Low Power Mode caps them there.
 const [slowFps, fastFps, upAfter] = quality.level === 'high' ? [45, 57, 4] : [25, 29, 8];
 function adaptResolution(dt: number) {
   adaptFrames++;

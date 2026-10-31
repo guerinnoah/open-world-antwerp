@@ -40,7 +40,7 @@ const self = (page: Page) =>
   });
 const other = (page: Page) =>
   page.evaluate(() => {
-    // By name: anyone else on the dev server is in the same world.
+    // by name: anyone on the dev server shares this world
     const p = [...(window as unknown as G).game.multiplayer.peers.values()].find((q) => q.name === 'Anna' || q.name === 'Bram');
     if (!p?.ready) return null;
     const car = p.car && { x: p.car.x, z: p.car.z, remote: p.car.remote };

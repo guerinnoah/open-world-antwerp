@@ -49,7 +49,7 @@ export class Radio {
     el.addEventListener('playing', () => this.status === 'tuning' && this.set('on'));
     el.addEventListener('error', () => this.status !== 'off' && this.set('no signal'));
 
-    // iOS only lets audio start inside a tap: unlock the element now for stations started later.
+    // iOS starts audio only inside a tap: unlock the element now
     el.src = SILENCE;
     el.play().catch(() => {});
   }

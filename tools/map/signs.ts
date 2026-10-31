@@ -48,7 +48,7 @@ function styleOf(t: Record<string, string>): SignStyle | undefined {
   return undefined;
 }
 
-/** House colours of the big Belgian chains, matched on the start of the name: chains get their name in these, never a logo. */
+/** Chain house colours, matched on the name's start; chains never get a logo. */
 const BRANDS: [RegExp, number][] = [
   [/^albert heijn|^ah\b/i, 0x00a0e2], [/delhaize/i, 0xd7171f], [/^carrefour/i, 0x004e9f], [/^lidl/i, 0x0050aa],
   [/^aldi/i, 0x00205b], [/^colruyt/i, 0xf28c00], [/^okay/i, 0xe2001a], [/^spar\b/i, 0x00843d], [/^kruidvat/i, 0xe30613],
@@ -62,7 +62,6 @@ const BRANDS: [RegExp, number][] = [
 
 const OPERATOR_LOGO: ReadonlySet<SignStyle> = new Set(['public', 'culture']);
 
-/** Wikidata items whose logo the sign may show, best first; never chains (brand tag or BRANDS) or nameplates. See logos.ts. */
 export function logoItemsOf(t: Record<string, string>): string[] {
   const style = styleOf(t);
   if (!t.name || !style || style === 'plate') return [];
@@ -145,7 +144,7 @@ export function placeSigns(
       : Math.min(Math.max(2.2, shorten(t.name).length * 0.28 + 0.8), len - 0.4, big ? 9 : 7);
     const logo = plate ? undefined : logoOf(t);
     if (logo) {
-      const logoWidth = 0.75 * 0.75 * logo.aspect; // logo signs are 0.75 m tall, the logo 3/4 of that (src/world/signs.ts)
+      const logoWidth = 0.75 * 0.75 * logo.aspect; // 0.75 m sign, logo 3/4 of it (src/world/signs.ts)
       const most = Math.min(len - 0.4, big ? 9 : 7);
       const named = logo.named && width + logoWidth <= most;
       width = Math.min(Math.max(1.5, named ? width + logoWidth : logoWidth + 0.5), most);
@@ -155,7 +154,7 @@ export function placeSigns(
     let centre = along * len;
     centre = Math.min(Math.max(centre, width / 2 + 0.2), len - width / 2 - 0.2);
     const overlaps = ([s0, s1]: [number, number]) => centre + width / 2 > s0 && centre - width / 2 < s1;
-    // Spans are kept sorted, so moving past one never runs into an earlier one; with no room after it, shrink into the gap before it.
+    // spans stay sorted, so moving past one never hits an earlier one
     for (const span of spans) {
       if (!overlaps(span)) continue;
       const after = span[1] + width / 2 + 0.2;
@@ -197,7 +196,6 @@ export function offRoad(roads: Road[]) {
   return (p: Pt) => !besideRoad(p, near(p), 0.6);
 }
 
-/** Street name plates on the corner building along each street at junctions, as on Antwerp corners; 30 m apart per street. */
 export function placeStreetPlates(graphs: RoadGraph[], index: Map<Building, number>, near: (p: Pt) => Outline[]): Sign[] {
   const plates: Sign[] = [];
   const placed = new Map<string, Pt[]>();
@@ -252,7 +250,7 @@ export function placeStreetPlates(graphs: RoadGraph[], index: Map<Building, numb
   return plates;
 }
 
-/** Velo bike-share stations as [x, z, angle, docks]: the dock row along the nearest street, off its carriageway. */
+/** Velo stations as [x, z, angle, docks], docks along the nearest street. */
 export function veloStations(elements: OsmElement[], roads: Road[], clear: (p: Pt) => boolean): number[] {
   const out: number[] = [];
   for (const e of elements) {

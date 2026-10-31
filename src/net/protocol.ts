@@ -1,11 +1,11 @@
-// Wire format shared by the game and the relay: JSON over one WebSocket. No local imports: Node runs this file directly.
+// Shared by game and relay. No local imports: Node runs this file directly.
 export const PROTOCOL_VERSION = 6;
 export const RELAY_PATH = '/net';
 export const CHAT_MAX = 120;
 export const CHAT_BURST = 5;
-export const CHAT_EVERY = 2000; // ms: after a burst of CHAT_BURST, one message per this
+export const CHAT_EVERY = 2000; // ms per message after CHAT_BURST
 
-/** Sent by index: the order is part of the protocol, only append. */
+/** Sent by index: only append. */
 export const VEHICLE_KINDS = [
   'city', 'hatch', 'estate', 'sedan', 'suv', 'van', 'bike', 'scooter', 'bus', 'artic', 'motorbike', 'moped',
   'police', 'policevan', 'taxi', 'ambulance', 'truck', 'firetruck',
@@ -19,11 +19,11 @@ export const FLAG = {
 } as const;
 
 export interface PlayerState {
-  time: number; // sender's clock (ms): receivers interpolate on it
+  time: number; // sender's clock (ms)
   mode: 0 | 1;
   x: number;
   z: number;
-  angle: number; // Rapier angle (rad), forward = (cos, sin)
+  angle: number; // Rapier angle (rad)
   vx: number;
   vz: number;
   spin: number;
@@ -56,7 +56,7 @@ export type ClientMessage =
   | { t: 'chat'; text: string };
 
 export type ServerMessage =
-  | { t: 'welcome'; id: number; peers: PeerInfo[]; taken: Took[] } // parked cars taken so far, oldest first: gone for a late joiner too
+  | { t: 'welcome'; id: number; peers: PeerInfo[]; taken: Took[] } // taken parked cars, oldest first
   | { t: 'join'; peer: PeerInfo }
   | { t: 'leave'; id: number }
   | { t: 's'; id: number; s: number[] }
@@ -67,7 +67,7 @@ export type ServerMessage =
 const STATE_LENGTH = 14;
 const round = (v: number, k: number) => Math.round(v * k) / k;
 
-/** Quantised to cm, cm/s and mrad to keep messages short; the field order is the wire order. */
+/** cm, cm/s and mrad; field order = wire order. */
 export function encodeState(s: PlayerState): number[] {
   return [
     Math.round(s.time), s.mode, round(s.x, 100), round(s.z, 100), round(s.angle, 1000), round(s.vx, 100), round(s.vz, 100),
@@ -89,7 +89,7 @@ export function decodeState(a: unknown): PlayerState | null {
   };
 }
 
-/** Swearing is filtered by the relay (server/profanity.ts), so the game doesn't ship the word list. */
+/** The relay filters swearing (server/profanity.ts), so the game ships no word list. */
 export function cleanName(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw.replace(/[\p{C}<>]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 16).trim();
@@ -98,7 +98,7 @@ export function cleanName(raw: unknown): string {
 export function cleanChat(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   const text = raw.replace(/\s/g, ' ').replace(/\p{C}/gu, '').replace(/ +/g, ' ').trim();
-  // Cut by code points, not UTF-16 units, so an emoji at the limit isn't split in half.
+  // by code points, so an emoji at the limit isn't split
   return [...text].slice(0, CHAT_MAX).join('').trim();
 }
 

@@ -1,4 +1,5 @@
 import type { Building, BusRun, GraphData, GraphEdge, RoadGraph, TramRun } from '../../src/world/cityData.ts';
+import { kerbside } from '../../src/world/navGraph.ts';
 import { cumulative, offsetPolyline, pointAt } from '../../src/world/polyline.ts';
 import { centroid, flat, project, round, round2, toPts, type OsmElement, type Pt } from './geo.ts';
 
@@ -9,7 +10,7 @@ interface GraphInput {
   roadWidth: (tags: Record<string, string>) => number | undefined;
 }
 
-const BUS_LANE = 1.9; // m right of the centreline on two-way streets, where AI traffic drives (src/actors/traffic.ts)
+const BUS_LANE = 1.9; // m right of the centreline on two-way streets (src/actors/traffic.ts)
 
 const DRIVABLE = new Set([
   'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link',
@@ -19,7 +20,6 @@ const WALKABLE = new Set([
   'primary', 'secondary', 'tertiary', 'primary_link', 'secondary_link', 'tertiary_link', 'residential',
   'unclassified', 'living_street', 'service', 'pedestrian', 'footway', 'path', 'steps', 'track',
 ]);
-/** Walked down the middle (sidewalks [0, 0]); other car roads get sidewalks at the kerb. */
 const CENTRELINE = new Set(['pedestrian', 'footway', 'path', 'steps', 'track', 'living_street', 'service']);
 const CYCLABLE = new Set([
   'primary', 'secondary', 'tertiary', 'primary_link', 'secondary_link', 'tertiary_link', 'residential',
@@ -63,11 +63,10 @@ function bikeFlow(t: Record<string, string>): -1 | 0 | 1 {
   return own === '-1' ? -1 : flow(t);
 }
 
-/** How strongly riders pick this way at a junction: separate tracks and bicycle streets over quiet streets over busy ones. */
 function bikePreference(t: Record<string, string>): number {
   const h = t.highway;
   if (h === 'cycleway' || t.bicycle_road === 'yes' || t.cyclestreet === 'yes') return 3;
-  // A separately mapped track runs alongside: riding the carriageway is the rare exception.
+  // a separately mapped track runs alongside
   if (t.bicycle === 'use_sidepath' || CYCLE_SIDES.some((k) => t[k] === 'separate')) return 0.05;
   if (t.footway === 'crossing') return 3;
   if (CYCLABLE_IF_SIGNED.has(h)) return t.bicycle === 'designated' ? 2.5 : 0.4;
@@ -76,7 +75,7 @@ function bikePreference(t: Record<string, string>): number {
   return speedOf(t) > 9 ? 0.5 : 1.5;
 }
 
-/** Where riders keep to (m right of the centreline): clear of cars parked at the kerb (src/game/game.ts parkCars) and of the car lane. */
+/** m right of the centreline, clear of parked cars (src/game/game.ts parkCars) and the car lane. */
 function bikeLane(t: Record<string, string>, w: number): number {
   const h = t.highway;
   if (h === 'pedestrian') return round(Math.min(w / 2 - 0.8, 1.2));
@@ -84,7 +83,7 @@ function bikeLane(t: Record<string, string>, w: number): number {
   const carOneway = flow(t) !== 0;
   const parking = DRIVABLE.has(h) && !blocked(t, 'car') && w >= (carOneway ? 6.6 : 10.4) && speedOf(t) <= 14;
   const kerb = w / 2 - (parking ? 2.6 : 0.9);
-  // One-way traffic drives the centreline: stay 1.35 m off it, past a car's half width.
+  // one-way cars drive the centreline: keep past a car's half width
   return round(carOneway ? Math.min(Math.max(kerb, 1.35), w / 2 - 0.6) : Math.max(kerb, 0.6));
 }
 
@@ -184,7 +183,7 @@ function makeClearance(buildings: Building[]) {
   };
 }
 
-/** Sidewalk offsets [left, right] (m from the centreline) from the median room to the building line; -1: no room. */
+/** [left, right] m from the centreline; -1: no room. */
 function sidewalks(p: number[], width: number, clearance: ReturnType<typeof makeClearance>): [number, number] {
   const sides: number[][] = [[], []];
   let travelled = 0;
@@ -251,7 +250,7 @@ function chainRoute(route: OsmElement, ways: Map<number, OsmElement>, inBounds: 
         } else flush(true);
       }
     } else if (i + 1 < tracks.length && tracks[i + 1].geometry) {
-      // A piece's first way may be stored backwards: flip it if that's what connects it to the next.
+      // a piece's first way may be stored backwards
       const next = toPts(tracks[i + 1].geometry!);
       const ends = [key(next[0]), key(next[next.length - 1])];
       if (ends.includes(key(pts[0])) && !ends.includes(key(pts[pts.length - 1]))) fwd = false;
@@ -358,7 +357,7 @@ function busRuns(elements: OsmElement[], inBounds: (p: Pt) => boolean): BusRun[]
         if (near.d < 15) stops.push(near.s);
       }
       stops.sort((a, b) => a - b);
-      // A stop is often mapped twice (stop position on the road, platform at the kerb): merge within 25 m.
+      // stops are often mapped twice (road position + kerb platform)
       const kept = stops.filter((s, i) => i === 0 || s - stops[i - 1] > 25).map(round);
       runs.push({ line, colour, to, p, len: round(len), stops: kept, ...(terminus ? { end: 1 as const } : {}) });
     }
@@ -371,7 +370,7 @@ export function buildGraphData({ elements, buildings, inBounds, roadWidth }: Gra
     (e) => e.type === 'way' && e.nodes && e.geometry && e.tags?.highway && e.tags.area !== 'yes' && !underground(e.tags),
   );
 
-  // oneway=-1 ways are drawn against the flow: reverse them so every one-way edge runs a → b.
+  // oneway=-1 ways run against the flow: reverse so every one-way edge runs a → b
   const driveWays = ways
     .filter((w) => DRIVABLE.has(w.tags!.highway) && !blocked(w.tags!, 'car'))
     .map((w) =>
@@ -410,22 +409,8 @@ export function buildGraphData({ elements, buildings, inBounds, roadWidth }: Gra
 
   const hospital = elements.find((e) => e.tags?.amenity === 'hospital' && /Sint-Elisabeth/.test(e.tags.name ?? ''));
   const hc: Pt = hospital?.geometry ? centroid(toPts(hospital.geometry)) : [0, 0];
-  let spawn: [number, number, number] = [hc[0], hc[1], 0];
-  let best = Infinity;
-  for (const e of drive.edges) {
-    for (let i = 0; i < e.p.length - 2; i += 2) {
-      const [x0, z0, x1, z1] = [e.p[i], e.p[i + 1], e.p[i + 2], e.p[i + 3]];
-      const len = Math.hypot(x1 - x0, z1 - z0);
-      if (len < 4) continue;
-      const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
-      const d = Math.hypot(mx - hc[0], mz - hc[1]);
-      if (d >= best) continue;
-      best = d;
-      const nx = -(z1 - z0) / len, nz = (x1 - x0) / len;
-      const side = (hc[0] - mx) * nx + (hc[1] - mz) * nz > 0 ? 1 : -1;
-      spawn = [round(mx + nx * side * (e.w / 2 + 1)), round(mz + nz * side * (e.w / 2 + 1)), round2(Math.atan2(z1 - z0, x1 - x0))];
-    }
-  }
+  const kerb = kerbside(drive.edges, hc[0], hc[1]);
+  const spawn: [number, number, number] = kerb ? [round(kerb[0]), round(kerb[1]), round2(kerb[2])] : [hc[0], hc[1], 0];
 
   return { version: 1, drive, walk, bike, trams: tramRuns(elements, inBounds), buses: busRuns(elements, inBounds), hospital: spawn };
 }

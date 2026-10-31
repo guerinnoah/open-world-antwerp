@@ -37,7 +37,7 @@ kinematically along their routes; other players are kinematic bodies too.
 |---|---|
 | `src/world/` | Buildings, roofs, ground, signs, props, interiors, landmark models |
 | `src/actors/` | Player, vehicles, traffic, pedestrians, trams, buses, bikes, scooters, motorbikes |
-| `src/game/` | `Game`, the chase camera, GPS routing |
+| `src/game/` | `Game`, the chase camera, GPS routing, the wanted level |
 | `src/net/` | Multiplayer client and the shared wire protocol |
 | `src/ui/`, `src/audio/` | HUD, minimap, world map; sound and radio |
 

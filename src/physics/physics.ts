@@ -9,7 +9,7 @@ export const WHEELS = GROUP.VEHICLE | GROUP.BIKE;
 
 export const groups = (member: number, filter: number) => (member << 16) | filter;
 
-const CHUNK = 250; // m: building outlines merge into a polyline collider per chunk (hundreds, not ~25k)
+const CHUNK = 250; // m; outlines merge into a collider per chunk (hundreds, not ~25k)
 
 const ray = (x: number, z: number, dx: number, dz: number) => {
   const len = Math.hypot(dx, dz) || 1;
@@ -28,7 +28,7 @@ export class Physics {
   private constructor() {
     this.world = new RAPIER.World({ x: 0, y: 0 });
     this.world.timestep = 1 / 60;
-    // No soft bodies: skip Rapier 0.21's re-sync of every collider's JS map after each step (~3 ms a step).
+    // no soft bodies: skip Rapier 0.21's per-step collider re-sync (~3 ms)
     this.world.mapNewSoftBodies = () => {};
     this.world.colliders.unmapRemovedColliders = () => {};
   }
@@ -43,8 +43,7 @@ export class Physics {
   }
 
   remove(body: RAPIER.RigidBody) {
-    // Removing a body twice panics Rapier's wasm for good. isValid() checks the handle's generation; bodies.contains()
-    // doesn't, and says yes once a new body reuses the slot.
+    // a double remove poisons Rapier's wasm; isValid() checks the generation, bodies.contains() doesn't
     if (!body.isValid()) return;
     for (let i = 0; i < body.numColliders(); i++) this.owners.delete(body.collider(i).handle);
     this.world.removeRigidBody(body);
@@ -93,7 +92,7 @@ export class Physics {
   }
 
   castStatic(x: number, z: number, dx: number, dz: number, max: number): number {
-    // Static colliders take wheels and people, never STATIC itself: ask as a car, and only of static colliders.
+    // static colliders take wheels and people, not STATIC: ask as a car
     const hit = this.world.castRay(ray(x, z, dx, dz), max, true, RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC, groups(GROUP.VEHICLE, GROUP.STATIC));
     return hit ? hit.timeOfImpact : max;
   }

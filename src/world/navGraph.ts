@@ -14,7 +14,7 @@ export class NavGraph {
   readonly nodes: number[];
   private out: Step[][];
   private grid = new Map<string, number[]>();
-  private seen: Uint32Array; // per edge: the last nearest() query that tested it (long edges sit in many cells)
+  private seen: Uint32Array; // per edge: last nearest() query that tested it; long edges sit in many cells
   private query = 0;
 
   constructor(graph: RoadGraph, directed: boolean) {
@@ -24,7 +24,7 @@ export class NavGraph {
     graph.edges.forEach((e, i) => {
       this.out[e.a].push({ edge: i, forward: true });
       if (!directed || !e.o) this.out[e.b].push({ edge: i, forward: false });
-      // Every cell under each segment's bounding box, not just the vertex cells, so nearest() finds the middle of a long segment.
+      // Every cell under the segment's bbox, so nearest() finds the middle of long segments.
       const p = e.p;
       for (let k = 0; k < p.length - 2; k += 2) {
         const gx1 = Math.floor(Math.max(p[k], p[k + 2]) / CELL), gz1 = Math.floor(Math.max(p[k + 1], p[k + 3]) / CELL);
@@ -93,4 +93,25 @@ export class NavGraph {
     }
     return -1;
   }
+}
+
+/** On the pavement beside the nearest street, on the point's side: [x, z, heading]. */
+export function kerbside(edges: GraphEdge[], x: number, z: number): [number, number, number] | null {
+  let spot: [number, number, number] | null = null;
+  let best = Infinity;
+  for (const e of edges) {
+    for (let i = 0; i < e.p.length - 2; i += 2) {
+      const [x0, z0, x1, z1] = [e.p[i], e.p[i + 1], e.p[i + 2], e.p[i + 3]];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      if (len < 4) continue;
+      const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+      const d = Math.hypot(mx - x, mz - z);
+      if (d >= best) continue;
+      best = d;
+      const nx = -(z1 - z0) / len, nz = (x1 - x0) / len;
+      const side = (x - mx) * nx + (z - mz) * nz > 0 ? 1 : -1;
+      spot = [mx + nx * side * (e.w / 2 + 1), mz + nz * side * (e.w / 2 + 1), Math.atan2(z1 - z0, x1 - x0)];
+    }
+  }
+  return spot;
 }

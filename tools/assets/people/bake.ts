@@ -1,4 +1,4 @@
-// Browser-side, driven by bake-people.ts: bakes one Rocketbox avatar's atlas, LODs and bone matrices for src/actors/crowd.ts.
+// Runs in the browser via bake-people.ts; output feeds src/actors/crowd.ts.
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
@@ -21,14 +21,13 @@ const SEATED_FRAMES = 16;
 const PUNCH_FRAMES = 12;
 const PUNCH_SECONDS = 0.45; // keep in step with PUNCH_TIME in src/actors/player.ts
 
-// Avatar space (Y-up, centimetres, facing +z) → game space (metres, facing +x).
+// avatar space (Y-up, cm, facing +z) → game space (m, facing +x)
 const CORRECTION = new THREE.Matrix4().makeRotationY(Math.PI / 2).multiply(new THREE.Matrix4().makeScale(0.01, 0.01, 0.01));
 
-/** Loads a clip and loops it in place; travel is the root's distance per cycle (m), the stride the game matches to speed. */
 async function loadClip(path: string): Promise<{ clip: THREE.AnimationClip; travel: number }> {
   const group = await fbx.loadAsync(path);
   const clip = group.animations[0];
-  // Rotations and the root's bob only: other position tracks would impose the clip's bone lengths on other avatars.
+  // rotations and root bob only: other position tracks impose the clip's bone lengths
   clip.tracks = clip.tracks.filter((t) => t.name.endsWith('.quaternion') || /^Bip01\.position$/.test(t.name));
   let travel = 0;
   const root = clip.tracks.find((t) => /^Bip01\.position$/.test(t.name));
@@ -63,7 +62,6 @@ function aimBone(bone: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3) {
   turnBone(bone, Q().setFromUnitVectors(from.clone().normalize(), to.clone().normalize()));
 }
 
-/** Two-bone IK: bends a (hip/shoulder) and b (knee/elbow) so c (ankle/wrist) reaches target, bending towards pole. */
 function twoBoneIK(a: THREE.Bone, b: THREE.Bone, c: THREE.Bone, target: THREE.Vector3, pole: THREE.Vector3) {
   const A = a.getWorldPosition(V()), B = b.getWorldPosition(V()), C = c.getWorldPosition(V());
   const l1 = A.distanceTo(B), l2 = B.distanceTo(C);
@@ -206,7 +204,7 @@ async function bake(input: BakeInput) {
     clips[clipName].stride = clipName === 'idle' ? 0 : +travel.toFixed(3);
   }
 
-  // IK works in the bones' world space. P, D: game-space point, direction (m; x forward, z right) into it; G: a bone out of it.
+  // IK runs in bone world space; P, D take game space (m; x forward, z right) in, G takes a bone out
   const toGame = new THREE.Matrix4().copy(CORRECTION).multiply(skinned.matrixWorld).multiply(skinned.bindMatrixInverse);
   const toBones = toGame.clone().invert();
   const P = (p: THREE.Vector3) => p.clone().applyMatrix4(toBones);
@@ -230,7 +228,7 @@ async function bake(input: BakeInput) {
   const legLength = G(thigh).distanceTo(G(calf)) + G(calf).distanceTo(G(foot));
   const ball = G(toe).sub(G(foot));
   ball.z = 0;
-  const leanAxis = D(0, 0, -1); // turning about -z tips the top (or the toes) forward and down
+  const leanAxis = D(0, 0, -1); // about -z tips the top forward and down
   const [bbx, bby] = BIKE.bb;
   const pedal = (a: number, side: number) => new THREE.Vector3(bbx + BIKE.crank * Math.sin(a), bby + BIKE.crank * Math.cos(a), side * BIKE.pedalZ);
   const ankling = (a: number) => 0.2 + 0.18 * Math.sin(a + 0.6);

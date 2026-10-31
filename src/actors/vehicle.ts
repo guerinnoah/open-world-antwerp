@@ -9,22 +9,22 @@ export interface VehicleSpec {
   name:
     | 'city' | 'hatch' | 'estate' | 'sedan' | 'suv' | 'van' | 'bike' | 'scooter' | 'bus' | 'artic' | 'motorbike' | 'moped'
     | 'police' | 'policevan' | 'taxi' | 'ambulance' | 'truck' | 'firetruck';
-  model: number; // index in vehicleModels.ts; -1 = drawn elsewhere (bikes, scooters, motorbikes, buses)
-  label?: string; // in 'Steal this …'; default 'car'
+  model: number; // index in vehicleModels.ts; -1 = drawn elsewhere
+  label?: string;
   length: number;
   width: number;
-  height?: number; // m, for the chase camera; default car height
-  paints?: number[]; // default PAINTS
-  siren?: number; // emergency vehicle: chance it's on a call when it joins traffic
+  height?: number;
+  paints?: number[];
+  siren?: number; // chance it's on a call when spawned
   maxSpeed: number;
-  accel: number; // m/s² from standstill, fading quadratically to 0 at maxSpeed (m/s)
-  sprintSpeed?: number; // m/s when boosting (Shift); defaults to maxSpeed. The pedal bike sprints above its cruise speed.
+  accel: number; // m/s² at rest, fading quadratically to 0 at maxSpeed (m/s)
+  sprintSpeed?: number; // m/s with Shift; default maxSpeed
   mass?: number;
-  pivot?: number; // m behind the middle: long vehicles turn about their rear axle
+  pivot?: number; // m behind centre: long vehicles turn about the rear axle
   trailer?: { length: number; axle: number; mass: number };
 }
 
-/** m/s² and m/s; grip in 1/s (lower = more drift); yaw rates in rad/s at full lock, at low and at top speed. */
+/** m/s² and m/s; grip 1/s (lower = drift); yaw rad/s at full lock. */
 interface Handling {
   brake: number;
   reverseSpeed: number;
@@ -53,15 +53,12 @@ const HANDLING: Partial<Record<VehicleSpec['name'], Handling>> = {
 const TRAILER_GRIP = 12;
 const AFLOAT: Handling = { brake: 2.5, reverseSpeed: 3, reverseAccel: 1.5, coast: 1.5, grip: 2.5, handbrakeGrip: 1.5, yawLow: 1.1, yawHigh: 0.7 };
 const AFLOAT_SPEED = 0.3;
-const NORMAL_TOP = 55 / 3.6; // m/s: regular driving tops out here; holding boost (Shift) unlocks the vehicle's real top speed
+const NORMAL_TOP = 55 / 3.6; // m/s; Shift unlocks the real top speed
 const WATER_DRAG = 2.5;
 
 export const BIKE_SPEC: VehicleSpec = { name: 'bike', model: -1, length: 1.75, width: 0.6, maxSpeed: 24 / 3.6, sprintSpeed: 32 / 3.6, accel: 2.8, mass: 100 };
-/** Up to 38 km/h: well over the Belgian 25. */
 export const SCOOTER_SPEC: VehicleSpec = { name: 'scooter', model: -1, length: 1.15, width: 0.55, maxSpeed: 25 / 3.6, accel: 3, mass: 105 };
-/** MT-07 class, capped at 44 m/s ≈ 160 km/h: the real 200 is too much for city streets. */
 export const MOTORBIKE_SPEC: VehicleSpec = { name: 'motorbike', model: -1, length: 2.1, width: 0.8, maxSpeed: 180 / 3.6, accel: 10, mass: 270 };
-/** A class B "brommer" (45 km/h), tuned to 70. */
 export const MOPED_SPEC: VehicleSpec = { name: 'moped', model: -1, length: 1.8, width: 0.7, maxSpeed: 45 / 3.6, accel: 3, mass: 190 };
 
 export const BUS_SPEC: VehicleSpec = {
@@ -78,6 +75,13 @@ export const isBus = (spec: VehicleSpec) => spec.name === 'bus' || spec.name ===
 export const isMotorbike = (spec: VehicleSpec) => spec.name === 'motorbike' || spec.name === 'moped';
 export const isTruck = (spec: VehicleSpec) => spec.name === 'truck' || spec.name === 'firetruck';
 export const isEmergency = (spec: VehicleSpec) => spec.siren !== undefined;
+export const isPolice = (spec: VehicleSpec) => spec.name === 'police' || spec.name === 'policevan';
+
+export const VEHICLE_NAMES: Record<VehicleSpec['name'], string> = {
+  city: 'City Car', hatch: 'Hatchback', estate: 'Estate', sedan: 'Sedan', suv: 'SUV', van: 'Van', bike: 'Bike', scooter: 'E-scooter',
+  bus: 'Bus', artic: 'Articulated Bus', motorbike: 'Motorbike', moped: 'Moped', police: 'Police Car', policevan: 'Police Van', taxi: 'Taxi',
+  ambulance: 'Ambulance', truck: 'Truck', firetruck: 'Fire Engine',
+};
 
 function boxBody(world: RAPIER.World, spec: VehicleSpec, length: number, mass: number, pivot: number, x: number, z: number, angle: number) {
   const body = world.createRigidBody(
@@ -123,15 +127,15 @@ export class Vehicle {
   readonly trailer: (Posed & { body: RAPIER.RigidBody }) | null = null;
   controls: { steer: number; throttle: number; handbrake: boolean; boost?: boolean } = { steer: 0, throttle: 0, handbrake: true };
   driven = false;
-  siren = false; // lights flash whenever on; the siren only sounds while someone drives it
-  remote = false; // another player's: a kinematic body the network moves, so step() leaves it alone
+  siren = false;
+  remote = false; // another player's kinematic body; step() skips it
 
   roll = 0;
   pitch = 0;
   afloat = false;
   sink = 0;
   prev: Pose;
-  /** Cached pose (sync() refreshes it): reading ~900 cars from Rapier every step was a big part of the frame on phones. */
+  /** Cached by sync(): reading ~900 cars from Rapier each step was costly on phones. */
   x: number;
   z: number;
   angle: number;
@@ -185,7 +189,6 @@ export class Vehicle {
     if (this.trailer) readPose(this.trailer.body, this.trailer);
   }
 
-  /** m/s along the heading as last animated: for another player's car, what their game reports. */
   get animatedSpeed(): number {
     return this.lastForwardSpeed;
   }
@@ -217,7 +220,7 @@ export class Vehicle {
     const h = this.afloat ? AFLOAT : HANDLING[this.spec.name] ?? CAR;
     const cruise = this.afloat ? this.spec.maxSpeed * AFLOAT_SPEED : this.spec.maxSpeed;
     const boosted = this.afloat ? cruise : this.spec.sprintSpeed ?? this.spec.maxSpeed;
-    const top = boost ? boosted : Math.min(cruise, NORMAL_TOP); // Shift lifts the regular cap to the real top (bike: sprint)
+    const top = boost ? boosted : Math.min(cruise, NORMAL_TOP);
     const accel = this.afloat ? this.spec.accel / 2 : this.spec.accel;
 
     let dv = 0;
@@ -235,7 +238,7 @@ export class Vehicle {
     const grip = handbrake && this.driven ? h.handbrakeGrip : h.grip;
     const ds = -vs * Math.min(1, grip * dt);
 
-    // The engine and brakes move the trailer too; grip only holds the lead's own wheels.
+    // engine and brakes pull the trailer too; grip holds only the lead's wheels
     const pull = mass + (this.trailer?.body.mass() ?? 0);
     body.applyImpulse({ x: fx * dv * pull + sx * ds * mass, y: fz * dv * pull + sz * ds * mass }, true);
 
@@ -281,7 +284,7 @@ export class Vehicle {
 
 const WHITE = 0xf4f5f3;
 
-/** Roughly the Belgian street mix: [spec, relative frequency in traffic, parked (default the same)]. */
+/** ~Belgian street mix: [spec, traffic weight, parked weight (default same)]. */
 export const VEHICLE_TYPES: [VehicleSpec, number, number?][] = [
   [{ name: 'city', model: 0, length: 3.95, width: 1.75, maxSpeed: 150 / 3.6, accel: 3.3 }, 4],
   [{ name: 'hatch', model: 1, length: 4.25, width: 1.79, maxSpeed: 170 / 3.6, accel: 3.5 }, 6],

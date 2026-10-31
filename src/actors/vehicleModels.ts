@@ -5,9 +5,9 @@ import { coloured, wrapAngle } from '../core/util';
 import { WHEEL_RADIUS, type Vehicle } from './vehicle';
 
 const GLASS = 0x0e1216, BLACK = 0x18191b, CHROME = 0xc7cbcf, HEADLIGHT = 0xdfe6ea, TAIL = 0x7a0b10, AMBER = 0xc77a12;
-const PLATE = 0xf2f2f0, PLATE_TEXT = 0x8c1c24; // Belgian plates: red letters on white
+const PLATE = 0xf2f2f0, PLATE_TEXT = 0x8c1c24;
 const TYRE = 0x1b1b1c, RIM = 0xb9bdc2;
-const BLUE = 0x1b3f93, FLUO = 0xcde41c, ALU = 0xb4b9be, WHITE = 0xf2f2f0; // Belgian emergency livery: blue and fluo-yellow blocks
+const BLUE = 0x1b3f93, FLUO = 0xcde41c, ALU = 0xb4b9be, WHITE = 0xf2f2f0;
 const LAMPS = 600, GLOWS = 160;
 const FLASH_HZ = 1.4;
 const BEACON_ON = new THREE.Color(0.18, 0.38, 1), BEACON_OFF = new THREE.Color(0x14214a), SIGN = new THREE.Color(0xf1e6bb);
@@ -16,7 +16,7 @@ type Pt = [number, number];
 type Word = 'POLITIE' | 'TAXI' | 'AMBULANCE' | '112' | 'BRANDWEER';
 const WORDS: [Word, string][] = [['POLITIE', '#1b3f93'], ['TAXI', '#141414'], ['AMBULANCE', '#1b3f93'], ['112', '#c3161c'], ['BRANDWEER', '#f4f4f2']];
 
-/** A light box in model space; side ±1 flash in turn when the siren is on, 0 is always lit. */
+/** Model space; side ±1 flash in turn with the siren, 0 is always lit. */
 interface Lamp {
   x: number;
   y: number;
@@ -48,8 +48,8 @@ interface Profile {
   rearWindow: [Pt, Pt];
   doors: number[];
   roofRails?: boolean;
-  tumble?: number; // how far the sides lean in above the belt; default 0.16
-  lightsY?: [number, number]; // front and rear light height, where the outline's ends are too tall (box bodies)
+  tumble?: number;
+  lightsY?: [number, number]; // front, rear; for box bodies with tall ends
   extras?: (k: Kit, p: Profile) => void;
 }
 
@@ -150,7 +150,6 @@ const FIRE: Profile = {
   },
 };
 
-// Indexed by VehicleSpec.model.
 const PROFILES: Profile[] = [
   CITY, HATCH, ESTATE, SEDAN, SUV, VAN,
   {
@@ -234,14 +233,14 @@ function sides(k: Kit, p: Profile, fn: (s: number) => THREE.BufferGeometry) {
   for (const s of [-1, 1]) k.trim.push(warpGeometry(fn(s), p));
 }
 
-/** A flat panel just proud of a side, split along its length so it follows the body's taper. */
+/** Split along its length to follow the body's taper. */
 function plate(p: Profile, x0: number, x1: number, y0: number, y1: number, s: number, hex: number, lift = 0.006) {
   const g = new THREE.PlaneGeometry(x1 - x0, y1 - y0, Math.max(1, Math.ceil((x1 - x0) / 0.3)), 1);
   if (s < 0) g.rotateY(Math.PI);
   return coloured(g.translate((x0 + x1) / 2, (y0 + y1) / 2, s * (p.width / 2 + lift)), hex);
 }
 
-/** Only where the side is flat: the extrusion's bevel rounds the outline's last 0.12 m. */
+/** Flat sides only: the bevel rounds the outline's last 0.12 m. */
 const fits = (p: Profile, x0: number, x1: number, y1: number) =>
   x0 > -p.length / 2 + 0.15 && x1 < p.length / 2 - 0.15 && Math.min(topAt(p, x0), topAt(p, x1)) - 0.1 >= y1;
 
@@ -261,7 +260,7 @@ function chequer(k: Kit, p: Profile, x0: number, x1: number, y: number, size: nu
   }
 }
 
-/** On both sides; with `ends` (half-length, m), on a roof sign's front and back faces instead. */
+/** Both sides; with `ends` (half-length, m), a roof sign's front and back. */
 function decal(k: Kit, p: Profile, word: Word, x: number, y: number, h: number, ends?: number) {
   const { u0, u1, v0, v1, aspect } = atlas().words[word];
   const len = h * aspect;
@@ -488,7 +487,7 @@ export class VehicleRenderer {
   private add(mesh: THREE.InstancedMesh, shadows = true) {
     mesh.castShadow = shadows;
     mesh.receiveShadow = true;
-    mesh.frustumCulled = false; // instances span the whole map: culled by distance instead
+    mesh.frustumCulled = false; // instances span the map; culled by distance
     mesh.count = 0;
     this.group.add(mesh);
   }
@@ -536,7 +535,7 @@ export class VehicleRenderer {
       }
     }
     this.models.forEach(({ paint, trim, decals }, m) => {
-      // Empty instanced meshes still cost a draw call (and one per shadow cascade).
+      // empty instanced meshes still cost draw calls, per shadow cascade too
       paint.visible = trim.visible = counts[m] > 0;
       paint.count = trim.count = counts[m];
       uploadFirst(paint.instanceMatrix, counts[m]);

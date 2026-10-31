@@ -7,13 +7,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { OUT_DIR, RAW_DIR } from './config.ts';
 
-// De Lijn's national GTFS feed (keyless, ~204 MB), boiled down to trips per hour per line in data/raw/gtfs-schedules.json.
+// De Lijn's national GTFS feed (keyless, ~204 MB) → trips per hour per line
 const URL = 'https://api-management-opendata-production.azure-api.net/api/gtfs/feed/delijn/static';
 const ZIP = `${RAW_DIR}/delijn-gtfs.zip`;
 const DIR = `${RAW_DIR}/gtfs`;
 const exec = promisify(execFile);
 
-// Line numbers repeat across De Lijn's cities: match on number and colour (Antwerp's purple tram 1, not Turnhout's bus 1).
+// line numbers repeat across De Lijn's cities: match number and colour
 const graph = JSON.parse(await readFile(`${OUT_DIR}/graph.json`, 'utf8')) as { trams: { line: string; colour: number }[]; buses: { line: string; colour: number }[] };
 const lineColour = new Map<string, string>();
 for (const r of [...graph.trams, ...graph.buses]) lineColour.set(r.line, r.colour.toString(16).padStart(6, '0'));
@@ -30,7 +30,6 @@ await rm(DIR, { recursive: true, force: true });
 await mkdir(DIR, { recursive: true });
 await exec('unzip', ['-o', ZIP, 'routes.txt', 'trips.txt', 'stop_times.txt', 'calendar_dates.txt', '-d', DIR]);
 
-// Handles quoted fields with commas.
 function splitCsv(line: string): string[] {
   const out: string[] = [];
   let cur = '', quoted = false;
@@ -47,7 +46,6 @@ function splitCsv(line: string): string[] {
   return out;
 }
 
-/** Each data row of a GTFS file as a getter by column name. */
 async function* csv(file: string) {
   let idx: Record<string, number> | null = null;
   for await (const line of createInterface({ input: createReadStream(`${DIR}/${file}`), crlfDelay: Infinity })) {
@@ -74,7 +72,7 @@ for await (const get of csv('trips.txt')) {
   services.add(service);
 }
 
-// The dates each service runs: De Lijn's calendar.txt day flags are all 0.
+// De Lijn's calendar.txt day flags are all 0
 const serviceDates = new Map<string, Set<string>>();
 const dateCount: Record<string, number> = {};
 for await (const get of csv('calendar_dates.txt')) {
@@ -86,15 +84,15 @@ for await (const get of csv('calendar_dates.txt')) {
   if (get('exception_type') === '1') { if (!set.has(date)) { set.add(date); dateCount[date] = (dateCount[date] ?? 0) + 1; } }
   else if (set.delete(date)) dateCount[date]--;
 }
-// The weekday and weekend day with the most services running, which dodges holidays.
-const dow = (d: string) => new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8)).getDay(); // 0 Sun … 6 Sat
+// busiest weekday and weekend day, which dodges holidays
+const dow = (d: string) => new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8)).getDay();
 let repWeekday = '', repWeekend = '';
 for (const [d, c] of Object.entries(dateCount)) {
   if (dow(d) >= 1 && dow(d) <= 5) { if (!repWeekday || c > dateCount[repWeekday]) repWeekday = d; }
   else if (!repWeekend || c > dateCount[repWeekend]) repWeekend = d;
 }
 
-// stop_times.txt (the big one) → each trip's first departure hour, at its lowest stop_sequence: GTFS rows aren't sorted.
+// first departure = lowest stop_sequence: GTFS rows aren't sorted
 const tripHour = new Map<string, number>();
 const tripSeq = new Map<string, number>();
 for await (const get of csv('stop_times.txt')) {

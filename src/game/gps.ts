@@ -4,7 +4,7 @@ import { cumulative, pointAt, reversePolyline } from '../world/polyline';
 
 export interface Snap {
   edge: number;
-  s: number; // distance along the edge's polyline (m)
+  s: number; // m along the edge's polyline
   x: number;
   z: number;
   dx: number;
@@ -16,7 +16,7 @@ export interface Route {
   length: number; // m
 }
 
-const ONE_WAY_PENALTY = 8; // wrong way down a one-way: only when no legal route gets there
+const ONE_WAY_PENALTY = 8; // so wrong-way only wins when nothing legal gets there
 const U_TURN = 15; // s
 const ARRIVE = 20; // m
 const REROUTE = 0.5; // s
@@ -40,7 +40,7 @@ export function snap(graph: NavGraph, x: number, z: number, max: number): Snap |
   return out;
 }
 
-/** The part of p between distances a and b; reversed when b < a. */
+/** Reversed when b < a. */
 function between(p: number[], a: number, b: number): number[] {
   const cum = cumulative(p), lo = Math.min(a, b), hi = Math.max(a, b);
   const from = pointAt(p, cum, lo), to = pointAt(p, cum, hi), out = [from.x, from.z];
@@ -49,14 +49,13 @@ function between(p: number[], a: number, b: number): number[] {
   return a <= b ? out : reversePolyline(out);
 }
 
-/** A* both ways down every edge; motor vehicles pay in time, and extra for wrong-way one-ways and U-turns. */
 export class Router {
-  private out: number[][] = []; // per node: steps as edge * 2 + (forward ? 1 : 0)
+  private out: number[][] = []; // per node: edge * 2 + (forward ? 1 : 0)
   private lengths: number[];
-  private top: number; // fastest speed limit (m/s), for the A* bound
+  private top: number; // m/s, for the A* bound
   private cost: Float64Array;
   private prev: Int32Array;
-  private inEdge: Int32Array; // the edge each node was reached by, to charge for turning straight back down it
+  private inEdge: Int32Array; // to charge for turning straight back
 
   constructor(private graph: NavGraph) {
     const n = graph.nodes.length / 2;
@@ -72,9 +71,9 @@ export class Router {
     this.inEdge = new Int32Array(n);
   }
 
-  route(start: Snap, goal: Snap, motor: boolean, heading: number | null = null): Route | null {
+  route(start: Snap, goal: Snap, motor: boolean, heading: number | null = null, siren = false): Route | null {
     const { edges, nodes } = this.graph, cost = this.cost, prev = this.prev, inEdge = this.inEdge;
-    const rate = (e: GraphEdge, forward: boolean) => (motor ? 1 / e.s : 1) * (motor && e.o && !forward ? ONE_WAY_PENALTY : 1);
+    const rate = (e: GraphEdge, forward: boolean) => (motor ? 1 / e.s : 1) * (motor && !siren && e.o && !forward ? ONE_WAY_PENALTY : 1);
     const e0 = edges[start.edge], eg = edges[goal.edge];
     const len0 = this.lengths[start.edge], lenG = this.lengths[goal.edge];
     const ahead = heading === null || Math.cos(heading) * start.dx + Math.sin(heading) * start.dz >= 0;
@@ -219,7 +218,7 @@ export class Gps {
     return this.waypoint?.name ?? '';
   }
 
-  /** Returns true on arrival, which also clears the waypoint. */
+  /** True on arrival, which also clears the waypoint. */
   update(x: number, z: number, dt: number, motor: boolean, heading: number | null): boolean {
     const w = this.waypoint;
     if (!w) return false;
@@ -230,7 +229,7 @@ export class Gps {
     if ((this.timer -= dt) > 0) return false;
     this.timer = REROUTE;
     this.route = null;
-    for (const i of motor ? [0] : [1, 0]) { // on foot: the footpaths when they connect, else the roads
+    for (const i of motor ? [0] : [1, 0]) { // on foot: footpaths if they connect, else roads
       const { graph, router } = this.modes[i], goal = w.goals[i], start = snap(graph, x, z, 250);
       if (goal && start && (this.route = router.route(start, goal, motor, heading))) break;
     }

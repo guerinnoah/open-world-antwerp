@@ -11,7 +11,7 @@ export interface InputState {
   horn: boolean;
   punch: boolean;
   siren: boolean;
-  view: boolean; // toggle first/third person (one-shot)
+  view: boolean; // one-shot
 }
 
 export type Seat = 'foot' | 'vehicle' | 'emergency';
@@ -19,7 +19,7 @@ export type Seat = 'foot' | 'vehicle' | 'emergency';
 const DEADZONE = 0.15;
 const dead = (v: number) => (Math.abs(v) < DEADZONE ? 0 : (v - Math.sign(v) * DEADZONE) / (1 - DEADZONE));
 const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
-const CLICK_SLOP = 6; // px: a mouse press that moves less is a click (a punch), not a look-around drag
+const CLICK_SLOP = 6; // px; less is a punch click, not a look drag
 
 export class Input {
   readonly touch = coarsePointer();
@@ -129,7 +129,6 @@ export class Input {
     return { steer: clamp1(steer), throttle: clamp1(throttle), handbrake, sprint, lookX, lookY, action, horn, punch, siren, view };
   }
 
-  /** On touch, shows only the buttons that do something in this seat. */
   set seat(seat: Seat) {
     if (!this.touchRoot || this.touchRoot.dataset.seat === seat) return;
     this.touchRoot.dataset.seat = seat;
@@ -163,7 +162,7 @@ export class Input {
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
     };
     const ours = (e: TouchEvent) => [...e.changedTouches].find((t) => t.identifier === this.stick.id);
-    // Touch events with preventDefault: iOS Safari can claim a pointer drag as a page gesture and cancel it.
+    // touch events + preventDefault: iOS Safari cancels pointer drags as page gestures
     const opts = { passive: false };
     stick.addEventListener('touchstart', (e) => {
       e.preventDefault();

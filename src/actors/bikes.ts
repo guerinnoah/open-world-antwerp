@@ -25,7 +25,7 @@ const SADDLE = 0.92;
 const STAND_LEAN = 0.1;
 
 export const VELO_RED = RED;
-/** Any other colour on a 'bike' is a private one, taken off a cyclist (cyclists.ts draws those). */
+/** Other colours are private bikes (cyclists.ts draws them). */
 export const isVelo = (v: Vehicle) => v.colour === VELO_RED;
 
 function wheelParts(near: boolean): THREE.BufferGeometry[] {
@@ -129,7 +129,7 @@ export class Bikes {
 
   constructor(city: CityData, private crowd: Crowd, private view = 130) {
     this.group.name = 'bikes';
-    // The same docks as the station props (see world/props.ts).
+    // same docks as world/props.ts
     const velo = city.velo ?? [];
     for (let i = 0; i < velo.length; i += 4) {
       const [x, z, angle, docks] = velo.slice(i, i + 4);
@@ -137,7 +137,7 @@ export class Bikes {
       for (let k = 0; k < docks; k++) {
         const s = (k - (docks - 1) / 2) * 0.75;
         const d = { x: x + ux * s, z: z + uz * s, angle, bike: false };
-        d.bike = stableRandom(d.x, d.z) < 0.65; // about 2 in 3 taken, seeded by position so every player sees the same
+        d.bike = stableRandom(d.x, d.z) < 0.65; // ~2 in 3; seeded so every player sees the same
         this.docks.push(d);
         const key = `${Math.floor(d.x / 40)},${Math.floor(d.z / 40)}`;
         this.grid.set(key, [...(this.grid.get(key) ?? []), d]);

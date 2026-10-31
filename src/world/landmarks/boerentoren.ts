@@ -9,7 +9,7 @@ const MAST = 0xb8bcc0;
 
 export function boerentoren(lm: Landmark): THREE.BufferGeometry {
   const kit = new Kit();
-  // The map's 65 m parts are neighbours whose laser-scan height caught the tower, so only these stages are used.
+  // The map's 65 m parts are neighbours whose laser scan caught the tower: use only these stages.
   const ring = (h: number) => lm.parts.find((p) => p.h === h)?.ring;
   stage(kit, lm.ring, 0, 30);
   const stages: [number[] | undefined, number, number][] = [[ring(56), 30, 56], [ring(82), 56, 82], [ring(97), 82, 89]];

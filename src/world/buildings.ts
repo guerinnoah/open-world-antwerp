@@ -9,23 +9,21 @@ export interface BuildingArrays {
   position: Float32Array;
   normal: Float32Array;
   color: Float32Array;
-  /** Texture coordinates (m): walls (along, height); roofs (along the eaves, up the slope); flat roofs (x, z). */
+  /** m: walls (along, up); roofs (along the eaves, up the slope); flat roofs (x, z). */
   uvm: Float32Array;
-  /** x: texture layer (index into BUILDING_LAYERS); y: 1 where the window pattern is drawn. */
+  /** x: BUILDING_LAYERS index; y: 1 where windows are drawn. */
   surf: Float32Array;
-  /** Per vertex: x = along this wall (m), y = wall length (m, 0 = no facade), z = wall top (m, -1 = no cornice),
-   * w = flags (1 street-facing, + 2 × shop kind) + style seed in [0, 1). */
+  /** x: along the wall, y: wall length (0 = no facade), z: wall top (-1 = no cornice), all m; w: flags (1 street, + 2 × shop kind) + seed in [0, 1). */
   facade: Float32Array;
   index: Uint32Array;
 }
 
 const layer = (name: BuildingLayer) => BUILDING_LAYERS.indexOf(name);
 
-/** Stable random in [0, 1) per building; salt 5 = facade seed, 7 = wall push (reused by signs, interiors, facadeDetail). */
+/** Salt 5 = facade seed, 7 = wall push; signs, interiors and facadeDetail reuse them. */
 export const rand = (b: Building, salt = 0) => hash(b.rings[0][0], b.rings[0][1], salt);
 
-const WALLS: BuildingLayer[] = ['plaster', 'brick', 'yellowBrick', 'ashlar']; // by Building.m
-// Flat roofs, mostly bitumen, some gravel ballast or pale membrane (sRGB).
+const WALLS: BuildingLayer[] = ['plaster', 'brick', 'yellowBrick', 'ashlar'];
 const FLAT_ROOFS = [0x4b4b4c, 0x4b4b4c, 0x4b4b4c, 0x56565a, 0x56565a, 0x625f5b, 0x7d7a74, 0x7d7a74, 0x8f8d89];
 
 function surfaces(b: Building): { wall: Surface; roof: Surface; flatRoof: Surface } {
@@ -49,7 +47,7 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
     const seed = rand(b, 5);
     const shopFlags = (b.sh ?? 0) * 2;
     const street = new Set(b.sf ?? []);
-    const push = 0.01 + rand(b, 7) * 0.03; // neighbours often share a wall plane and z-fight: push each building's walls out 1–4 cm
+    const push = 0.01 + rand(b, 7) * 0.03; // m: neighbours sharing a wall plane would z-fight
 
     b.rings.forEach((ring, r) => {
       const n = ring.length / 2;
@@ -61,7 +59,7 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
         const dx = x1 - x0, dz = z1 - z0;
         const len = Math.hypot(dx, dz);
         if (len < 0.01) continue;
-        const nx = dz / len, nz = -dx / len; // outward: rings are wound outer-positive, holes negative
+        const nx = dz / len, nz = -dx / len; // outward: outer rings wind positive, holes negative
         const v = pos.length / 3;
         const px = nx * push, pz = nz * push;
         pos.push(x0 + px, y0, z0 + pz, x1 + px, y0, z1 + pz, x1 + px, y1, z1 + pz, x0 + px, y1, z0 + pz);
@@ -84,7 +82,7 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
       continue;
     }
     const { flat, tris } = triangulate(b.rings);
-    if (y0 > 0) { // underside of a canopy or a raised floor, seen from the street
+    if (y0 > 0) {
       const v = pos.length / 3;
       for (let i = 0; i < flat.length; i += 2) {
         pos.push(flat[i], y0, flat[i + 1]);
@@ -152,7 +150,7 @@ function createBuildingMaterial(textures: Textures, night: number): THREE.MeshSt
         '#include <roughnessmap_fragment>',
         '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.06, fc.glass);',
       )
-      // Tangent frame from screen-space derivatives (no tangents stored); painted and glazed parts are smooth.
+      // Tangent frame from screen-space derivatives: no tangents stored.
       .replace(
         '#include <normal_fragment_maps>',
         `{
@@ -182,12 +180,11 @@ uniform sampler2DArray tAlbedo;
 uniform sampler2DArray tNormal;
 uniform float uScale[${BUILDING_LAYERS.length}];
 uniform vec3 uMean[${BUILDING_LAYERS.length}];
-uniform float uNight; // 0 by day → 1 at night: more windows lit, glowing warmer
+uniform float uNight;
 varying vec2 vUvm;
 varying vec2 vSurf;
 varying vec4 vFacade;
 
-// amount: how much colour replaces the textured wall; glass: glossiness; lit, glow: light from inside.
 struct Facade {
   vec3 colour;
   float amount;
@@ -237,7 +234,6 @@ void windowMasks(vec2 p, float hw, float bot, float top, bool arched, vec2 aa,
                   : rectMask(p, vec2(-hw - 0.1, top), vec2(hw + 0.1, top + 0.18), aa);
 }
 
-// Dim room behind the glass with a reveal shadow, maybe curtains; about 7% of rooms are lit.
 void paneLook(vec2 p, float hw, float bot, float top, float id, inout vec3 c, inout float lit) {
   float room = hash2(vec2(id, 3.1));
   c = mix(vec3(0.018, 0.02, 0.024), vec3(0.06, 0.05, 0.04), room);
@@ -261,7 +257,7 @@ Facade windowAt(vec2 p, float hw, float bot, float top, bool arched, float id, v
   return Facade(fr * paint + g * pane + si * sillStone + (li + ledge) * trim, max(max(fr, g), max(max(si, li), ledge)), g, g * lit, vec3(0.0));
 }
 
-// What's seen through a shop window, by ShopKind (cityData.ts); lx, h: metres from the bay's centre and the pavement.
+// kind: ShopKind (cityData.ts); lx, h: m from the bay's centre and the pavement
 vec3 shopInterior(float kind, float lx, float h, float u, float bay, float bayW, float groundH, float seed, vec2 aa, out vec3 glow) {
   float top = groundH - 1.2;
   float vary = hash2(vec2(bay, seed));
@@ -330,7 +326,7 @@ vec3 shopInterior(float kind, float lx, float h, float u, float bay, float bayW,
     glow = c * 0.35 + light * vec3(0.6);
     return mix(c, vec3(1.0), light);
   }
-  bool food = kind > 3.5; // food, or else a general shop
+  bool food = kind > 3.5;
   vec3 c = food ? vec3(0.06, 0.06, 0.058) : mix(vec3(0.012, 0.011, 0.01), vec3(0.04, 0.032, 0.025), vary);
   float shelfY = fract(h / 0.42);
   float shelf = (1.0 - smoothstep(0.04, 0.04 + aa.y / 0.42, shelfY)) * step(0.5, h) * step(h, top);
@@ -345,7 +341,7 @@ vec3 shopInterior(float kind, float lx, float h, float u, float bay, float bayW,
   return c;
 }
 
-// f: the per-vertex facade attribute (see BuildingArrays.facade); h: height up the wall (m).
+// f: BuildingArrays.facade; h: m up the wall
 Facade facadeAt(vec4 f, float h, float texLum) {
   Facade o = Facade(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0));
   if (f.y < 0.5) return o;
@@ -368,7 +364,6 @@ Facade facadeAt(vec4 f, float h, float texLum) {
   float fade = 1.0 - smoothstep(0.05, 0.16, max(aa.x, aa.y)); // far away the detail would only shimmer
   if (fade <= 0.0) return o;
 
-  // Bluestone plinth and often sills; cornice, lintels and string courses painted cream or in grey stone.
   float grain = 0.85 + 0.15 * texLum;
   vec3 trim = (fract(seed * 19.9) < 0.8 ? vec3(0.62, 0.6, 0.55) : vec3(0.3, 0.29, 0.26)) * grain;
   vec3 bluestone = vec3(0.075, 0.08, 0.085) * grain;
@@ -376,17 +371,17 @@ Facade facadeAt(vec4 f, float h, float texLum) {
   vec3 paint = framePaint(seed);
   float top = f.z;
 
-  if (top > 0.0 && h > top - 0.6 && fract(seed * 31.3) < 0.75) { // cornice with dentils
+  if (top > 0.0 && h > top - 0.6 && fract(seed * 31.3) < 0.75) {
     float under = 1.0 - smoothstep(top - 0.52 - aa.y, top - 0.52 + aa.y, h);
     float dentils = step(0.5, fract(f.x / 0.3)) * rectMask(vec2(0.0, h), vec2(-1.0, top - 0.42), vec2(1.0, top - 0.3), aa);
     o.colour = trim * (1.0 - 0.55 * max(under, dentils));
     o.amount = 1.0;
-  } else if (h < 0.45) { // plinth
+  } else if (h < 0.45) {
     o.colour = bluestone;
     o.amount = 0.9;
   } else if (h < groundH) {
     float door = floor(fract(seed * 29.7) * nb);
-    if (street && shop) { // shopfront: fascia (signs.ts hangs the real sign on it), glazed bays, a glass door
+    if (street && shop) { // shopfront; signs.ts hangs the real sign on the fascia
       vec3 brand = brandPaint(seed);
       float sign = rectMask(vec2(0.0, h), vec2(-1.0, groundH - 0.95), vec2(1.0, groundH - 0.35), aa);
       bool isDoor = abs(bay - door) < 0.5;
@@ -400,7 +395,7 @@ Facade facadeAt(vec4 f, float h, float texLum) {
       o.amount = max(sign, max(fr, g));
       o.glass = g;
       o.glow = g * glow;
-    } else if (street && abs(bay - door) < 0.5) { // front door under a transom, in a stone surround
+    } else if (street && abs(bay - door) < 0.5) {
       float dTop = min(2.5, groundH - 0.75);
       float d = rectMask(vec2(lx, h), vec2(-0.55, 0.0), vec2(0.55, dTop), aa);
       float transom = rectMask(vec2(lx, h), vec2(-0.47, dTop + 0.08), vec2(0.47, dTop + 0.45), aa);
@@ -414,7 +409,7 @@ Facade facadeAt(vec4 f, float h, float texLum) {
       float wTop = min(0.9 + winH * (street ? 1.0 : 0.8), groundH - 0.4);
       o = windowAt(vec2(lx, h), hw, 0.9, wTop, arched, bay + seed * 91.0, paint, sillStone, trim, 0.0, aa);
     }
-  } else { // upper floors: an optional ledge at each floor line, then the window
+  } else {
     float level = floor((h - groundH) / floorH);
     float ly = h - groundH - level * floorH;
     float ledge = fract(seed * 23.1) < 0.6 ? rectMask(vec2(0.0, ly), vec2(-1.0, 0.0), vec2(1.0, 0.13), aa) : 0.0;

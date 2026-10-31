@@ -26,7 +26,7 @@ const overlaps = (a: Box, b: Box) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3
 
 const area = (k: Area['k'], poly: Polygon): Area => ({ k, rings: poly.map((r) => flat(r.slice(0, -1) as Pt[])) });
 
-/** Squared off half a width past each end, so consecutive segments overlap at the joins. */
+/** Overshoots each end by half a width so segments overlap at joins. */
 function deck([x0, z0]: Pt, [x1, z1]: Pt, width: number): Polygon {
   const len = Math.hypot(x1 - x0, z1 - z0) || 1;
   const ex = ((x1 - x0) / len) * (width / 2), ez = ((z1 - z0) / len) * (width / 2);
@@ -45,7 +45,7 @@ function wetSegment(map: WaterMap, [x0, z0]: Pt, [x1, z1]: Pt, half: number): bo
   return false;
 }
 
-/** Overlaps no other area, so ground, minimap and drowning agree: walkable decks are cut out of it, grass gives way to it. */
+/** Overlaps no other area, so ground, minimap and drowning agree. */
 export function layWater(water: MultiPolygon, bounds: Polygon, roads: Road[], areas: Area[]): Area[] {
   const raw = polygonClipping.intersection(polygonClipping.union(water), bounds);
   const rawMap = new WaterMap({ areas: raw.map((poly) => area('water', poly)) } as CityData);

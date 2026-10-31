@@ -71,7 +71,7 @@ describe('crash damage', () => {
     expect(crashHurt(15 / 3.6, k)).toBe(0);
     expect(crashHurt(50 / 3.6, k)).toBeGreaterThan(5);
     expect(crashHurt(90 / 3.6, k)).toBeGreaterThan(crashHurt(50 / 3.6, k) * 4);
-    expect(crashHurt(130 / 3.6, k)).toBeGreaterThan(MAX_HEALTH * 0.9); // the bounce off a wall at 130 km/h does the rest
+    expect(crashHurt(130 / 3.6, k)).toBeGreaterThan(MAX_HEALTH * 0.9);
   });
 
   it('hurts riders most and bus drivers least', () => {

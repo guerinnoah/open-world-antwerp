@@ -13,14 +13,13 @@ interface Layer {
   metalness?: number;
 }
 
-// Flat at y = 0, drawn back-to-front in this order. Only base and water write depth (pushed back with polygon
-// offset), so the layers on top never z-fight but buildings still occlude them.
-// tint: the surface's average colour (sRGB); scale: metres per texture repeat, the scan's real size.
+// Drawn back-to-front in this order; only base and water write depth, so the layers on top never z-fight.
+// tint: average colour (sRGB); scale: m per texture repeat, the scan's real size.
 const LAYERS: Layer[] = [
-  { key: 'base', texture: 'pavement', scale: 1.85, tint: 0x8f8c86 }, // grey 30 cm concrete pavement tiles
+  { key: 'base', texture: 'pavement', scale: 1.85, tint: 0x8f8c86 },
   { key: 'water', tint: 0x23414c }, // under roads, so bridges over the docks stay visible
   { key: 'green', texture: 'grass', scale: 2.5, tint: 0x5b6b3c },
-  { key: 'plaza', texture: 'cobble', scale: 2.5, tint: 0x7f7c76 }, // granite setts laid in arcs
+  { key: 'plaza', texture: 'cobble', scale: 2.5, tint: 0x7f7c76 },
   { key: 'foot', texture: 'pavers', scale: 1.8, tint: 0x8c8983 },
   { key: 'cycle', texture: 'asphalt', scale: 5, tint: 0x8a4a3d },
   { key: 'service', texture: 'asphalt', scale: 5, tint: 0x5c5c5c },
@@ -120,18 +119,15 @@ export class FlatBuilder {
 export interface Ground {
   group: THREE.Group;
   update(time: number): void;
-  setWetness(rain: number): void; // 0..1: glossier, darker paving and a choppier river
+  setWetness(rain: number): void; // 0..1
 }
 
-// Roughness when soaked: asphalt sheets with water, setts and paving stay rougher.
 const WET_ROUGHNESS: Partial<Record<Layer['key'], number>> = {
   base: 0.5, foot: 0.5, plaza: 0.5, pedestrian: 0.5, cycle: 0.3, service: 0.3, minor: 0.3, major: 0.3, tram: 0.2,
 };
 
-// With an aerial photo (public/map/ortho.webp from map:fetch-ortho; the default, skipped by ?flat) each land layer keeps
-// its tiling detail, normal map and shadows but takes its colour from the aerial there, not one flat per-layer tint.
-const AERIAL_BOOST = 1.5; // the photo has its own shadows baked in; lift it a touch so the engine's shadows don't double up
-const AERIAL_SAT = 0.7; // mute the winter photo's blue-cast shadows in narrow streets, keeping grass/brick/stone colours
+const AERIAL_BOOST = 1.5; // the photo has shadows baked in: lift it so the engine's don't double up
+const AERIAL_SAT = 0.7; // mutes the winter photo's blue-cast shadows
 
 export function createGround(city: CityData, textures: Textures, aerial: THREE.Texture | null): Ground {
   const builders = new Map<string, FlatBuilder>(LAYERS.map((l) => [l.key, new FlatBuilder()]));
@@ -140,7 +136,7 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
   builders.get('base')!.polygon([[minX - margin, minZ - margin, maxX + margin, minZ - margin, maxX + margin, maxZ + margin, minX - margin, maxZ + margin]]);
   for (const a of city.areas) builders.get(a.k)!.polygon(a.rings);
   for (const r of city.roads) builders.get(r.k)!.ribbon(r.p, r.w);
-  // Metre-gauge trams: a rail 0.5 m either side of the centreline.
+  // Metre gauge.
   for (const t of city.trams) for (const side of [0.5, -0.5]) builders.get('tram')!.ribbon(t, 0.12, side);
 
   const group = new THREE.Group();
@@ -153,7 +149,7 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
     const tex = layer.texture && textures.ground[layer.texture];
     const writesDepth = layer.key === 'water' || layer.key === 'base';
     const color = new THREE.Color(layer.tint);
-    // Blend mode normalises the detail texture to ~white (1 / mean) so the aerial supplies the colour; else use the tint.
+    // With the aerial, the detail texture is normalised to ~white so the photo supplies the colour.
     if (tex && aerial) color.setRGB(1 / tex.mean.r, 1 / tex.mean.g, 1 / tex.mean.b);
     else if (tex) color.setRGB(color.r / tex.mean.r, color.g / tex.mean.g, color.b / tex.mean.b);
     const material = new THREE.MeshStandardMaterial({
@@ -163,13 +159,13 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
       metalness: layer.metalness ?? 0,
       depthWrite: writesDepth,
       polygonOffset: writesDepth,
-      // Base pushed back further than water: at the same offset the river turns into streaky bands.
+      // Base further back than water: at the same offset the river streaks.
       polygonOffsetFactor: layer.key === 'base' ? 2 : 1,
       polygonOffsetUnits: layer.key === 'base' ? 4 : 1,
     });
     if (layer.key === 'water') {
       Object.assign(material, { roughness: 0.06, normalMap: textures.water, normalScale: new THREE.Vector2(0.35, 0.35) });
-      // Ripples fade out with distance, where they'd break up into streaky bands.
+      // Ripples fade with distance, else they streak.
       material.onBeforeCompile = (shader) => {
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <normal_fragment_maps>',
@@ -211,7 +207,7 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
   };
 }
 
-// Tint a ground layer's diffuse with the aerial, sampled by world position. North (min z) → v = 1 after the loader's flip.
+// North (min z) → v = 1 after the loader's flip.
 function blendAerial(material: THREE.MeshStandardMaterial, aerial: THREE.Texture, bounds: CityData['bounds']) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uAerial = { value: aerial };

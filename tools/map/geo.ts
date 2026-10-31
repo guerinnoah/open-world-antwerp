@@ -3,10 +3,9 @@ import { project } from '../../src/world/projection.ts';
 
 export { project };
 
-export type Pt = [number, number]; // local metres from the Grote Markt: x east, z south (src/world/projection.ts)
+export type Pt = [number, number]; // m from the Grote Markt: x east, z south
 type LatLon = { lat: number; lon: number };
 
-/** An OSM element as Overpass returns it with `out geom`. */
 export interface OsmElement {
   type: 'node' | 'way' | 'relation';
   id: number;
@@ -24,7 +23,7 @@ export interface Outline {
   outer: Pt[];
 }
 
-export const round = (v: number) => Math.round(v * 10) / 10; // map coordinates are kept to 0.1 m
+export const round = (v: number) => Math.round(v * 10) / 10;
 export const round2 = (v: number) => Math.round(v * 100) / 100;
 export const toPts = (g: LatLon[]) => g.map((n) => project(n.lat, n.lon));
 export const flat = (pts: Pt[]) => pts.flatMap(([x, z]) => [round(x), round(z)]);
@@ -57,7 +56,6 @@ export function centroid(ring: Pt[]): Pt {
   return [x / ring.length, z / ring.length];
 }
 
-/** A point inside the ring. The vertex centroid when it is inside; for L- and U-shapes, the middle of the widest span on a few scanlines. */
 export function interiorPoint(ring: Pt[]): Pt {
   const c = centroid(ring);
   if (pointInRing(c, ring)) return c;
@@ -117,7 +115,7 @@ export function assembleRings(ways: Pt[][]): Pt[][] {
   return rings;
 }
 
-/** Rings of a closed way or multipolygon; outer wound positive, holes negative, so edge (dx, dz) faces out along (dz, -dx). */
+/** Outer rings wound positive, holes negative: edge (dx, dz) faces out along (dz, -dx). */
 export function polygonsOf(e: OsmElement): Pt[][][] {
   let outers: Pt[][];
   let inners: Pt[][] = [];
@@ -185,12 +183,11 @@ export function besideRoad(p: Pt, roads: Road[], margin: number): boolean {
   });
 }
 
-/** Roads near p: every road passing within size / 2 of it (and some further). */
 export function roadGrid(roads: Road[], size: number) {
   const grid = new Map<string, Road[]>();
   for (const r of roads) {
     const keys = new Set<string>();
-    // Every cell along each segment, not just the vertex cells: long straight streets have vertices 200+ m apart.
+    // every cell along each segment: straight streets have vertices 200+ m apart
     for (let i = 0; i < r.p.length - 2; i += 2) {
       const [x0, z0, x1, z1] = [r.p[i], r.p[i + 1], r.p[i + 2], r.p[i + 3]];
       const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / (size / 2)));

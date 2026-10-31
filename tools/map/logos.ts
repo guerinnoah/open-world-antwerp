@@ -6,13 +6,13 @@ import { OUT_DIR, RAW_DIR } from './config.ts';
 import type { LogoEntry } from './fetch-logos.ts';
 import { logoItemsOf } from './signs.ts';
 
-/** Logos never shown, by Wikidata item. To take one down (say its owner asks): add its Q-id here and rerun pnpm map:build. */
+/** Takedowns: Wikidata Q-ids never shown; rerun pnpm map:build. */
 const BLOCKED = new Set<string>([]);
 
-const H = 64; // px per logo in the atlas: the sign texture is 64 px tall
+const H = 64; // px, the sign texture's height
 const ATLAS_W = 1024;
 const MAX_W = 512;
-const EMBLEM = 2.5; // narrower than this (w / h), a logo is an emblem and the sign writes the name beside it
+const EMBLEM = 2.5; // w / h below this: an emblem, name written beside it
 
 interface Prepared {
   entry: LogoEntry;
@@ -30,7 +30,6 @@ interface Logos {
 
 const escape = (s: string) => s.replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
 
-/** Packs the free-licence logos signs use into logos.webp; credits and the no-affiliation notice go to logos.html. */
 export async function loadLogos(): Promise<Logos> {
   const dir = `${RAW_DIR}/logos`;
   const manifest: Record<string, LogoEntry> = existsSync(`${dir}/logos.json`) ? JSON.parse(await readFile(`${dir}/logos.json`, 'utf8')) : {};
@@ -38,7 +37,7 @@ export async function loadLogos(): Promise<Logos> {
   for (const [q, entry] of Object.entries(manifest)) {
     if (BLOCKED.has(q) || !existsSync(`${dir}/${entry.image}`)) continue;
     const file = `${dir}/${entry.image}`;
-    // The top-left pixel is the background: a solid colour the sign takes on, or transparent (a light or dark panel).
+    // top-left pixel is the background: the sign takes it on, or a panel if transparent
     const corner = await sharp(file).ensureAlpha().extract({ left: 0, top: 0, width: 1, height: 1 }).raw().toBuffer();
     const { data, info } = await sharp(file).ensureAlpha().trim({ threshold: 24 })
       .resize({ height: H, width: MAX_W, fit: 'inside' }).raw().toBuffer({ resolveWithObject: true });

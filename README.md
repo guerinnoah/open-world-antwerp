@@ -1,8 +1,8 @@
 # GTA Antwerp
 
 An open-world driving sandbox in a real 1:1 slice of central Antwerp, playable in the browser. Steal a car, drive a
-tram or bus, ride a Velo bike or e-scooter, walk into shops, or drive into the Scheldt. Everyone online shares the
-same city. No guns, no missions.
+tram or bus, ride a Velo bike or e-scooter, walk into shops, or drive into the Scheldt. Do it in front of the police
+and they'll chase you: get out of sight to lose them. Everyone online shares the same city. No guns, no missions.
 
 Built with Vite, TypeScript, Three.js and Rapier 2D, plus a small WebSocket relay for multiplayer.
 

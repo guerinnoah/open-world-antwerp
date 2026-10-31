@@ -8,7 +8,6 @@ import { pointAt } from '../world/polyline';
 import { probeRoute } from './trackProbe';
 import { displayAtlas, displayMaterial, type SectionModel } from './tramModel';
 
-// What trams and buses share: kinematic sections riding a fixed route, serving its stops, drawn instanced.
 export type Run<R extends TramRun = TramRun> = R & { cum: number[] };
 
 export interface Sectioned {
@@ -25,13 +24,13 @@ export interface Sectioned {
 }
 
 export interface Obstacle {
-  gap: number; // m along the route to its near side; Infinity when clear
-  solid: boolean; // kinematic (tram, bus, another player's car): nothing shoves it, so wait behind it
+  gap: number; // m to its near side; Infinity when clear
+  solid: boolean; // kinematic: nothing shoves it, so wait
   owner?: Owner;
   touching: { body: RAPIER.RigidBody; dx: number; dz: number; side: number }[];
 }
 
-export const COLLIDES = groups(GROUP.VEHICLE, WHEELS | GROUP.PED); // cars, bikes, people, buses, trams; not walls: the routes keep clear of them
+export const COLLIDES = groups(GROUP.VEHICLE, WHEELS | GROUP.PED); // not walls: routes keep clear of them
 
 export function spawnPoint<R extends Run>(runs: R[], x: number, z: number, min: number, max: number, start: number, end: number): [R, number] | null {
   const candidates: [R, number][] = [];
@@ -78,7 +77,7 @@ export function addSections(physics: Physics, v: Sectioned, kind: Owner['kind'],
 
 export function removeSectioned<T extends Sectioned>(physics: Physics, all: T[], v: T) {
   const i = all.indexOf(v);
-  if (i < 0) return; // already gone (splice(-1) would drop the last one and leave its bodies behind)
+  if (i < 0) return; // splice(-1) would drop the last one
   for (const body of v.sections) physics.remove(body);
   all.splice(i, 1);
 }
@@ -120,7 +119,7 @@ export function serveStops(v: Sectioned, target: number, brake: number, dt: numb
   const ahead = v.run.stops[v.nextStop] - v.s;
   if (ahead >= 0.5) return Math.min(target, Math.sqrt(2 * brake * Math.max(ahead - 0.5, 0)));
   if (v.speed < 0.5) v.dwell = dwell();
-  else v.nextStop++; // overshot it (pushed through traffic): skip this one
+  else v.nextStop++;
   return 0;
 }
 
@@ -214,11 +213,11 @@ export class SectionMeshes<K extends string> {
   }
 }
 
-const DEFAULT_TPH = [2, 1, 0, 0, 0, 1, 3, 5, 5, 4, 4, 4, 4, 4, 4, 5, 5, 5, 4, 3, 2, 2, 1, 1]; // trips per hour for a line the GTFS didn't match
+const DEFAULT_TPH = [2, 1, 0, 0, 0, 1, 3, 5, 5, 4, 4, 4, 4, 4, 4, 5, 5, 5, 4, 3, 2, 2, 1, 1]; // trips/h for lines the GTFS didn't match
 
-/** De Lijn's baked trips per hour: which lines run now, and how much of the peak-hour fleet to keep out. */
+/** De Lijn GTFS trips/h: which lines run now, and what share of the peak fleet. */
 export class Scheduler {
-  private factor: number; // now vs the busiest hour, over the given lines
+  private factor: number; // now vs the busiest hour
 
   constructor(
     private schedules: Record<string, LineSchedule> | undefined,
@@ -245,7 +244,7 @@ export class Scheduler {
     return this.tph(line, this.clock.hour) > 0;
   }
 
-  /** At least one while any line runs, so a quiet night hour still shows a vehicle. */
+  /** >= 1 while any line runs, so quiet hours still show one. */
   fleet(target: number): number {
     return this.factor > 0 ? Math.max(1, Math.round(target * this.factor)) : 0;
   }

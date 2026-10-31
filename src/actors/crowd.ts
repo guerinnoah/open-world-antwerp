@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { uploadFirst } from '../core/instancing';
 import { track } from '../core/loadProgress';
 
-// Baked Rocketbox avatars: one InstancedMesh each, skinned in the vertex shader from a texture of per-frame bone matrices.
+// Rocketbox avatars: one InstancedMesh each, skinned in the vertex shader from a bone texture.
 export type Clip = 'walk' | 'run' | 'idle' | 'ride' | 'scoot' | 'punch' | 'moto' | 'moped';
 
 interface ClipInfo {
@@ -40,13 +40,13 @@ interface Avatar {
 
 const FAR = 30;
 
-/** GLSL: blends the vertex's 4 bones at frame rows iAnim.x and iAnim.y, mixed by iAnim.z. */
+/** iAnim: frame rows x and y, mixed by z. */
 const SKINNING = `
 uniform highp sampler2D tBones;
 attribute vec4 skinIndex;
 attribute vec4 skinWeight;
 attribute vec3 iAnim;
-// tBones: one row per animation frame, 3 texels per bone holding the rows of its 3×4 affine matrix.
+// tBones: a row per frame, 3 texels per bone (3×4 affine rows)
 mat4 boneAt(float bone, float row) {
   ivec2 c = ivec2(int(bone) * 3, int(row));
   vec4 r0 = texelFetch(tBones, c, 0);
@@ -67,7 +67,7 @@ function skinned<T extends THREE.Material>(material: T, bones: THREE.DataTexture
       .replace('#include <skinbase_vertex>', 'mat4 crowdSkin = iAnim.z <= 0.0 ? skinAt(iAnim.x) : skinAt(iAnim.x) * (1.0 - iAnim.z) + skinAt(iAnim.y) * iAnim.z;')
       .replace('#include <skinnormal_vertex>', 'objectNormal = normalize(mat3(crowdSkin) * objectNormal);')
       .replace('#include <skinning_vertex>', 'transformed = (crowdSkin * vec4(transformed, 1.0)).xyz;');
-    // The depth shader has no normals: compute the skin there too.
+    // the depth shader has no normals: skin there too
     if (!shader.vertexShader.includes('crowdSkin = ')) {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
@@ -90,7 +90,6 @@ export class Crowd {
   static async load(capacity: number, limit = Infinity): Promise<Crowd> {
     const crowd = new Crowd();
     const manifest = (await (await fetch('/people/people.json')).json()) as Manifest[];
-    // Fewer avatars keep the city's mix: each dropped one's share goes to a kept one of the same sex and background.
     const picked = manifest.slice(0, limit);
     for (const m of manifest.slice(limit)) {
       const heir = picked.find((p) => p.gender === m.gender && p.european === m.european) ?? picked.find((p) => p.european === m.european);
@@ -106,7 +105,7 @@ export class Crowd {
         crowd.avatars.push(crowd.build(info, bin, atlas, capacity));
       }),
     );
-    // Stable order regardless of which download finished first.
+    // stable order, whatever downloaded first
     crowd.avatars.sort((a, b) => a.info.name.localeCompare(b.info.name));
     return crowd;
   }
@@ -161,7 +160,6 @@ export class Crowd {
     return this.avatars.map((a) => a.info.name);
   }
 
-  /** A random avatar, as likely as its share of the city's population. */
   pick(): number {
     let x = Math.random() * this.avatars.reduce((sum, a) => sum + a.info.weight, 0);
     const i = this.avatars.findIndex((a) => (x -= a.info.weight) < 0);
@@ -188,7 +186,7 @@ export class Crowd {
     l.count++;
   }
 
-  /** Uploads this frame's people: call once, after every add() (bikes, scooters and motorbikes add their riders). */
+  /** Once per frame, after every add() (riders included). */
   finish() {
     for (const a of this.avatars) {
       for (const l of [a.near, a.far]) {

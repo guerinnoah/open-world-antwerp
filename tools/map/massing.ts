@@ -2,11 +2,9 @@ import polygonClipping, { type Polygon } from 'polygon-clipping';
 import type { Building } from '../../src/world/cityData.ts';
 import { cleanRing, flat, outlineGrid, pointInRing, segmentDistance, signedArea, type Outline, type Pt } from './geo.ts';
 
-/** A footprint on its way into city.json: rings outer-positive, holes negative (geo.ts polygonsOf). */
 export interface Mass extends Outline {
   rings: Pt[][];
   isPart: boolean;
-  /** A roof on posts: never filled in underneath. */
   canopy?: boolean;
 }
 
@@ -28,7 +26,7 @@ function perimeter(rings: Pt[][]): number {
   return p;
 }
 
-/** Big and thick enough to be a building: drops slivers (GRB overhang strips, clipping crumbs) that would stand as lone walls. */
+/** Drops slivers (GRB overhang strips, clipping crumbs) that would stand as lone walls. */
 export const solid = (rings: Pt[][]) => area(rings) >= 1.5 && (2 * area(rings)) / perimeter(rings) >= 0.7;
 
 function bbox(ring: Pt[]): [number, number, number, number] {
@@ -51,10 +49,7 @@ function pieces(geom: Polygon[], make: (rings: Pt[][]) => Mass): Mass[] {
   return geom.map(opened).filter((rings) => rings[0].length >= 3 && solid(rings)).map(make);
 }
 
-/**
- * Simple 3D Buildings as mapped: parts often cover only a tower or a roof. An outline becomes what its parts leave
- * uncovered, plus a ground floor under any part that starts in the air (inside the outline only: beyond, it overhangs).
- */
+/** Outline minus its parts, plus a ground floor under raised parts (inside the outline only). */
 export function splitOutlines(
   outlines: Mass[], parts: Mass[], remainderHeight: (o: Mass, parts: Mass[]) => number,
 ): { replaced: Set<Mass>; masses: Mass[] } {
@@ -80,14 +75,14 @@ export function splitOutlines(
         masses.push(...pieces(gap, (rings) => ({ b: { ...base, rings: rings.map(flat) }, outer: rings[0], rings, isPart: false })));
       }
     } catch {
-      // polygon-clipping gives up on some degenerate rings: draw just the parts, as before.
+      // polygon-clipping gives up on some degenerate rings: keep just the parts
     }
   }
   return { replaced, masses };
 }
 
-/** Douglas–Peucker on a closed ring: a curved canopy gets posts at its real corners, not at every vertex of the curve. */
-function simplify(ring: Pt[], tolerance: number): Pt[] {
+/** Douglas–Peucker: curved canopies get posts at real corners, not every vertex. */
+export function simplify(ring: Pt[], tolerance: number): Pt[] {
   if (ring.length <= 4) return ring;
   const keep = new Set([0]);
   let far = 0;
@@ -112,9 +107,8 @@ function simplify(ring: Pt[], tolerance: number): Pt[] {
 
 const POST = 0.4; // m square
 const POST_SPACING = 9; // m along an edge
-const POST_INSET = 0.35; // m in from the edge of the roof above
+const POST_INSET = 0.35; // m in from the roof edge
 
-/** Posts at the corners and along the edges of canopies and raised floors, unless a ground-level building within reach carries them. */
 export function posts(raised: Mass[], ground: Mass[], free: (p: Pt) => boolean): Building[] {
   const near = outlineGrid(ground);
   const carried = (p: Pt) =>
@@ -131,7 +125,7 @@ export function posts(raised: Mass[], ground: Mass[], free: (p: Pt) => boolean):
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
       return [-(b[1] - a[1]) / len, (b[0] - a[0]) / len] as Pt; // inward: outer rings wind positive
     });
-    const spots: [Pt, Pt][] = []; // a point on the edge, and the way in
+    const spots: [Pt, Pt][] = [];
     for (let i = 0; i < n; i++) {
       const a = ring[i], b = ring[(i + 1) % n];
       const [nx, nz] = normals[i];
@@ -142,7 +136,6 @@ export function posts(raised: Mass[], ground: Mass[], free: (p: Pt) => boolean):
       for (let s = 1; s < steps; s++) spots.push([[a[0] + ((b[0] - a[0]) * s) / steps, a[1] + ((b[1] - a[1]) * s) / steps], normals[i]]);
     }
     for (const [at, [ix, iz]] of spots) {
-      // Step in from the edge until clear of the carriageway: a road running along a canopy's edge pushes its posts in.
       let p: Pt | undefined;
       for (const k of [1, 4, 8]) {
         const q: Pt = [at[0] + ix * POST_INSET * k, at[1] + iz * POST_INSET * k];

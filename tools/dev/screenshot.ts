@@ -1,5 +1,5 @@
 // pnpm shot [baseUrl] [view…] [--landmark id [--dist m]] [--vary 'q1|q2|…']
-// --vary repeats every shot per extra query, e.g. --vary '|time=19|weather=rain' or --vary '|flat' (empty = as is).
+// --vary: one shot per extra query, e.g. '|time=19|weather=rain' (empty = as is)
 import { parseArgs } from 'node:util';
 import { DEV, load, open } from './probe.ts';
 
@@ -19,7 +19,7 @@ const { browser, page } = await open({ logConsole: 'browser' });
 for (const [name, query] of shots) {
   for (const extra of values.vary.split('|')) {
     await load(page, `${base}/?fly&${query}${extra ? `&${extra}` : ''}`);
-    await page.waitForTimeout(1800); // the aerial texture loads and the camera settles
+    await page.waitForTimeout(1800); // aerial texture and camera settle
     const file = `screenshots/${[name, slug(extra)].filter(Boolean).join('-')}.png`;
     await page.screenshot({ path: file });
     console.log(`${file}  ${await page.locator('#stats').innerText()}`.replace(/\n/g, ' | '));

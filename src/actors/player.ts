@@ -5,25 +5,25 @@ import { clipForSpeed, phaseStep, type Crowd } from './crowd';
 import { personBody } from './pedestrians';
 import { isMotorbike, twoWheeled, type Vehicle } from './vehicle';
 
-const RUN = 4.2; // m/s ≈ 15 km/h, a steady run; sprint ≈ 25 km/h (a hard human sprint)
+const RUN = 4.2; // m/s ≈ 15 km/h; SPRINT ≈ 25 km/h
 const SPRINT = 7;
-const SPRINT_SECONDS = 6; // full stamina = this many seconds of flat-out sprint / hard pedalling
-const RECOVER_SECONDS = 12; // empty → full at rest
-const RECOVER_THRESHOLD = 0.3; // once spent, stamina must climb back to this before you can sprint again
+const SPRINT_SECONDS = 6; // s of sprint on full stamina
+const RECOVER_SECONDS = 12;
+const RECOVER_THRESHOLD = 0.3; // once spent, refill to this before sprinting again
 const RADIUS = 0.35;
 const SWIM = 1.2;
 const SWIM_SPRINT = 2;
 const TREAD_DEPTH = 1.3;
 const SWIM_LEAN = 1.15;
 const SWIM_RISE = 0.58;
-const PUNCH_TIME = 0.45; // s, and PUNCH_LANDS when the fist lands: the baked clip's timing
+const PUNCH_TIME = 0.45; // s; with PUNCH_LANDS, the baked clip's timing
 const PUNCH_LANDS = 0.15;
 export const MAX_HEALTH = 100;
-const REGEN_DELAY = 6; // s unhurt before healing starts
+const REGEN_DELAY = 6;
 const REGEN = 2.5; // health/s
-const CRASH_FLOOR = 5; // m/s of speed lost that doesn't hurt
-const CRASH_HURT = 0.1; // per (m/s)² lost beyond CRASH_FLOOR, in a family car
-const FAMILY_CAR = 1300; // kg
+const CRASH_FLOOR = 5; // m/s lost that doesn't hurt
+const CRASH_HURT = 0.1; // per (m/s)² beyond CRASH_FLOOR, family car
+const FAMILY_CAR = 1300;
 export const TRAM_EXPOSURE = 0.35;
 
 export function exposure(v: Vehicle): number {
@@ -39,7 +39,7 @@ export const PLAYER_LOOK = 'Male_Adult_08';
 
 export class Player {
   readonly body: RAPIER.RigidBody;
-  readonly object = new THREE.Group(); // not drawn itself: carries the transform the crowd draws the avatar at
+  readonly object = new THREE.Group(); // not drawn: the crowd draws the avatar at its transform
   prev: { x: number; z: number };
   heading = 0; // Rapier angle: forward = (cos, sin)
   down = 0;
@@ -49,7 +49,7 @@ export class Player {
   landed = false;
   avatar = 0;
   health = MAX_HEALTH;
-  stamina = 1; // 0..1 energy for sprinting on foot and sprint-pedalling a bike
+  stamina = 1; // 0..1
   private exhausted = false;
   private phase = 0;
   private aim = 0;
@@ -88,7 +88,7 @@ export class Player {
     return true;
   }
 
-  /** True when this takes the last of the player's health. */
+  /** True if this kills. */
   hurt(amount: number, felt = true): boolean {
     if (amount <= 0 || this.health <= 0) return false;
     this.health = Math.max(0, this.health - amount);
@@ -106,7 +106,6 @@ export class Player {
     this.unhurt = 0;
   }
 
-  /** Spend stamina while exerting (sprinting / hard pedalling), recover otherwise; returns whether the exertion is on. */
   exert(demand: boolean, dt: number): boolean {
     const on = demand && !this.exhausted;
     if (on) {
@@ -140,7 +139,7 @@ export class Player {
       mx /= len;
       mz /= len;
     }
-    const sprinting = this.exert(sprint && len > 0.1, dt); // tires out; drops to a run when the stamina's gone
+    const sprinting = this.exert(sprint && len > 0.1, dt);
     const speed = this.swimming ? (sprinting ? SWIM_SPRINT : SWIM) : sprinting ? SPRINT : RUN;
     const v = this.body.linvel();
     const k = Math.min(1, (this.swimming ? 3 : 12) * dt);

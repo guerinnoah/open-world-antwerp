@@ -7,7 +7,7 @@ const profanity = new RegExpMatcher({
 });
 const censor = new TextCensor().setStrategy(asteriskCensorStrategy());
 
-/** '' for an offensive name, so the caller falls back to a generated one. */
+/** '' if offensive, so the caller generates one. */
 export function safeName(raw: unknown): string {
   const name = cleanName(raw);
   return profanity.hasMatch(name) ? '' : name;

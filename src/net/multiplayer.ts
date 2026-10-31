@@ -45,7 +45,7 @@ interface Peer {
 
 const SEND_HZ = 15;
 const IDLE_HZ = 4;
-const SNAP = 4; // m: a bigger correction in one step is a jump: teleport rather than fling the body there
+const SNAP = 4; // m; bigger corrections teleport rather than fling
 const LABEL_RANGE = 220;
 const NICKNAMES = ['Sinjoor', 'Brabo', 'Schipper', 'Pagadder', 'Lange Wapper', 'Bolleke', 'Tramchauffeur', 'Havenbaron'];
 
@@ -57,7 +57,7 @@ export function relayUrl(params: URLSearchParams): string | null {
   if (params.has('solo') || (navigator.webdriver && !params.has('mp'))) return null;
   const configured = import.meta.env.VITE_MULTIPLAYER_URL as string | undefined;
   if (configured) return configured;
-  // The dev and preview servers host the relay themselves (vite.config.ts).
+  // dev and preview servers host the relay (vite.config.ts)
   if (import.meta.env.DEV || params.has('mp')) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${RELAY_PATH}`;
   return null;
 }
@@ -65,14 +65,14 @@ export function relayUrl(params: URLSearchParams): string | null {
 export class Multiplayer {
   readonly peers = new Map<number, Peer>();
   readonly honks: [number, number][] = [];
-  readonly bells: [number, number][] = []; // a bike or scooter rings a bell rather than honking
+  readonly bells: [number, number][] = [];
   readonly connection: Connection;
   readonly name: string;
   private pill = document.createElement('button');
   private chat: Chat;
   private greeted = false;
   private tags = document.createElement('div');
-  /** Simulation clock (ms, performance.now() timebase), advanced by the fixed physics step. */
+  /** ms, performance.now() base, advanced by the fixed step. */
   private clock = 0;
   private lastSent = { time: -Infinity, mode: -1, kind: -1, flags: -1 };
   private lastDriving: Vehicle | null = null;
@@ -126,8 +126,8 @@ export class Multiplayer {
 
   step(dt: number) {
     const now = performance.now();
-    this.send(this.clock || now); // our pose is from the end of the last step: stamp it with that step's time
-    // Physics drops time on slow frames and while the tab sleeps: stay within 100 ms of the real clock.
+    this.send(this.clock || now); // pose is from the last step's end: stamp that time
+    // physics drops time on slow frames and asleep: stay within 100 ms of real
     this.clock = Math.min(now, Math.max(now - 100, this.clock + dt * 1000));
     this.reportTakenCar();
     for (const peer of this.peers.values()) {
@@ -306,7 +306,7 @@ export class Multiplayer {
       };
     }
     const v = player.body.linvel();
-    const hidden = indoors || !player.object.visible; // hidden on foot = driving a tram, which isn't shared
+    const hidden = indoors || !player.object.visible; // hidden on foot = driving a tram, not shared
     return {
       time, mode: 0, x: player.x, z: player.z, angle: wrapAngle(player.heading), vx: v.x, vz: v.y, spin: 0, kind: -1, colour: 0,
       steer: 0, throttle: 0, sink: player.sink, flags: (player.down > 0 ? FLAG.DOWN : 0) | (hidden ? FLAG.INDOORS : 0),
@@ -384,7 +384,7 @@ export class Multiplayer {
     peer.pos.z = s.z;
     if (!peer.body) {
       peer.body = this.physics.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicVelocityBased().setTranslation(s.x, s.z));
-      // Solid to people, not to cars: their own game decides when they're hit.
+      // solid to people, not cars: their game decides hits
       this.physics.world.createCollider(RAPIER.ColliderDesc.ball(0.35).setCollisionGroups(groups(GROUP.PED, GROUP.PED)), peer.body);
       peer.prev.x = s.x;
       peer.prev.z = s.z;
@@ -403,7 +403,7 @@ export class Multiplayer {
     }
   }
 
-  /** Another player's car goes when they get out of it: it isn't left parked in anyone's world. */
+  /** Removed on exit: not left parked in anyone's world. */
   private leaveCar(peer: Peer) {
     this.host.removeVehicle(peer.car!);
     peer.car = null;

@@ -11,16 +11,16 @@ import type { Door } from './signs';
 
 type Place = Exclude<SignStyle, 'street'>;
 
-/** Room wanted per kind of place: [width along the street, depth] (m), shrunk to fit the building. */
+/** m: [along the street, depth], shrunk to fit the building. */
 const SIZE: Record<Place, [number, number]> = {
   cafe: [9, 11], restaurant: [10, 12], fastfood: [8, 9], bakery: [6, 8], jewelry: [6, 8], fashion: [9, 12], food: [12, 14],
   shop: [7, 10], pharmacy: [7, 9], bank: [8, 10], service: [6, 8], hotel: [10, 12], culture: [11, 14], club: [11, 14], public: [10, 12],
   plate: [6, 7],
 };
 
-const FRONT = 0.12; // m into the building: inner face of the front wall, just behind the facade
-const ENTRY_X = 1.05, ENTRY_Z = 2.4; // entrance kept clear of furniture: |x| < ENTRY_X, z < ENTRY_Z
-const SPAWN_Z = 1.5; // m: enter() puts the player here, on the doorway's axis
+const FRONT = 0.12; // m: inner face of the front wall
+const ENTRY_X = 1.05, ENTRY_Z = 2.4; // m, entrance kept clear of furniture
+const SPAWN_Z = 1.5; // m: where enter() puts the player
 
 type V3 = [number, number, number];
 const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -37,7 +37,7 @@ class Grow<T extends Float32Array | Uint32Array> {
   }
 }
 
-/** Collects triangles in room space: x along the street wall (0 = the doorway), y up, z into the building. */
+/** Room space: x along the street wall (0 = the doorway), y up, z into the building. */
 class Mesher {
   private pos = new Grow(new Float32Array(3 * 4096));
   private nor = new Grow(new Float32Array(3 * 4096));
@@ -89,7 +89,6 @@ class Mesher {
     this.quad(sub(c, hz), hx, hy, [0, 0, -1], colour);
   }
 
-  /** uv: metres per texture tile, mapped from the geometry's own uv (shapes: their x, y in metres). */
   geometry(g: THREE.BufferGeometry, m: THREE.Matrix4, colour: number, uv = 0) {
     let t = templates.get(g);
     if (!t) {
@@ -156,7 +155,7 @@ function surfaceTexture(kind: Surface, tint = '#3a3d4a'): THREE.CanvasTexture {
   if (kind === 'planks' || kind === 'planksDark') {
     const base = kind === 'planks' ? [176, 132, 86] : [92, 58, 34];
     for (let row = 0; row < 16; row++) {
-      // Drawn from x = 0 and again shifted back 512 px, so the last plank wraps onto the first: no seam at the repeat.
+      // Drawn twice, 512 px apart, so the last plank wraps onto the first: no seam.
       let x = 0;
       while (x < 512) {
         const len = 260 + r() * 300, tone = shade(base, 0.82 + r() * 0.3), grain = [0, 1, 2, 3].map(() => 4 + r() * 24);
@@ -206,7 +205,6 @@ function surfaceTexture(kind: Surface, tint = '#3a3d4a'): THREE.CanvasTexture {
       g.fillRect(0, p, 512, 2);
     }
   } else if (kind === 'brick' || kind === 'whiteBrick' || kind === 'subway') {
-    // 16 courses per repeat: 7.5 cm at REPEAT 1.2 m; 5 bricks (24 cm) or 8 tiles (15 cm) a course.
     const per = kind === 'subway' ? 8 : 5, w = 512 / per, joint = kind === 'subway' ? 2 : 4;
     g.fillStyle = kind === 'brick' ? '#a59a8a' : kind === 'whiteBrick' ? '#c9c7c2' : '#b4b2ad';
     g.fillRect(0, 0, 512, 512);
@@ -298,7 +296,7 @@ interface Lamp {
   range: number; // m
 }
 
-/** Room-local lighting for the interior materials only, so entering never recompiles the city's shaders. */
+/** Interior materials only, so entering never recompiles the city's shaders. */
 const LIGHT_VERTEX = /* glsl */ `
 uniform mat4 uRoom;
 varying vec3 vInWorld;
@@ -364,7 +362,6 @@ function lit<M extends THREE.MeshStandardMaterial>(material: M, uniforms: Record
   return material;
 }
 
-/** Fewer lamps than fixtures: merge the closest pair until they fit the shader's budget. */
 function mergeLamps(lamps: Lamp[], max: number): Lamp[] {
   const out = lamps.map((l) => ({ ...l, colour: l.colour.clone() }));
   while (out.length > max) {
@@ -556,7 +553,6 @@ export class Interiors {
       ));
     }
     const people: Person[] = [];
-    // Everyone a different avatar while there are enough, never the player's own.
     const count = this.crowd.avatarCount;
     let next = Math.floor(kit.r() * count);
     for (const [x, z, fx, fz] of kit.people) {
@@ -712,7 +708,7 @@ function fitRoom(door: Door, neighbours: Building[]): Fit | null {
         if (sizes[sizes.indexOf(l) - 1] >= maxLeft || sizes[sizes.indexOf(r) - 1] >= maxRight) continue;
       }
       for (let depth = wantD; depth >= 4; depth -= 0.5) {
-        const area = (left + right) * depth * (depth >= 5 ? 1 : 0.6); // shallow rooms count for less
+        const area = (left + right) * depth * (depth >= 5 ? 1 : 0.6);
         if (area <= bestScore) break;
         if (fits(left, right, depth)) {
           best = { x0: -left, x1: right, depth, height };
@@ -729,14 +725,14 @@ interface ShellLook {
   floor: FloorKind;
   carpet?: string;
   finish: WallKind;
-  back?: WallKind; // feature wall behind the counter
+  back?: WallKind;
   wall: number;
   backWall?: number;
   wainscot?: number;
   ceiling: number;
   beams?: number;
   cornice?: boolean;
-  ambient: [number, number]; // indoor bounce light: colour, irradiance
+  ambient: [number, number]; // colour, irradiance
 }
 
 const SHELLS: Record<Place, ShellLook> = {
@@ -803,7 +799,7 @@ function shell(k: Kit, door: Door): ShellLook {
     for (let z = FRONT + 0.7; z < d - 0.3; z += 1.1) k.solid.box(cx, z, h - 0.2, x1 - x0, 0.16, 0.2, look.beams);
   }
 
-  // Openings in the front wall: the door, and the facade's windows (same bays as the building shader draws).
+  // Same window bays as the building shader draws.
   const b = door.building;
   const seed = rand(b, 5);
   const style = facadeStyle(seed);
@@ -843,7 +839,7 @@ function shell(k: Kit, door: Door): ShellLook {
     }
     for (const x of [o.x0, o.x1]) k.solid.box(x, FRONT + 0.02, o.y0, 0.07, 0.04, o.y1 - o.y0, 0x232426);
     k.solid.box((o.x0 + o.x1) / 2, FRONT + 0.02, o.y1 - 0.035, w + 0.07, 0.04, 0.07, 0x232426);
-    if (o.y0 > 0 && (o.x0 > 0.6 || o.x1 < -0.6)) { // a window bay over the doorway gets no sill
+    if (o.y0 > 0 && (o.x0 > 0.6 || o.x1 < -0.6)) {
       k.solid.box((o.x0 + o.x1) / 2, FRONT / 2 + 0.06, o.y0 - 0.05, w + 0.12, FRONT + 0.22, 0.05, 0xb9b2a5);
       k.glass.quad([(o.x0 + o.x1) / 2, ym, 0.0], [w / 2, 0, 0], [0, hh, 0], [0, 0, 1], 0xffffff);
       const rh = Math.min(o.y0 - 0.2, 0.6), rw = Math.min(w * 0.8, 1.6);
@@ -867,7 +863,6 @@ function fitFont(g: CanvasRenderingContext2D, font: string, text: string, width:
   }
 }
 
-/** The shop's name across the back wall, in its sign's colours. */
 function nameBoard(door: Door, fit: Fit, world: THREE.Matrix4) {
   const w = Math.min(fit.x1 - fit.x0 - 1, 3.6), h = (w * 160) / 1024;
   const canvas = document.createElement('canvas');
@@ -889,10 +884,9 @@ function nameBoard(door: Door, fit: Fit, world: THREE.Matrix4) {
   return mesh;
 }
 
-/** How deep the clear entrance reaches: ENTRY_Z, less in a shallow room, but always past the player's spawn (radius 0.35). */
+/** Always past the spawned player (radius 0.35). */
 const entryZ = (depth: number) => Math.max(SPAWN_Z + 0.4, Math.min(ENTRY_Z, depth - 2.2));
 
-/** Whether an sx by sz footprint centred on (x, z) reaches into the clear entrance. */
 const inEntry = (k: Kit, x: number, z: number, sx: number, sz: number) => Math.abs(x) - sx / 2 < ENTRY_X && z - sz / 2 < entryZ(k.fit.depth);
 
 function person(k: Kit, x: number, z: number, fx: number, fz: number) {
@@ -906,7 +900,6 @@ function lamp(k: Kit, x: number, y: number, z: number, power: number, colour: nu
   k.lamps.push({ x, y, z, power, colour: new THREE.Color(colour), range });
 }
 
-/** Every shop gets the same fit-out: a counter in its sign colour at the back, someone serving, ceiling lights. */
 function furnish(k: Kit, door: Door) {
   const { x0, x1, depth: d, height: h } = k.fit;
   const span = x1 - x0, cx = (x0 + x1) / 2, cz = d - 1.5, len = Math.min(2.4, span - 1.6);
@@ -917,7 +910,7 @@ function furnish(k: Kit, door: Door) {
     person(k, cx, d - 0.85, 0, -1);
     person(k, cx + 0.3, cz - 0.95, 0, 1);
   }
-  // Lamps for flush ceiling fittings sit just above the ceiling, so they never light it.
+  // Lamps sit just above the ceiling so they never light it.
   for (let z = FRONT + 1.5; z < d - 0.4; z += 2) {
     const sx = Math.min(span - 1.5, 2.5);
     k.glow.box(cx, z, h - 0.03, sx, 0.3, 0.03, 0xf4f2ec, true);

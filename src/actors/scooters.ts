@@ -11,7 +11,7 @@ import type { Vehicle } from './vehicle';
 
 export interface Brand {
   name: 'Lime' | 'Bolt' | 'Voi';
-  colour: number; // also the scooter Vehicle's colour, which brandOf() maps back to the brand
+  colour: number; // also the Vehicle's; brandOf() maps it back
   stem: number;
   word: string;
   wordColour: string;
@@ -27,8 +27,8 @@ export const BRANDS: Brand[] = [
 export const brandOf = (colour: number) => Math.max(0, BRANDS.findIndex((b) => b.colour === colour));
 
 const DARK = 0x26282b, BLACK = 0x141414, GREY = 0x6b6f74, SILVER = 0xb9bdc1, LIGHT = 0xfff4d8, REAR_LIGHT = 0xff2a1a;
-const ATLAS = 256, COLUMN = 32; // wordmark texture: one 32 px column per brand, plain white to the right
-const PLAIN = [0.75, 0.5]; // atlas UV of the white patch, so the vertex colour shows as is
+const ATLAS = 256, COLUMN = 32; // px; a column per brand, white to the right
+const PLAIN = [0.75, 0.5];
 
 function paint(g: THREE.BufferGeometry, hex: number): THREE.BufferGeometry {
   const geo = coloured(g, hex), n = geo.getAttribute('position').count;
@@ -48,7 +48,7 @@ const BAR: V3 = [SCOOTER.grip[0], SCOOTER.grip[1], 0];
 const stem = (t: number): V3 => [HEAD[0] + (TOP[0] - HEAD[0]) * t, HEAD[1] + (TOP[1] - HEAD[1]) * t, 0];
 const RAKE = Math.atan2(HEAD[0] - TOP[0], TOP[1] - HEAD[1]);
 const STEER_AXIS = new THREE.Vector3(TOP[0] - HEAD[0], TOP[1] - HEAD[1], 0).normalize();
-const STAND_LEAN = -0.1; // rad, + = over to the right: on the kickstand
+const STAND_LEAN = -0.1; // rad, + = right
 const FALLEN = 1.3;
 const CELL = 40;
 
@@ -159,7 +159,7 @@ interface Ridden {
   rear: THREE.Object3D;
 }
 
-/** Seeded, so every game (and every player) gets the same scooters: groups of 1–5 along the pavements. */
+/** Seeded: every player gets the same scooters. */
 export function scatter(walk: RoadGraph): Parked[] {
   const rand = mulberry32(0x5c007e);
   const pickBrand = () => {
@@ -294,7 +294,6 @@ export class Scooters {
     return { x: p.x, z: p.z, heading: p.angle, colour: BRANDS[p.brand].colour };
   }
 
-  /** Another player took the one of this colour at (x, z); false if it isn't here. */
   takeAt(x: number, z: number, colour: number): boolean {
     const p = [...this.nearby(x, z)].find((p) => BRANDS[p.brand].colour === colour && Math.hypot(p.x - x, p.z - z) < 0.5);
     if (p) this.take(p);

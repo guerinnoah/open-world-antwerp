@@ -11,8 +11,8 @@ interface CameraFocus {
   speed: number;
   distance: number;
   sprint?: boolean;
-  eye?: number; // first person: eye height
-  eyeForward?: number; // first person: seat offset forward along `heading` (so the view sits in the cab, not the centre)
+  eye?: number;
+  eyeForward?: number; // first person: forward along `heading`, so the view sits in the cab
   room?: { free(x: number, z: number, dx: number, dz: number): number; confine(p: THREE.Vector3): void };
 }
 
@@ -20,7 +20,7 @@ const MIN_PITCH = -0.05;
 const MAX_PITCH = 1.1;
 const WALK_FOLLOW = 1.5; // 1/s at run pace
 
-const FP_PITCH = 0.95; // first person: how far up/down you can look, radians
+const FP_PITCH = 0.95; // rad, first person
 
 export class CameraRig {
   yaw = 0;
@@ -49,7 +49,7 @@ export class CameraRig {
   setFirstPerson(on: boolean) {
     if (on === this.firstPerson) return;
     this.firstPerson = on;
-    this.pitch = on ? 0 : 0.2; // level view in first person, the usual slight downward tilt in third
+    this.pitch = on ? 0 : 0.2;
     this.minPitch = on ? -FP_PITCH : MIN_PITCH;
     this.snap();
   }
@@ -100,7 +100,6 @@ export class CameraRig {
   }
 
   private updateFirstPerson(focus: CameraFocus, dt: number) {
-    // Trail where you're going (free-look wins briefly): on foot the walk direction at pace, in a vehicle the heading.
     if (focus.heading !== undefined && this.manualTimer <= 0) {
       const d = wrapAngle(focus.heading - this.yaw);
       if (focus.stride !== undefined) this.yaw += Math.sin(d) * Math.min(1, dt * WALK_FOLLOW * focus.stride);

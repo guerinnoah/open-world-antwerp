@@ -34,7 +34,7 @@ export class Minimap {
     this.marks = landmarkMarks(city);
   }
 
-  update(x: number, z: number, yaw: number, heading: number, others: { x: number; z: number; heading: number }[] = [], gps?: Gps) {
+  update(x: number, z: number, yaw: number, heading: number, others: { x: number; z: number; heading: number }[] = [], gps?: Gps, police: { x: number; z: number }[] = []) {
     if (this.frame++ % 2) return;
     const c = this.ctx, r = SIZE / 2, k = (r / VIEW_RADIUS) / SCALE;
     c.save();
@@ -78,6 +78,17 @@ export class Minimap {
       const [ox, oy] = toMap(o.x, o.z);
       drawArrow(c, ox, oy, o.heading + turn, '#1e88e5', 0.75);
     }
+    const flash = Math.floor(performance.now() / 250);
+    police.forEach((p, i) => {
+      const [px, py] = toMap(p.x, p.z);
+      c.fillStyle = (flash + i) % 2 ? '#ff3b30' : '#2f7bff';
+      c.strokeStyle = '#fff';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.arc(px, py, 4.5, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+    });
     drawArrow(c, r, r, heading + turn, '#e53935');
   }
 }
@@ -114,7 +125,6 @@ export function drawArrow(c: CanvasRenderingContext2D, x: number, y: number, ang
   c.restore();
 }
 
-/** Waypoint blip, centred on (x, y). */
 export function drawPin(c: CanvasRenderingContext2D, x: number, y: number, scale = 1) {
   c.save();
   c.translate(x, y);

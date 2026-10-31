@@ -3,13 +3,12 @@ import sharp, { type OverlayOptions } from 'sharp';
 import { OUT_DIR } from './config.ts';
 import { ORIGIN, project } from '../../src/world/projection.ts';
 
-// Digitaal Vlaanderen orthophoto WMS: most recent 15 cm winter (leaf-off) colour mosaic. Winter suits us, since the
-// game draws its own trees — bare aerial trees avoid doubling up the greenery. WMS 1.3.0, GetMap caps at 2048 px.
+// Digitaal Vlaanderen WMS 1.3.0: latest 15 cm leaf-off mosaic, as the game draws its own trees
 const WMS = 'https://geo.api.vlaanderen.be/OMWRGBMRVL/wms';
 const LAYER = 'Ortho';
-const TILE = 2048; // the server's per-request limit
-const GSD = 0.4; // metres per pixel to download; supersamples the shipped image for sharper mipmaps
-const MAX_DIM = 6144; // longest side of the shipped webp
+const TILE = 2048; // px, GetMap's limit
+const GSD = 0.4; // m per pixel; supersampled for sharper mipmaps
+const MAX_DIM = 6144;
 const QUALITY = 82;
 
 const { bounds } = JSON.parse(await readFile(`${OUT_DIR}/city.json`, 'utf8')) as {
@@ -17,11 +16,10 @@ const { bounds } = JSON.parse(await readFile(`${OUT_DIR}/city.json`, 'utf8')) as
 };
 const { minX, maxX, minZ, maxZ } = bounds;
 
-// Invert the game's linear equirectangular projection (project() is affine in lat/lon), metres → lat/lon.
 const mPerDegLon = project(ORIGIN.lat, ORIGIN.lon + 1)[0];
 const mPerDegLat = -project(ORIGIN.lat + 1, ORIGIN.lon)[1];
 const lon = (x: number) => ORIGIN.lon + x / mPerDegLon;
-const lat = (z: number) => ORIGIN.lat - z / mPerDegLat; // +z is south, so a larger z is a smaller latitude
+const lat = (z: number) => ORIGIN.lat - z / mPerDegLat; // +z is south
 
 const fullW = Math.round((maxX - minX) / GSD);
 const fullH = Math.round((maxZ - minZ) / GSD);
@@ -29,9 +27,9 @@ const fullH = Math.round((maxZ - minZ) / GSD);
 async function tile(x: number, y: number, w: number, h: number): Promise<Buffer> {
   const west = lon(minX + (x / fullW) * (maxX - minX));
   const east = lon(minX + ((x + w) / fullW) * (maxX - minX));
-  const north = lat(minZ + (y / fullH) * (maxZ - minZ)); // top row
-  const south = lat(minZ + ((y + h) / fullH) * (maxZ - minZ)); // bottom row
-  // CRS:84 keeps the bbox in lon,lat order (WMS 1.3.0 swaps the axes for EPSG:4326).
+  const north = lat(minZ + (y / fullH) * (maxZ - minZ));
+  const south = lat(minZ + ((y + h) / fullH) * (maxZ - minZ));
+  // CRS:84 keeps lon,lat order (WMS 1.3.0 swaps axes for EPSG:4326)
   const url = `${WMS}?service=WMS&version=1.3.0&request=GetMap&layers=${LAYER}&styles=`
     + `&crs=CRS:84&bbox=${west},${south},${east},${north}&width=${w}&height=${h}&format=image/jpeg`;
   const res = await fetch(url);

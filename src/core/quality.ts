@@ -9,7 +9,7 @@ export interface Quality {
   shadowRange: number;
   ao: boolean;
   textureSize: number;
-  aerial: boolean; // the 9 MB aerial photo under the ground: desktop only
+  aerial: boolean; // 9 MB: desktop only
   anisotropy: number;
   drawDistance: number;
   fogNear: number;
@@ -51,7 +51,7 @@ export function pickQuality(params: URLSearchParams): Quality {
   const touch = coarsePointer();
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   const cores = navigator.hardwareConcurrency ?? 8;
-  // Safari reports no deviceMemory and 4 cores on every iPhone; iOS 16 or older means an iPhone X or earlier.
+  // Safari: no deviceMemory, 4 cores on every iPhone; iOS <= 16 = iPhone X or older
   const oldIPhone = Number(/iPhone OS (\d+)_/.exec(navigator.userAgent)?.[1] ?? Infinity) <= 16;
   const lowEnd = oldIPhone || (memory !== undefined && (memory <= 3 || cores <= 4));
   const level: QualityLevel = !touch ? 'high' : lowEnd ? 'low' : 'medium';

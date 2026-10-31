@@ -18,6 +18,6 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     relay.close();
     server.close(() => process.exit(0));
-    server.closeAllConnections(); // close() alone waits for requests in progress, even ones never finished sending
+    server.closeAllConnections(); // close() alone waits on unfinished requests
   });
 }

@@ -8,10 +8,7 @@ export function uploadFirst(attr: THREE.BufferAttribute | null | undefined, coun
   attr.needsUpdate = true;
 }
 
-/**
- * Frees the CPU copy once on the GPU (buildings: ~100 MB); compute bounds first, no edits or raycasts after.
- * A lost WebGL context can't re-upload it, so main.ts offers a reload instead.
- */
+/** Frees the CPU copy (buildings: ~100 MB): bounds first, no edits or raycasts after; context loss → main.ts reload. */
 export function freeAfterUpload(geometry: THREE.BufferGeometry) {
   const free = function (this: { array: unknown }) {
     this.array = null;

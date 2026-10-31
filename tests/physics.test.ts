@@ -8,7 +8,7 @@ import type { NavGraph } from '../src/world/navGraph';
 
 const sedan = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
 
-// A 10 m square building east of the origin and one tree to the north, in a 200 m map.
+// a 10 m square building east of the origin, one tree 6 m south, in a 200 m map
 const city = {
   bounds: { minX: -100, minZ: -100, maxX: 100, maxZ: 100 },
   buildings: [{ rings: [[10, -5, 20, -5, 20, 5, 10, 5]] }],
@@ -29,10 +29,10 @@ describe('castStatic', () => {
     const car = new Vehicle(physics.world, sedan, 0xffffff, 0, -10, 0);
     physics.step();
     expect(physics.castStatic(0, 0, 1, 0, 30)).toBeCloseTo(10, 3);
-    expect(physics.castStatic(0, 50, 0, 1, 80)).toBeCloseTo(50, 3); // the map edge
-    expect(physics.castStatic(0, 0, 0, 1, 30)).toBeCloseTo(5.7, 3); // a tree
-    expect(physics.castStatic(0, 0, -1, 0, 30)).toBe(30); // a tram
-    expect(physics.castStatic(0, 0, 0, -1, 30)).toBe(30); // a car
+    expect(physics.castStatic(0, 50, 0, 1, 80)).toBeCloseTo(50, 3);
+    expect(physics.castStatic(0, 0, 0, 1, 30)).toBeCloseTo(5.7, 3);
+    expect(physics.castStatic(0, 0, -1, 0, 30)).toBe(30);
+    expect(physics.castStatic(0, 0, 0, -1, 30)).toBe(30);
     removeSectioned(physics, [tram], tram);
     physics.remove(car.body);
   });

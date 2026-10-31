@@ -1,7 +1,7 @@
 let done = 0, total = 0;
 let report: (fraction: number) => void = () => {};
 
-/** weight: roughly the download's size in 100 kB over the wire. */
+/** weight: ~download size in 100 kB. */
 export function track<T>(load: Promise<T>, weight = 1): Promise<T> {
   total += weight;
   return load.finally(() => {

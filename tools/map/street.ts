@@ -42,8 +42,7 @@ export function streetDetail(
       const nx = -road.dz, nz = road.dx, h = road.w / 2 - 0.5;
       crossings.push([round(road.cx - nx * h), round(road.cz - nz * h), round(road.cx + nx * h), round(road.cz + nz * h)]);
     } else if (t.highway === 'traffic_signals') {
-      // Mapped on the centreline: a pole on each kerb, facing along the road. At a junction node the kerb point
-      // lies in the cross street, so the pole slides back along the kerb to its corner.
+      // mapped on the centreline: a pole per kerb, slid back to the corner at junctions
       const road = nearestRoad(near(p), p, 4);
       if (!road) continue;
       const nx = -road.dz, nz = road.dx, off = road.w / 2 + 0.7;
@@ -59,7 +58,7 @@ export function streetDetail(
     else if (t.barrier === 'bollard') props.bollards.push(round(p[0]), round(p[1]));
   }
 
-  // Few lamps are mapped: add one every 28 m along every street, alternating kerbs, clear of junctions at either end.
+  // few lamps are mapped: add them along every street
   for (const r of roads) {
     if (r.k !== 'major' && r.k !== 'minor') continue;
     let total = 0;

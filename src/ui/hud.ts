@@ -1,7 +1,8 @@
 import type { Sound } from '../audio/sound';
 import { coarsePointer } from '../core/quality';
+import { MAX_STARS } from '../game/wanted';
 
-/** Restarts a class's CSS animation: reading offsetWidth forces the reflow. */
+/** Reading offsetWidth forces the reflow that restarts the animation. */
 function replay(el: HTMLElement, className: string, on = true) {
   el.classList.remove(className);
   void el.offsetWidth;
@@ -26,6 +27,9 @@ export class Hud {
   private hint = document.createElement('div');
   private toastEl = document.createElement('div');
   private street = document.createElement('div');
+  private district = document.createElement('div');
+  private vehicle = document.createElement('div');
+  private stars = document.createElement('div');
   private fadeEl = document.createElement('div');
   private health = document.createElement('div');
   private healthBars = [document.createElement('div'), document.createElement('div')]; // the lost chunk lingers behind the fill
@@ -38,7 +42,7 @@ export class Hud {
   private toastTimer = 0;
   private dead = false;
   private viewBtn: HTMLButtonElement | null = null;
-  private last = { speed: '', hint: '', health: -1, stamina: -1 };
+  private last = { speed: '', hint: '', health: -1, stamina: -1, stars: 0 };
 
   constructor() {
     this.root.id = 'hud';
@@ -46,6 +50,11 @@ export class Hud {
     this.hint.className = 'hint';
     this.toastEl.className = 'toast';
     this.street.className = 'street';
+    this.district.className = 'district';
+    this.vehicle.className = 'vehicle';
+    this.stars.className = 'stars';
+    this.stars.hidden = true;
+    this.stars.append(...Array.from({ length: MAX_STARS }, () => Object.assign(document.createElement('span'), { textContent: '★' })));
     this.speed.hidden = this.hint.hidden = true;
     this.fadeEl.className = 'fade';
     this.health.className = 'health';
@@ -59,7 +68,7 @@ export class Hud {
     this.hurtEl.className = 'hurt';
     this.wastedEl.className = 'wasted';
     this.wastedEl.innerHTML = '<span>Wasted</span>';
-    this.root.append(this.hurtEl, this.speed, this.hint, this.toastEl, this.street, this.health, this.stamina, this.controlsEl, this.wastedEl, this.fadeEl);
+    this.root.append(this.hurtEl, this.speed, this.hint, this.toastEl, this.street, this.district, this.vehicle, this.stars, this.health, this.stamina, this.controlsEl, this.wastedEl, this.fadeEl);
     document.body.append(this.root);
     // A focused <summary> would toggle on the Enter/Space game keys.
     document.querySelector('#credits summary')?.addEventListener('click', (e) => (e.currentTarget as HTMLElement).blur());
@@ -89,7 +98,6 @@ export class Hud {
     this.health.classList.toggle('low', pct < 25);
   }
 
-  /** The actions available right now, one "KEY — action" per line (desktop; touch has on-screen buttons). */
   setControls(lines: string[]) {
     const text = lines.join('\n');
     if (text === this.lastControls) return;
@@ -103,7 +111,7 @@ export class Hud {
     if (pct === this.last.stamina) return;
     this.last.stamina = pct;
     this.staminaBar.style.width = `${pct}%`;
-    this.stamina.hidden = pct > 99.5; // only show it once you've spent some
+    this.stamina.hidden = pct > 99.5;
     this.stamina.classList.toggle('low', pct < 20);
   }
 
@@ -112,16 +120,17 @@ export class Hud {
     replay(this.hurtEl, 'flash');
   }
 
-  /** seconds: until the screen goes black; 0 clears it. */
-  wasted(seconds: number) {
+  /** s until the screen goes black; 0 clears it. */
+  wasted(seconds: number, busted = false) {
     this.dead = seconds > 0;
+    this.wastedEl.firstElementChild!.textContent = busted ? 'Busted' : 'Wasted';
+    this.wastedEl.classList.toggle('busted', busted);
     this.wastedEl.style.setProperty('--wasted', `${seconds}s`);
     this.wastedEl.classList.toggle('show', this.dead);
     document.body.classList.toggle('wasted', this.dead);
     if (this.dead) this.setHint('');
   }
 
-  /** First/third-person toggle button; label follows the current view (also switchable with V). */
   viewToggle(onClick: () => void) {
     this.viewBtn = button('view', onClick);
   }
@@ -173,6 +182,25 @@ export class Hud {
   blackout() {
     this.fadeEl.classList.remove('out');
     this.fadeEl.style.opacity = '1';
+  }
+
+  setWanted(level: number, searching: boolean) {
+    this.stars.classList.toggle('searching', searching);
+    if (level === this.last.stars) return;
+    if (level > this.last.stars) replay(this.stars, 'up');
+    this.last.stars = level;
+    this.stars.hidden = !level;
+    [...this.stars.children].forEach((s, i) => s.classList.toggle('on', i < level));
+  }
+
+  setDistrict(name: string) {
+    this.district.textContent = name;
+    replay(this.district, 'show', !!name);
+  }
+
+  setVehicle(name: string) {
+    this.vehicle.textContent = name;
+    replay(this.vehicle, 'show', !!name);
   }
 
   setStreet(name: string) {

@@ -6,12 +6,12 @@ const RADIO_OFF_KEY = 'gta-antwerp-radio-off';
 const GEARS = [0, 18, 38, 62, 92, 140]; // km/h where each gear starts
 const IDLE_RPM = 850;
 const MAX_RPM = 5600;
-// Events that count as a user activation. Not pointerdown: a touch pointerdown isn't one, so iOS would stay silent.
+// not pointerdown: a touch one isn't a user activation, so iOS would stay silent
 const GESTURES = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 const SIREN_VOICES = 3;
-const SIREN_RANGE = 300; // m
+const SIREN_RANGE = 300;
 
-/** localStorage throws when site storage is blocked (cookies off, sandboxed iframe): then nothing is remembered. */
+/** localStorage throws when site storage is blocked. */
 function stored(key: string, value?: string): string | null {
   try {
     if (value !== undefined) localStorage.setItem(key, value);
@@ -53,7 +53,6 @@ export class Sound {
   muted = stored(MUTE_KEY) === '1';
 
   constructor() {
-    // Browsers only allow audio after a user gesture: start on a key or tap (Radio's iOS unlock needs it too).
     this.awaitGesture(true);
     addEventListener('keydown', (e) => e.code === 'KeyM' && !e.repeat && this.toggleMute());
     addEventListener('keydown', (e) => e.code === 'KeyR' && !e.repeat && this.radioWanted && (e.shiftKey ? this.toggleRadio() : this.nextStation()));
@@ -65,7 +64,7 @@ export class Sound {
     });
   }
 
-  /** Keeps resuming on taps and keys until the context runs: iOS only allows it inside a gesture. */
+  /** Retries per gesture until running: iOS resumes only inside one. */
   private unlock = () => {
     this.start();
     const ctx = this.ctx!;
@@ -75,7 +74,7 @@ export class Sound {
 
   private awaitGesture(on: boolean) {
     for (const type of GESTURES) {
-      // Capture, so a field that stops propagation (the chat) can't swallow the gesture.
+      // capture: the chat stops propagation
       if (on) addEventListener(type, this.unlock, true);
       else removeEventListener(type, this.unlock, true);
     }
@@ -85,7 +84,7 @@ export class Sound {
     if (this.ctx) return;
     const ctx = new AudioContext();
     this.ctx = ctx;
-    // Listen again whenever it stops running (backgrounded, or an iOS interruption) so the next tap resumes it.
+    // re-arm when it stops (backgrounded, iOS interruption)
     ctx.onstatechange = () => ctx.state !== 'running' && this.awaitGesture(true);
     this.muffle = ctx.createBiquadFilter();
     this.muffle.type = 'lowpass';
@@ -154,7 +153,6 @@ export class Sound {
     this.onRadio?.();
   }
 
-  /** Off comes back on at the same station. */
   nextStation() {
     if (this.radioMuted) this.setRadioMuted(false);
     else if (this.radio?.status !== 'blocked') {
@@ -180,7 +178,7 @@ export class Sound {
     return this.radioMuted ? null : STATIONS[this.station];
   }
 
-  /** `impact`: the speed lost (m/s). */
+  /** `impact`: speed lost (m/s). */
   crash(impact: number) {
     const ctx = this.ctx;
     if (!ctx || ctx.currentTime - this.lastCrash < 0.25) return;
@@ -247,7 +245,6 @@ export class Sound {
     if (this.ctx) this.bikeRing(1, 0);
   }
 
-  /** Someone else's bike bell, out in the world. */
   bikeBellAt(x: number, z: number) {
     const { gain, pan } = this.place(x, z, 60);
     if (gain > 0) this.bikeRing(gain, pan);
@@ -279,7 +276,7 @@ export class Sound {
   }
 
   horn(on: boolean) {
-    if (!this.ctx) return; // no audio until the first gesture (a gamepad press isn't one)
+    if (!this.ctx) return;
     if (on && !this.stopHorn) this.stopHorn = this.hornSound(0.22, 0, Infinity);
     if (!on && this.stopHorn) {
       this.stopHorn();
@@ -287,7 +284,7 @@ export class Sound {
     }
   }
 
-  /** The nearest few sirens out in the world, and the one you drive (`own`, centred and louder). */
+  /** Nearest few sirens, plus `own` (centred, louder). */
   sirens(cars: readonly { x: number; z: number; siren: boolean }[], own: object | null) {
     if (!this.ctx) return;
     const wanted = new Map<object, { gain: number; pan: number }>();
@@ -418,7 +415,7 @@ export class Sound {
   }
 }
 
-/** Two-tone, A4 and D5 like the Martinshorn; each unit's cycle a little different so a convoy doesn't sound as one. */
+/** A4/D5 like the Martinshorn; cycles vary so a convoy doesn't sound as one. */
 class Siren {
   private osc: OscillatorNode[];
   private gain: GainNode;

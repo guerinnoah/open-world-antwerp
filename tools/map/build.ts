@@ -49,7 +49,7 @@ function heightOf(t: Record<string, string>, id: number): { h: number; mh: numbe
   return { h: base + hash(id) * 6, mh, source: 'default' };
 }
 
-/** Stable pseudo-random in [0, 1) per OSM id: rebuilds give the same city. */
+/** [0, 1), stable per OSM id so rebuilds give the same city. */
 function hash(id: number): number {
   let x = id ^ 0x9e3779b9;
   x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
@@ -60,14 +60,12 @@ function hash(id: number): number {
 const PLAIN_WALLS = new Set(['church', 'cathedral', 'chapel', 'basilica', 'tower', 'monument']);
 const PLAIN_PARTS = new Set(['tower', 'steeple', 'spire', 'church', 'chapel', 'roof', 'dome', 'column', 'chimney']);
 
-/** Guessed heights for small things: a bus shelter or a kiosk is not a town house. */
 function smallHeight(t: Record<string, string>, area: number, h: number): number {
   if (t.amenity === 'shelter') return 2.8;
   return area < 12 ? Math.min(h, 3) : area < 30 ? Math.min(h, 4.5) : h;
 }
 
 interface Candidate extends Mass {
-  /** Height before any GRB measurement: OSM's own, or a guess. */
   osmH: number;
   source: HeightSource | 'grb';
 }
@@ -90,16 +88,16 @@ for (const e of elements) {
       slivers++;
       continue;
     }
-    // Height: explicit OSM height > measured 3D GRB (not for parts or raised sections) > OSM levels > default.
+    // OSM height > 3D GRB (not parts or raised) > OSM levels > default
     const grb = source !== 'tag' && !isPart && mh === 0 ? grbMatch?.(rings[0]) : undefined;
     heightSources[grb ? 'grb' : source]++;
     let top = grb?.height ?? h;
     let base = mh;
-    // A canopy (OSM roof, GRB afdak) is a slab on posts; a GRB upper floor with open ground below spans a passage.
+    // canopy: OSM roof or GRB afdak; GRB verdieping over open ground spans a passage
     const canopy = t.building === 'roof' || (t['building:part'] === 'roof' && mh === 0) || grb?.type === 'afdak';
     const area = Math.abs(signedArea(rings[0]));
     if (canopy) {
-      // LiDAR over an awning against a tall facade reads the facade: only a big canopy is measured, not a high one.
+      // LiDAR over an awning reads the facade behind: trust only big canopies
       if (source === 'default' && (!grb || (grb.height > 8 && area < 1000))) top = area < 30 ? 3.5 : 4.5 + hash(e.id) * 2.5;
       top = Math.max(top, 2.8);
       if (base === 0) base = top - 0.4;
@@ -111,7 +109,7 @@ for (const e of elements) {
     const look = facadeOf(t, top, area, Math.hypot(...centre) < OLD_TOWN_RADIUS, (salt) => hash(e.id * 31 + salt));
     const b: Building = { h: round(top), ...look, rings: rings.map(flat) };
     if (base > 0) b.mh = round(base);
-    // nw: no windows (churches, towers, raised parts); nc: no collider, so raised sections and canopies don't block the street.
+    // nw: no windows; nc: no collider, so raised sections don't block the street
     if (PLAIN_WALLS.has(t.building) || PLAIN_PARTS.has(t['building:part']) || base > 0) b.nw = 1;
     if (base > 0) b.nc = 1;
     candidates.push({ b, outer: rings[0], rings, isPart, canopy, osmH: h, source: grb ? 'grb' : source });
@@ -120,16 +118,12 @@ for (const e of elements) {
 
 const parts = candidates.filter((c) => c.isPart);
 const ownHeight = (c: Candidate) => c.source === 'tag' || c.source === 'levels';
-/**
- * Height for what of an outline its parts leave uncovered. GRB's 99th percentile over a footprint with a tower on it is
- * the tower, so when it matches the tallest part the rest gets OSM's guess, kept a few metres below that.
- */
+// GRB's P99 over a footprint with a tower is the tower: the rest gets OSM's guess, kept below it.
 function remainderHeight(o: Candidate, on: Mass[]): number {
   const tallest = Math.max(0, ...(on as Candidate[]).filter(ownHeight).map((p) => p.b.h));
   if (o.source !== 'grb' || !tallest || o.b.h < tallest - 1.5) return o.b.h;
   return round(Math.max(3, Math.min(o.osmH, tallest - 3)));
 }
-// Parts with no height of their own take their outline's.
 for (const p of parts) {
   if (ownHeight(p)) continue;
   const c = interiorPoint(p.outer);
@@ -138,7 +132,7 @@ for (const p of parts) {
   const h = remainderHeight(host, parts.filter((q) => pointInRing(interiorPoint(q.outer), host.outer)));
   if (h > (p.b.mh ?? 0) + 2) p.b.h = h;
 }
-const landmarks = extractLandmarks(elements, candidates); // before splitting, so the pieces of a landmark stay hidden too
+const landmarks = extractLandmarks(elements, candidates); // before splitting, so landmark pieces stay hidden
 const split = splitOutlines(candidates.filter((c) => !c.isPart), parts, (o, on) => remainderHeight(o as Candidate, on));
 const masses: Mass[] = [...candidates.filter((c) => !split.replaced.has(c)), ...split.masses];
 const buildings = masses.map((m) => m.b);
@@ -220,12 +214,11 @@ const logos = await loadLogos();
 const shopfronts = placeSigns(elements, buildingIndex, near, (p) => clearOfRoads(p) && open(p), logos.of);
 markShopKinds(shopfronts.signs, buildings);
 
-// trees: flat [x, z, kind, girth] (kind = treeKind index, girth = trunk circumference in cm; 0 when unknown).
+// trees: flat [x, z, treeKind index, trunk girth cm (0: unknown)]
 const trees: number[] = [];
 const plantTree = (p: Pt, kind = 0, girth = 0) => {
   if (inBounds(p) && open(p)) trees.push(round(p[0]), round(p[1]), kind, round(girth));
 };
-// Prefer Antwerp's real tree inventory (pnpm map:fetch-trees); fall back to OSM tree nodes and tree_row ways.
 const treeFile = `${RAW_DIR}/trees.json`;
 if (existsSync(treeFile)) {
   const inventory = JSON.parse(await readFile(treeFile, 'utf8')) as [number, number, string | null, number][];
@@ -249,7 +242,6 @@ if (existsSync(treeFile)) {
 }
 
 const graph = buildGraphData({ elements, buildings, inBounds, roadWidth });
-// Real De Lijn trips-per-hour (pnpm map:fetch-gtfs), keyed by line; the sim runs trams/buses to this schedule.
 const gtfsFile = `${RAW_DIR}/gtfs-schedules.json`;
 if (existsSync(gtfsFile)) {
   graph.schedules = JSON.parse(await readFile(gtfsFile, 'utf8')) as GraphData['schedules'];

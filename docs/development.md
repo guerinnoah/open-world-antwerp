@@ -7,7 +7,7 @@
 ## Headless tools
 
 `tools/dev/` has Playwright scripts that play the game and take screenshots into `screenshots/`. Start `pnpm dev`
-first, and run `pnpm exec playwright install chromium` once. The most useful ones:
+first, and run `pnpm exec playwright install chromium` once. Each has a `pnpm` script; the main ones:
 
 - `pnpm shot`: views of the city from above; `--landmark centraal` circles one landmark, and
   `--vary '|time=22|weather=rain'` repeats each view per query
@@ -15,8 +15,6 @@ first, and run `pnpm exec playwright install chromium` once. The most useful one
 - `pnpm mp`: two players testing chat and collisions
 - `pnpm perf`: frame rate on an emulated, throttled phone
 - `pnpm og`: renders the link-preview image `public/og.jpg`
-
-Others run with `pnpm tsx tools/dev/<file>.ts`.
 
 ## URL parameters
 
@@ -34,6 +32,7 @@ Others run with `pnpm tsx tools/dev/<file>.ts`.
 | `?weather=rain` | Force weather: `clear`, `cloudy`, `overcast`, `rain`, `storm` (or `?clouds=0..1&rain=0..1`) |
 | `?flat` | Drop the aerial-photo ground colour for the stylised surfaces |
 | `?fpv` | Start in first person (toggle any time with `V`) |
+| `?wanted=3` | Start with a wanted level (1–5 stars) |
 
 By default the sky follows Antwerp's real sun for the current time and the live weather from Open-Meteo.
 

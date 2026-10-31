@@ -8,7 +8,7 @@ export class TitleScreen {
     this.started = skip;
   }
 
-  /** Never moves back: more downloads join the count once the people list is in. */
+  /** Never moves back: more downloads join the count late. */
   progress(fraction: number) {
     this.filled = Math.max(this.filled, Math.min(1, fraction));
     this.bar?.style.setProperty('transform', `scaleX(${this.filled})`);

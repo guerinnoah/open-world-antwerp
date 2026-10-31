@@ -18,12 +18,10 @@ import { layWater } from '../tools/map/water';
 import { WaterMap } from '../src/world/water';
 import { inRing } from '../src/world/polyline';
 
-/** Inverse of project() near the origin, where it is linear: OSM lat/lon for local metres. */
 const M_LON = project(51.2213, 4.4097)[0] / 0.01;
 const M_LAT = -project(51.2313, 4.3997)[1] / 0.01;
 const latLon = ([x, z]: Pt) => ({ lat: 51.2213 - z / M_LAT, lon: 4.3997 + x / M_LON });
 
-/** Reference distance in Lambert 72: conformal, with near-unit scale over Antwerp. */
 function lambertDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const [x1, y1] = latLonToLambert72(lat1, lon1);
   const [x2, y2] = latLonToLambert72(lat2, lon2);
@@ -372,7 +370,6 @@ describe('street detail', () => {
 });
 
 describe('placeSigns', () => {
-  // A 12 m shopfront along z = 0, the shops mapped as nodes just inside it.
   const b: Building = { h: 10, c: 0, r: 0, rings: [[0, 0, 12, 0, 12, 10, 0, 10]] };
   const outline = { b, outer: [[0, 0], [12, 0], [12, 10], [0, 10]] as Pt[] };
   const shop = (id: number, name: string, x: number): OsmElement => ({ type: 'node', id, tags: { shop: 'clothes', name }, ...latLon([x, 0.5]) });
@@ -381,7 +378,6 @@ describe('placeSigns', () => {
     const names = ['Shop', 'Some Rather Long Shop Name', 'Bakker', 'Kapper Jan', 'Mode', 'Optiek Van Dyck'];
     const xs = [6.5, 4, 9, 10, 1, 6];
     const { signs } = placeSigns(names.map((n, i) => shop(i, n, xs[i])), new Map([[b, 0]]), () => [outline], () => true, () => undefined);
-    // The long name can't fit past 'Shop', so it shrinks into the gap before it rather than overlapping or vanishing.
     expect(signs.map((s) => s[5])).toEqual(expect.arrayContaining(['Shop', 'Some Rather Long Shop Name', 'Bakker']));
     const spans = signs
       .filter((s) => s[1] === 0)
@@ -397,7 +393,7 @@ describe('placeSigns', () => {
 });
 
 describe('GRB heights', () => {
-  // A U-shaped footprint whose vertex centroid falls in the courtyard, where a taller neighbour stands.
+  // vertex centroid falls in the courtyard, where a taller neighbour stands
   const u: Pt[] = [[0, 0], [30, 0], [30, 20], [20, 20], [20, 5], [10, 5], [10, 20], [0, 20]];
   const courtyard: Pt[] = [[10, 5], [20, 5], [20, 20], [10, 20]];
 

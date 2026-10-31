@@ -1,4 +1,4 @@
-// In page.evaluate callbacks declare no named functions: tsx's esbuild wraps them in __name(), which the page lacks.
+// No named functions in page.evaluate: tsx wraps them in __name(), which the page lacks.
 import { chromium, devices, type BrowserContextOptions, type Page } from 'playwright';
 import type { CityData, Sign } from '../../src/world/cityData.ts';
 

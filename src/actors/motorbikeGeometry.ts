@@ -1,4 +1,4 @@
-// Rider poses are baked from this (tools/assets/people/bake.ts): re-bake after changing it.
+// Rider poses are baked from this (tools/assets/people/bake.ts): re-bake on change.
 export interface RideGeometry {
   wheelRadius: number;
   rearX: number;

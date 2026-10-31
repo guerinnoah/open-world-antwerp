@@ -11,7 +11,7 @@ beforeAll(async () => {
   await RAPIER.init();
 });
 
-// Desktops step physics at 60 Hz, phones at 30: the car must feel the same at both.
+// desktops step physics at 60 Hz, phones at 30
 describe.each([60, 30])('vehicle feel at %i Hz', (hz) => {
   const setup = (speed = 0) => testDrive(sedan, 1 / hz, speed);
   it('pulls away at a realistic pace: 0–50 km/h under 4.5 s, 0–100 km/h under 9 s', () => {

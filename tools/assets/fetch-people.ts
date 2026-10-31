@@ -6,7 +6,7 @@ interface Avatar {
   european: boolean;
 }
 
-/** Antwerp residents 2023: 59.6% Belgian, neighbouring or EU background. Order is load priority (Crowd.load). */
+// Antwerp 2023: 59.6% Belgian, neighbouring or EU background; order = load priority (Crowd.load)
 export const ROSTER: Avatar[] = [
   { name: 'Female_Adult_01', weight: 9, european: true },
   { name: 'Male_Adult_08', weight: 9, european: true },
@@ -58,7 +58,7 @@ for (const { name } of ROSTER) {
   await mkdir(dir, { recursive: true });
   const base = `${/_(Adult|Party)_/.test(name) ? 'Adults' : 'Professions'}/${name}`;
   await download(`${RAW}/Avatars/${base}/Export/${name}.fbx`, `${dir}/${name}.fbx`);
-  if ((await readdir(dir)).some((f) => f.endsWith('_body_color.tga'))) continue; // spares the 60/h API limit: bake-people imports this file
+  if ((await readdir(dir)).some((f) => f.endsWith('_body_color.tga'))) continue; // 60/h API limit, and bake-people imports this file
   const files = (await (await fetch(`${API}/Avatars/${base}/Textures`, ua)).json()) as { name: string }[];
   for (const f of files.filter((f) => /_color\.tga$/i.test(f.name))) {
     await download(`${RAW}/Avatars/${base}/Textures/${f.name}`, `${dir}/${f.name}`);

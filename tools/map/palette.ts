@@ -1,6 +1,6 @@
 import type { WallMaterial } from '../../src/world/cityData.ts';
 
-// Average colours as they read on Antwerp streets (sRGB), weighted by how common each is.
+// sRGB as seen on Antwerp streets, weighted by frequency
 type Swatches = [weight: number, colour: number][];
 
 const RENDER: Swatches = [
@@ -36,7 +36,6 @@ function pick(list: Swatches, r: number): number {
   return list[list.length - 1][1];
 }
 
-/** rand(salt) must be stable per OSM element, so rebuilds give every building the same look. */
 export function facadeOf(
   t: Record<string, string>, height: number, area: number, oldTown: boolean, rand: (salt: number) => number,
 ): { c: number; r: number; m?: WallMaterial } {
@@ -54,7 +53,7 @@ export function facadeOf(
   else if (SHEDS.has(kind)) [m, walls] = roll < 0.3 ? [1, RED_BRICK] : [0, CONCRETE];
   else if (height >= 30) [m, walls] = roll < 0.6 ? [0, CONCRETE] : [3, ASHLAR];
   else {
-    // Old town: rendered gables and stone; outside it the 19th- and 20th-century brick belt.
+    // old town: render and stone; outside, the 19th–20th-century brick belt
     const ashlar = (oldTown ? 0.14 : 0.06) + (area > 600 ? 0.12 : 0);
     const brick = oldTown ? 0.33 : 0.38, yellow = oldTown ? 0.08 : 0.14;
     [m, walls] = roll < ashlar ? [3, ASHLAR] : roll < ashlar + brick ? [1, RED_BRICK] : roll < ashlar + brick + yellow ? [2, YELLOW_BRICK] : [0, RENDER];

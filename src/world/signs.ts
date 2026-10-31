@@ -7,12 +7,12 @@ import { facadeStyle } from './facadeLayout';
 
 const ATLAS = 2048;
 const MAX_CELLS = 8;
-const CELL_W = 128, CELL_H = 64; // px per atlas cell; a name takes 1–MAX_CELLS cells side by side in a row
+const CELL_W = 128, CELL_H = 64; // px; a name spans 1–MAX_CELLS cells in a row
 const COLS = ATLAS / CELL_W, ROWS = ATLAS / CELL_H;
 const GRID = 50;
-const NEW_PER_REFRESH = 10; // names drawn per refresh, to keep frame times even while driving
+const NEW_PER_REFRESH = 10; // per refresh, to keep frame times even while driving
 const CAPACITY = 2000;
-const LOGO_SIGN_H = 0.75; // m; the logo is 3/4 of it, as tools/map/signs.ts sizes it
+const LOGO_SIGN_H = 0.75; // m; logo is 3/4 of it, as tools/map/signs.ts sizes it
 
 interface Look {
   bg: string;
@@ -196,7 +196,6 @@ export class Signs {
       this.grid.set(key, [...(this.grid.get(key) ?? []), p]);
     }
 
-    // The atlas lives only on the GPU: allocated empty, names copied in as they come into range.
     this.atlas = new THREE.DataTexture(null, ATLAS, ATLAS);
     this.atlas.source.dataReady = false;
     this.atlas.colorSpace = THREE.SRGBColorSpace;
@@ -217,7 +216,7 @@ export class Signs {
     }
 
     const geometry = panelGeometry();
-    // Per face: atlas offset and size of its name; size 0 = plain colour, negative v size = text running down.
+    // Atlas offset and size; size 0 = plain colour, negative v size = text running down.
     this.slotAttr = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY * 4), 4);
     geometry.setAttribute('iSlot', this.slotAttr);
     const material = new THREE.MeshStandardMaterial({ map: this.atlas, roughness: 0.55 });
@@ -232,7 +231,7 @@ export class Signs {
           `if (vFaceUv.x < -0.5) {
             diffuseColor.rgb = vec3(0.03);
           } else if (vSlot.z > 0.0) {
-            // The atlas is uploaded top row first; vertical signs (w < 0) read their slot turned a quarter clockwise.
+            // Atlas uploads top row first; vertical signs (w < 0) read their slot a quarter turn clockwise.
             vec2 f = vSlot.w < 0.0 ? vec2(1.0 - vFaceUv.y, 1.0 - vFaceUv.x) : vec2(vFaceUv.x, 1.0 - vFaceUv.y);
             diffuseColor.rgb = texture2D(map, vSlot.xy + f * vec2(vSlot.z, abs(vSlot.w))).rgb;
           }`,
@@ -279,7 +278,7 @@ export class Signs {
     if (!len) return null;
     const ux = (bx - ax) / len, uz = (bz - az) / len;
     const nx = uz, nz = -ux;
-    // Same wall push as buildings.ts (+2 cm) and ground-floor height as the building shader.
+    // Same wall push (+2 cm) and ground-floor height as buildings.ts.
     const push = 0.01 + rand(b, 7) * 0.03 + 0.02;
     const groundH = facadeStyle(rand(b, 5)).groundH;
     const wx = ax + (bx - ax) * t, wz = az + (bz - az) * t;
@@ -424,7 +423,6 @@ export class Signs {
       c.fillText(f.text, (x0 + x1) / 2, H / 2 + 2);
     }
     const [sx, sy] = cellOrigin(cell);
-    // Mipmaps (no shimmer on distant names) are rebuilt once, after the last name of a refresh.
     this.atlas.generateMipmaps = last;
     this.renderer.copyTextureToTexture(this.scratchTexture, this.atlas, new THREE.Box2(new THREE.Vector2(0, 0), new THREE.Vector2(w, H)), new THREE.Vector2(sx, sy));
     this.atlas.generateMipmaps = true;

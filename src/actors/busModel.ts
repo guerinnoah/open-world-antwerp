@@ -10,7 +10,7 @@ export type BusKind = 'solo' | 'lead' | 'trailer';
 export const KINDS: BusKind[] = ['solo', 'lead', 'trailer'];
 export const LAYOUTS: BusKind[][] = [['solo'], ['lead', 'trailer']];
 export const SECTION_LENGTH: Record<BusKind, number> = { solo: 12, lead: 11, trailer: 6.6 };
-/** Each section's axles, in from its front and rear ends (m). A trailer's front "axle" is the hitch. */
+/** Axles in from each section's ends (m); a trailer's front "axle" is the hitch. */
 export const AXLES: Record<BusKind, [number, number]> = { solo: [2.7, 3.4], lead: [2.7, 1.8], trailer: [0, 2.6] };
 export const BUS_WIDTH = 2.55;
 

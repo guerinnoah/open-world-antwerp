@@ -2,12 +2,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { BBOX, RAW_DIR } from './config.ts';
 import { latLonToLambert72 } from './lambert72.ts';
 
-// Antwerp's public tree inventory (Groeninventaris "boom", layer 5): every city-managed tree, as EPSG:31370 points.
-// Fields LATBOOMSOORT (species) / GENUS / STAMOMTREK (trunk girth) exist, but we only need positions for city.trees.
+// Antwerp's Groeninventaris "boom" layer: LATBOOMSOORT = species, STAMOMTREK = trunk girth
 const LAYER = 'https://geodata.antwerpen.be/arcgissql/rest/services/P_Groeninventaris/Groeninventaris_extern/MapServer/5/query';
 const PAGE = 1000; // the service's maxRecordCount
 
-// Our slice as a Lambert 72 envelope (x = easting, y = northing); take the min/max of all four projected corners.
 const corners = [
   latLonToLambert72(BBOX.south, BBOX.west),
   latLonToLambert72(BBOX.south, BBOX.east),
@@ -30,7 +28,7 @@ async function page(offset: number): Promise<GeoJSON.Feature[]> {
   return json.features ?? [];
 }
 
-// [lat, lon, Latin species, trunk girth in cm] — build.ts maps the species to a crown type and the girth to a size.
+// [lat, lon, Latin species, girth cm]; build.ts maps them to crown and size
 const trees: [number, number, string | null, number][] = [];
 const genus = new Map<string, number>();
 for (let offset = 0; ; offset += PAGE) {

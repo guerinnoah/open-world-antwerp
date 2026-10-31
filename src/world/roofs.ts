@@ -3,7 +3,7 @@ import type { Building } from './cityData';
 
 export interface RoofPlan {
   kind: 'gable' | 'stepped' | 'hip';
-  /** Eaves height (m), where the walls stop; the GRB 3D height is roughly the ridge, so the roof climbs to it. */
+  /** Eaves (m); the GRB 3D height is roughly the ridge. */
   eaves: number;
   ridge: number;
   cx: number;
@@ -63,7 +63,7 @@ export function addRoof(out: MeshArrays, plan: RoofPlan, wallSurface: Surface, r
   const slope = Math.atan2(ridge - eaves, hw);
   const roof: Paint = { ...roofSurface, windows: false, uv: (p) => [p[0] * ux + p[2] * uz, p[1] / Math.sin(slope)] };
   const acrossRidge: Paint = { ...roofSurface, windows: false, uv: (p) => [p[0] * vx + p[2] * vz, p[1] / Math.sin(slope)] };
-  // Gable ends carry on the wall material and windows: +5000 keeps u positive, top -1 = no cornice.
+  // +5000 keeps u positive; top -1 = no cornice.
   const wall: Paint = {
     ...wallSurface, windows: true, uv: (p) => [p[0] * vx + p[2] * vz + 5000, p[1]],
     facade: (p) => [(p[0] - cx) * vx + (p[2] - cz) * vz + hw, W, -1, seed],
@@ -78,7 +78,7 @@ export function addRoof(out: MeshArrays, plan: RoofPlan, wallSurface: Surface, r
     return;
   }
 
-  const e = plan.kind === 'stepped' ? 0 : o; // stepped gables rise above the roof: no overhang at the ends
+  const e = plan.kind === 'stepped' ? 0 : o; // stepped gables rise above the roof
   quad(out, at(-hl - e, hw + o, eaves - 0.2), at(hl + e, hw + o, eaves - 0.2), at(hl + e, 0, ridge), at(-hl - e, 0, ridge), roof, centre);
   quad(out, at(hl + e, -hw - o, eaves - 0.2), at(-hl - e, -hw - o, eaves - 0.2), at(-hl - e, 0, ridge), at(hl + e, 0, ridge), roof, centre);
   for (const end of [-1, 1]) {
@@ -192,7 +192,7 @@ function ringArea(ring: number[]): number {
   return a / 2;
 }
 
-/** Stable pseudo-random in [0, 1) from a position, so the city comes out the same on every load. */
+/** In [0, 1), stable so the city is the same on every load. */
 export function hash(x: number, z: number, salt = 0): number {
   const s = Math.sin(x * 12.9898 + z * 78.233 + salt * 37.719) * 43758.5453;
   return s - Math.floor(s);

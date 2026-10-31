@@ -7,10 +7,12 @@ import { Pedestrians, type Ped } from '../actors/pedestrians';
 import { MAX_HEALTH, PLAYER_LOOK, Player, TRAM_EXPOSURE, crashHurt, exposure } from '../actors/player';
 import type { Motorbikes } from '../actors/motorbikes';
 import { BRANDS, brandOf, type Parked, type Scooters } from '../actors/scooters';
-import { Traffic } from '../actors/traffic';
+import { Traffic, type Suspect } from '../actors/traffic';
 import { TRAM_WIDTH } from '../actors/tramModel';
 import { Trams, type Tram } from '../actors/trams';
-import { BIKE_SPEC, SCOOTER_SPEC, VEHICLE_TYPES, Vehicle, isBus, isEmergency, isMotorbike, isTruck, paintFor, twoWheeled, type VehicleSpec } from '../actors/vehicle';
+import {
+  BIKE_SPEC, SCOOTER_SPEC, VEHICLE_NAMES, VEHICLE_TYPES, Vehicle, isBus, isEmergency, isMotorbike, isPolice, isTruck, paintFor, twoWheeled, type VehicleSpec,
+} from '../actors/vehicle';
 import { VehicleRenderer } from '../actors/vehicleModels';
 import type { Input, InputState } from '../core/input';
 import { mulberry32, pick } from '../core/util';
@@ -24,15 +26,18 @@ import { WorldMap } from '../ui/worldMap';
 import type { Breakables } from '../world/breakables';
 import type { CityData, GraphData } from '../world/cityData';
 import { antwerpClock } from '../world/daylight';
+import type { Districts } from '../world/districts';
 import type { Interiors } from '../world/interiors';
-import { NavGraph } from '../world/navGraph';
+import { NavGraph, kerbside } from '../world/navGraph';
+import { project } from '../world/projection';
 import type { Door } from '../world/signs';
 import { TRAM_HALF, trackTest } from '../world/trackClearance';
 import { WaterMap } from '../world/water';
 import { CameraRig } from './cameraRig';
-import { Gps } from './gps';
+import { Gps, Router, snap } from './gps';
+import { MAX_STARS, Wanted } from './wanted';
 
-/** Where the player starts: local metres and facing (Rapier angle). */
+/** Local metres; yaw is a Rapier angle. */
 export interface Start {
   x: number;
   z: number;
@@ -43,15 +48,17 @@ export interface Start {
 export const CENTRAAL_START: Start = { x: 1491, z: 372, yaw: Math.PI, intro: true };
 export const GROTE_MARKT_START: Start = { x: 12, z: 2, yaw: -3.09, intro: false };
 const ENTER_RANGE = 3.2;
-const STEAL_RANGE = 2.6; // m, centre to centre: close enough to pull a cyclist off as they pass
+const STEAL_RANGE = 2.6; // m, centre to centre
 const IDLE: InputState = { steer: 0, throttle: 0, handbrake: false, sprint: false, lookX: 0, lookY: 0, action: false, horn: false, punch: false, siren: false, view: false };
-const TRAM_EXIT_SPEED = 3; // m/s: fastest a tram can go for the driver to step out
-const PUNCH_SEEK = 2.2; // m, centre to centre: the player turns to face someone this close
-const PUNCH_REACH = 1.4; // m: how far the fist reaches
-const FLOAT_DEPTH = 0.5; // m: how deep whatever you're driving floats in water
+const TRAM_EXIT_SPEED = 3; // m/s
+const PUNCH_SEEK = 2.2; // m, centre to centre
+const PUNCH_REACH = 1.4; // m
+const FLOAT_DEPTH = 0.5; // m
 const WASTED_TIME = 4.5; // s
-const CRASH_SETTLE = 0.1; // s without a hit before the next one is a new crash
+const CRASH_SETTLE = 0.1; // s between separate crashes
 const DEAD: InputState = { ...IDLE, handbrake: true };
+const POLICE_HQ = { lat: 51.2149, lon: 4.40495 }; // the Oudaan police tower, OSM node 13374230906
+const DISTRICT_REPEAT = 20; // s
 
 export interface Population {
   traffic: number;
@@ -91,13 +98,22 @@ export class Game {
   private street = { name: '', timer: 0 };
   private intro: { t: number; from: THREE.Vector3; look: THREE.Vector3 } | null = null;
   multiplayer: Multiplayer | null = null;
+  readonly wanted = new Wanted();
+  private busted = false;
+  private policeStation: [number, number, number];
+  private chaseRouter: Router;
+  private suspect: Suspect = { x: 0, z: 0, vx: 0, vz: 0, speed: 0, ram: false, hidden: false, car: null };
+  private startStars = 0; // ?wanted=N, held until play starts
+  private stolenPolice = new WeakSet<Vehicle>(); // getting back in isn't a fresh theft
+  private districts: Districts | null = null;
+  private district = { name: '', timer: 0, shown: new Map<string, number>() };
   private hornHeld = false;
   private carTipShown = false;
   private rideStart = { x: 0, z: 0 };
   private hospital: [number, number, number];
   private wasted = 0; // s left
   private crash = { dv: 0, quiet: Infinity }; // m/s lost so far, s since the last hit
-  /** Going in: the screen goes black for a frame first, so building the room doesn't show as a freeze. */
+  /** Black for a frame first, so building the room doesn't show as a freeze. */
   private entering: { door: Door; from: { x: number; z: number }; frames: number } | null = null;
 
   constructor(
@@ -123,12 +139,15 @@ export class Game {
     this.drive = new NavGraph(graph.drive, true);
     const walk = new NavGraph(graph.walk, false);
     this.gps = new Gps(this.drive, walk);
+    this.chaseRouter = new Router(this.drive);
     this.worldMap = new WorldMap(city, this.gps, this.drive, input.touch);
 
     this.player = new Player(physics.world, start.x, start.z);
     physics.owners.set(this.player.body.collider(0).handle, { kind: 'player', entity: this.player });
     this.player.heading = start.yaw;
     this.hospital = graph.hospital;
+    const [hx, hz] = project(POLICE_HQ.lat, POLICE_HQ.lon);
+    this.policeStation = kerbside(this.drive.edges, hx, hz) ?? this.hospital;
     this.rig = new CameraRig(camera, physics);
     this.rig.yaw = start.yaw;
     this.hud.viewToggle(() => this.toggleView());
@@ -141,7 +160,9 @@ export class Game {
     );
     this.cyclists = new Cyclists(physics, new NavGraph(graph.bike ?? { nodes: [], edges: [] }, true), crowd, population.cyclists, population.pedView);
     this.player.avatar = crowd.indexOf(PLAYER_LOOK);
-    const clock = antwerpClock(new URLSearchParams(location.search)); // trams/buses run on De Lijn's real schedule for this hour
+    const params = new URLSearchParams(location.search);
+    const clock = antwerpClock(params); // De Lijn's schedule for this hour
+    this.startStars = Math.min(MAX_STARS, Math.max(0, Math.floor(Number(params.get('wanted')) || 0)));
     this.trams = new Trams(physics, graph.trams, population.trams, graph.schedules, clock);
     this.buses = new Buses(physics, graph.buses, population.buses, this, graph.schedules, clock);
     this.renderer = new VehicleRenderer(population.parkedCars + population.traffic + 20, population.vehicleView);
@@ -164,6 +185,19 @@ export class Game {
 
   attachMultiplayer(multiplayer: Multiplayer) {
     this.multiplayer = multiplayer;
+  }
+
+  attachDistricts(districts: Districts) {
+    this.districts = districts;
+  }
+
+  route(x: number, z: number, heading: number, tx: number, tz: number): number[] | null {
+    const start = snap(this.drive, x, z, 60), goal = snap(this.drive, tx, tz, 120);
+    return (start && goal && this.chaseRouter.route(start, goal, true, heading, true)?.points) || null;
+  }
+
+  wet(x: number, z: number): boolean {
+    return this.water.contains(x, z);
   }
 
   get indoors(): boolean {
@@ -192,8 +226,7 @@ export class Game {
   }
 
   removeVehicle(v: Vehicle) {
-    // Once only: a car can be removed twice (a sinking car evicted by multiplayer, then by the sinking loop), and
-    // removing a Rapier body twice panics the wasm and breaks the physics world for good.
+    // Once only: a car can be removed twice (sunk, then evicted by multiplayer), and a second Rapier remove panics the wasm.
     const i = this.vehicles.indexOf(v);
     if (i < 0) return;
     this.vehicles.splice(i, 1);
@@ -288,7 +321,7 @@ export class Game {
       if (this.driving && isEmergency(this.driving.spec)) this.driving.siren = !this.driving.siren;
     }
     if (this.driving) {
-      // The pedal bike sprints on the rider's stamina; motor vehicles boost freely (and the rider's legs recover).
+      // The pedal bike sprints on stamina; motor vehicles boost freely.
       const pedalBike = this.driving.spec.name === 'bike';
       const pedalling = this.player.exert(pedalBike && input.sprint && input.throttle > 0.1, dt);
       this.driving.controls = { steer: input.steer, throttle: input.throttle, handbrake: input.handbrake, boost: pedalBike ? pedalling : input.sprint };
@@ -299,6 +332,7 @@ export class Game {
     if (this.player.landed) this.landPunch();
 
     const focus = this.focus;
+    this.traffic.pursue(this.wanted.units, this.wanted.level ? this.trackSuspect() : null);
     this.traffic.update(dt, focus.x, focus.z);
     this.peds.update(dt, focus.x, focus.z);
     this.cyclists.update(dt, focus.x, focus.z);
@@ -323,6 +357,9 @@ export class Game {
         const k = exposure(car);
         this.hurt(crashHurt(dv, k) - crashHurt(was, k));
         this.crash = { dv, quiet: 0 };
+        // Patrol cars only: in a chase the hit is as often theirs.
+        const cop = this.vehicles.find((v) => isPolice(v.spec) && this.traffic.has(v) && !this.traffic.police.includes(v) && Math.hypot(v.x - car.x, v.z - car.z) < (v.spec.length + car.spec.length) / 2 + 1);
+        if (cop && this.rammed(car, before, cop)) this.crime(cop.x, cop.z, true);
       }
     }
     if (this.tram) this.rideAlong(this.tram);
@@ -336,8 +373,58 @@ export class Game {
     this.checkWater(dt);
     if (this.wasted > 0) {
       if ((this.wasted -= dt) <= 0) this.respawn();
-    } else this.player.recover(dt);
+    } else {
+      this.player.recover(dt);
+      this.updateWanted(dt);
+    }
     this.steps++;
+  }
+
+  private trackSuspect(): Suspect {
+    const s = this.suspect, car = this.driving, tram = this.tram, t = car ?? this.player;
+    if (tram) {
+      const angle = tram.sections[0].rotation();
+      [s.vx, s.vz] = [Math.cos(angle) * tram.speed, Math.sin(angle) * tram.speed];
+    } else {
+      const v = t.body.linvel();
+      [s.vx, s.vz] = [v.x, v.y];
+    }
+    s.x = t.x;
+    s.z = t.z;
+    s.speed = this.wanted.speed;
+    // Two-wheelers get pulled over, not rammed; people on foot never.
+    s.ram = this.wanted.ramming && (!!tram || (!!car && !twoWheeled(car.spec)));
+    s.hidden = this.indoors;
+    s.car = car;
+    return s;
+  }
+
+  private updateWanted(dt: number) {
+    if (!this.wanted.level) return;
+    const s = this.suspect;
+    const still = this.player.down > 0 || Math.hypot(s.vx, s.vz) < 2.5; // m/s
+    const reachable = !this.indoors && !this.player.swimming && !this.driving?.afloat;
+    const outcome = this.wanted.update(dt, this.traffic.spotted, still && reachable && this.traffic.pinned(s.x, s.z));
+    if (outcome === 'busted') this.die(true);
+    else if (outcome === 'lost') this.hud.toast(pick(['You lost them.', 'Lost the police.', 'They gave up looking.']));
+  }
+
+  private crime(x: number, z: number, againstPolice = false) {
+    if (this.wasted > 0) return;
+    const first = !this.wanted.level, witnessed = againstPolice || this.traffic.witness(x, z);
+    if (witnessed || !first) this.traffic.reveal(x, z); // once wanted, every crime gives you away
+    if (this.wanted.crime(witnessed) && first) {
+      this.hud.toast(pick(['The police saw that! Get out of sight to lose them.', 'Politie! Lose them.', 'Wanted! Break their line of sight.']));
+    }
+  }
+
+  /** You into it, not it (or another one shoving you) into you. */
+  private rammed(car: Vehicle, before: { x: number; y: number }, cop: Vehicle): boolean {
+    if (this.state.throttle < 0.2) return false;
+    const dx = cop.x - car.x, dz = cop.z - car.z, d = Math.hypot(dx, dz) || 1;
+    const mine = (before.x * dx + before.y * dz) / d;
+    const v = cop.body.linvel(), theirs = -(v.x * dx + v.y * dz) / d;
+    return mine > 3 && mine > theirs;
   }
 
   private handleContacts(walking: { x: number; y: number } | null) {
@@ -373,12 +460,20 @@ export class Game {
         const bike = what.kind === 'cyclist' || (what.kind === 'vehicle' && twoWheeled((what.entity as Vehicle).spec));
         if (who.kind === 'cyclist') {
           const r = who.entity as Rider;
-          if (this.cyclists.hit(r, from.x, from.y, vx, vz, bike)) this.sound.bump(r.body.translation().x, r.body.translation().y);
+          if (this.cyclists.hit(r, from.x, from.y, vx, vz, bike)) {
+            const t = r.body.translation();
+            this.sound.bump(t.x, t.y);
+            if (what.entity === this.driving || what.entity === this.tram) this.crime(t.x, t.y);
+          }
           continue;
         }
         if (who.kind === 'ped' && speed > (bike ? 4.5 : 2.5)) {
           const ped = who.entity as Ped;
-          if (ped.state !== 'down') this.sound.bump(ped.body.translation().x, ped.body.translation().y);
+          if (ped.state !== 'down') {
+            const t = ped.body.translation();
+            this.sound.bump(t.x, t.y);
+            if (what.entity === this.driving || what.entity === this.tram) this.crime(t.x, t.y);
+          }
           this.peds.knockDown(ped, vx, vz, speed);
         }
         if (who.kind === 'player' && walking && this.player.down <= 0) {
@@ -409,22 +504,24 @@ export class Game {
     return other ? Math.min(impact, (Math.hypot(before.x, before.y) + Math.abs(other.animatedSpeed)) / 2) : impact;
   }
 
-  private die() {
+  private die(busted = false) {
+    this.busted = busted;
+    this.wanted.clear();
     this.wasted = WASTED_TIME;
     this.state = { ...DEAD };
-    this.hud.wasted(WASTED_TIME);
+    this.hud.wasted(WASTED_TIME, busted);
     this.worldMap.toggle(false);
     // Dying mid-doorway: cancel, else the next frame carries the body inside.
     if (this.entering) {
       this.entering = null;
       this.hud.fade();
     }
-    if (!this.driving && !this.tram) this.player.down = WASTED_TIME + 1;
+    if (!busted && !this.driving && !this.tram) this.player.down = WASTED_TIME + 1;
   }
 
   private respawn() {
     this.dismount();
-    const [x, z, heading] = this.hospital;
+    const [x, z, heading] = this.busted ? this.policeStation : this.hospital;
     this.player.place(x, z, heading);
     this.player.revive();
     this.traffic.update(0, x, z, true);
@@ -435,7 +532,10 @@ export class Game {
     this.rig.snap();
     this.hud.wasted(0);
     this.hud.fade();
-    this.hud.toast(pick(['Patched up at ZNA Sint-Elisabeth.', 'Discharged. Look both ways this time.', 'The nurses say: mind the trams.']));
+    this.hud.toast(pick(this.busted
+      ? ['Released from the Oudaan police tower.', 'Let off with a warning this time.', 'Statement taken. Free to go.']
+      : ['Patched up at ZNA Sint-Elisabeth.', 'Discharged. Look both ways this time.', 'The nurses say: mind the trams.']));
+    this.busted = false;
   }
 
   private throwPunch() {
@@ -452,12 +552,13 @@ export class Game {
     this.sound.punch(t.x, t.y);
     this.peds.knockDown(ped, t.x - p.x, t.y - p.z, 5);
     this.peds.scare(p.x, p.z, 20);
+    this.crime(t.x, t.y);
   }
 
   private knockThingsOver() {
     for (const v of this.vehicles) {
-      // Not traffic: AI drivers clip a post at many corners and would wreck the street. Bikes go round things.
-      if (!v.awake || v.sink > 0 || twoWheeled(v.spec) || this.traffic.has(v)) continue;
+      // Not traffic: AI drivers clip posts at corners and would wreck the street. Pursuers do; bikes go round.
+      if (!v.awake || v.sink > 0 || twoWheeled(v.spec) || (this.traffic.has(v) && !this.traffic.police.includes(v))) continue;
       this.breakables.touching(v.x, v.z, v.angle, v.spec.length / 2, v.spec.width / 2, (id) => this.knockOver(id, v));
       if (this.scooters.knock(v)) this.sound.knock(v.x, v.z, Math.abs(v.forwardSpeed), true);
     }
@@ -523,6 +624,10 @@ export class Game {
   }
 
   sampleInput() {
+    if (this.startStars) {
+      this.wanted.set(this.startStars);
+      this.startStars = 0;
+    }
     const s = this.input.sample();
     if (this.wasted > 0) {
       this.state = { ...DEAD };
@@ -547,7 +652,6 @@ export class Game {
     this.setFirstPerson(!this.rig.firstPerson);
   }
 
-  /** The actions available in the current context, for the on-screen controls list (keyboard). */
   private controlLines(): string[] {
     const common = ['V — Camera', 'P — Map', ...(this.multiplayer ? ['T — Chat'] : [])];
     const v = this.driving;
@@ -579,7 +683,7 @@ export class Game {
       const bike = twoWheeled(car.spec), bus = isBus(car.spec), moto = isMotorbike(car.spec), truck = isTruck(car.spec);
       const distance = bike ? 4.4 : moto ? 5 : bus ? (car.trailer ? 17 : 14) : 6.5 + Math.max(0, car.spec.length - 4.75) * 1.3;
       const height = bike || moto ? 1.5 : bus ? 3.4 : Math.max(1.4, (car.spec.height ?? 0) - 0.2);
-      // Camera at the front edge (body behind you): clear forward, nose only when you look down; bus/truck are solid so stay above their roof.
+      // Eye at the front edge; above the roof of a bus or truck, which are solid.
       const bigFront = bus || truck;
       const eye = bigFront ? height + 0.25 : bike || moto ? 1.5 : Math.max(1.1, height - 0.2);
       const eyeForward = bike || moto ? 0.3 : car.spec.length / 2 - 0.25;
@@ -592,7 +696,7 @@ export class Game {
       const tram = this.tram;
       const cab = this.trams.pose(tram, 0, alpha);
       const speed = Math.abs(tram.speed);
-      // At the front of the 7.2 m cab section (half = 3.6), just above the roof: clear track ahead, nose only when looking down.
+      // Eye at the front of the 7.2 m cab, just above the roof.
       this.rig.update({ x: cab.x, z: cab.z, height: 2.4, heading: cab.angle, speed, distance: 13 * zoom, eye: 3.1, eyeForward: 3.35 }, dt);
       this.hud.setSpeed(speed * 3.6);
       const end = tram.s >= tram.run.len - 0.5 || tram.s <= tram.length + 0.5;
@@ -619,9 +723,11 @@ export class Game {
     const motor = car && !twoWheeled(car.spec) ? car : null;
     this.hud.setHealth(this.player.health / MAX_HEALTH);
     this.hud.setStamina(this.player.stamina);
+    this.hud.setWanted(this.wanted.level, this.wanted.searching);
+    if (!this.indoors) this.updateDistrict(t.x, t.z, dt);
     if (!this.input.touch) this.hud.setControls(this.controlLines()); // touch shows on-screen buttons instead
     if (this.gps.update(t.x, t.z, dt, !!motor, motor ? motor.angle : null)) this.hud.toast('You have arrived');
-    this.minimap.update(t.x, t.z, this.rig.yaw, heading, this.multiplayer?.others, this.gps);
+    this.minimap.update(t.x, t.z, this.rig.yaw, heading, this.multiplayer?.others, this.gps, this.traffic.police);
     this.worldMap.update(t.x, t.z, heading, this.multiplayer?.others);
     const camera = this.rig.camera.position;
     this.sound.listen(camera.x, camera.z, this.rig.yaw);
@@ -693,6 +799,20 @@ export class Game {
     const name = near ? (this.drive.edges[near.edge].n ?? '') : '';
     if (name && name !== this.street.name) this.hud.setStreet(name);
     if (name) this.street.name = name;
+  }
+
+  private updateDistrict(x: number, z: number, dt: number) {
+    const d = this.district;
+    // Not under the title card or fly-in, so the first name is seen.
+    if (!this.districts || this.intro || document.body.classList.contains('on-title') || (d.timer -= dt) > 0) return;
+    d.timer = 0.5;
+    const name = this.districts.at(x, z);
+    if (!name || name === d.name) return;
+    d.name = name;
+    const now = performance.now();
+    if (now - (d.shown.get(name) ?? -Infinity) < DISTRICT_REPEAT * 1000) return;
+    d.shown.set(name, now);
+    this.hud.setDistrict(name);
   }
 
   get focus(): THREE.Vector3 {
@@ -807,6 +927,7 @@ export class Game {
     const owner = this.peds.spawnFleeing(b.x - s * 0.9, b.z + c * 0.9, b.avatar);
     this.peds.knockDown(owner, -s, c, 3);
     this.sound.bump(b.x, b.z);
+    this.crime(b.x, b.z);
     this.mount(bike, pick(['Hé, mijn fiets!', 'Sorry, I need this more.', "That's my bike now.", 'Fietsdief!']));
     this.rig.yaw = b.heading;
   }
@@ -817,12 +938,18 @@ export class Game {
     return this.bikes.emptyDockNear(bike.x, bike.z);
   }
 
-  private takeWheel(v: Vehicle) {
+  private takeWheel(v: Vehicle, name = this.vehicleName(v)) {
+    this.hud.setVehicle(name);
     this.driving = v;
     this.input.seat = isEmergency(v.spec) ? 'emergency' : 'vehicle';
     v.driven = true;
     v.body.wakeUp();
     this.player.hide();
+  }
+
+  private vehicleName(v: Vehicle): string {
+    if (isVelo(v)) return 'Velo';
+    return v.spec.name === 'scooter' ? BRANDS[brandOf(v.colour)].name : VEHICLE_NAMES[v.spec.name];
   }
 
   private dismount() {
@@ -893,7 +1020,10 @@ export class Game {
       return;
     }
     let toast: string;
-    if (this.traffic.has(v)) {
+    const jacked = this.traffic.has(v), police = isPolice(v.spec) && !this.stolenPolice.has(v);
+    if (jacked || police) this.crime(v.x, v.z, police);
+    if (police) this.stolenPolice.add(v);
+    if (jacked) {
       this.traffic.release(v);
       const c = Math.cos(v.angle), s = Math.sin(v.angle);
       this.peds.spawnFleeing(v.x + s * (v.spec.width / 2 + 0.8), v.z - c * (v.spec.width / 2 + 0.8));
@@ -921,7 +1051,8 @@ export class Game {
     const ahead = v.spec.length / 2 - 1.5, side = v.spec.width / 2 + 0.8;
     this.peds.spawnFleeing(v.x + c * ahead + s * side, v.z + s * ahead - c * side);
     this.hud.toast(pick([`Line ${b.run.line} is out of service.`, 'Next stop: wherever you like.', 'Tickets, please!', 'De Lijn is hiring.']));
-    this.takeWheel(v);
+    this.crime(v.x, v.z);
+    this.takeWheel(v, `Bus ${b.run.line}`);
     this.rig.yaw = v.angle;
     this.sound.engineOn('bus');
   }
@@ -961,6 +1092,7 @@ export class Game {
   private boardTram(t: Tram) {
     this.trams.board(t);
     this.tram = t;
+    this.hud.setVehicle(`Tram ${t.run.line}`);
     this.input.seat = 'vehicle';
     this.player.hide();
     this.rideAlong(t);

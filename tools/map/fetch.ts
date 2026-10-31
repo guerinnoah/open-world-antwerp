@@ -50,10 +50,9 @@ const res = await fetch(ENDPOINT, {
 if (!res.ok) throw new Error(`Overpass ${res.status}: ${(await res.text()).slice(0, 500)}`);
 const text = await res.text();
 const { elements, remark } = JSON.parse(text) as { elements: unknown[]; remark?: string };
-// Timeouts and out-of-memory aborts come back as HTTP 200 with a partial element list and a remark saying so.
+// Overpass timeouts and OOM aborts return HTTP 200 with partial elements and a remark
 if (remark && /error|timed out|out of memory/i.test(remark)) throw new Error(`Overpass: ${remark}`);
 
-// Write then rename, so an interrupted run never leaves a truncated osm.json behind.
 await mkdir(RAW_DIR, { recursive: true });
 await writeFile(`${RAW_DIR}/osm.json.tmp`, text);
 await rename(`${RAW_DIR}/osm.json.tmp`, `${RAW_DIR}/osm.json`);

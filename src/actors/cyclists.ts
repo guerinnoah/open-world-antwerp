@@ -18,15 +18,15 @@ const MASS = 95; // kg, bike and rider
 const ACCEL = 0.9; // m/s²
 const BRAKE = 3.5; // m/s²
 const CORNER = 3; // m/s round a right angle
-const AHEAD = 40; // m of route planned ahead
-const MIN_COMPONENT = 1000; // m of connected network to spawn on: islands of path stay empty
-const PASS_MARGIN = 0.35; // m between a rider and what they ride round
-const KNOCK = 5.5; // m/s closing speed that throws a rider off
-// Not walls or posts while riding: the routes keep clear of them, and a corner clipped by the map would wedge a rider for good.
+const AHEAD = 40;
+const MIN_COMPONENT = 1000; // m; smaller path islands stay empty
+const PASS_MARGIN = 0.35;
+const KNOCK = 5.5; // m/s closing speed
+// no STATIC: routes avoid walls, and a clipped corner would wedge a rider
 const RIDING = groups(GROUP.BIKE, WHEELS | GROUP.PED);
-const FALLEN = groups(GROUP.BIKE, GROUP.STATIC | GROUP.PED); // no WHEELS: a fallen rider isn't dragged along by the car
+const FALLEN = groups(GROUP.BIKE, GROUP.STATIC | GROUP.PED); // no WHEELS: cars don't drag fallen riders
 
-const STAND_LEAN = 0.1; // rad, a bike left on its stand
+const STAND_LEAN = 0.1;
 const PAINTS = [0x1b1c1e, 0x1b1c1e, 0x1b1c1e, 0x2d3034, 0x1d2b45, 0x23402f, 0x5a1f24, 0xd9d2c0, 0x7fa7c9, 0x8c8f93, 0x3a5a7a, 0xa8463b];
 
 const R = BIKE.wheelRadius;
@@ -36,7 +36,7 @@ const HEAD_TOP: V3 = [0.36, 0.86, 0], HEAD_BOTTOM: V3 = [0.42, 0.66, 0];
 const SEAT = new THREE.Vector2(...BIKE.seatTube).normalize();
 const onSeatTube = (t: number): V3 => [BB[0] + SEAT.x * t, BB[1] + SEAT.y * t, 0];
 const SEAT_TOP = onSeatTube(0.5);
-const SADDLE = 0.92; // m: the seat mesh's saddle height, slid up the seat tube to each rider's
+const SADDLE = 0.92; // m, the mesh's saddle height
 const BLACK = 0x151515, DARK = 0x2a2b2e, SILVER = 0xb9bdc1;
 
 const lerp3 = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -44,7 +44,6 @@ const tube = (a: V3, b: V3, r: number, hex = 0xffffff) => coloured(rod(a, b, r, 
 const box = (c: V3, size: V3, hex: number, rz = 0) => coloured(block(c, size, rz), hex);
 const mudguard = (start: number, arc: number) => coloured(new THREE.TorusGeometry(R + 0.03, 0.014, 3, 12, arc).scale(1, 1, 3.2).rotateZ(start), 0xffffff);
 
-/** White, so the instance colour is the paint. `open` = step-through. */
 function frameGeometry(open: boolean): THREE.BufferGeometry {
   const head = (k: number) => lerp3(HEAD_BOTTOM, HEAD_TOP, k);
   const low: V3 = [0.12, 0.38, 0];
@@ -92,7 +91,7 @@ function wheelGeometry(): THREE.BufferGeometry {
   ]);
 }
 
-/** Same layout as the Velo bike's (bikes.ts): the baked 'ride' clip's feet follow it. */
+/** Matches bikes.ts: the baked 'ride' clip's feet follow it. */
 function crankGeometry(): THREE.BufferGeometry {
   const c = BIKE.crank;
   return mergeGeometries([
@@ -106,7 +105,7 @@ function crankGeometry(): THREE.BufferGeometry {
 
 export interface Rider {
   body: RAPIER.RigidBody;
-  pts: number[]; // flat [x, z, …] of the route ahead; `caps` and `i` index points
+  pts: number[]; // flat [x, z, …]; caps and i index points
   caps: number[];
   i: number;
   last: Step;
@@ -118,14 +117,13 @@ export interface Rider {
   pedals: number; // crank turns
   spin: number;
   avatar: number;
-  /** Paint (sRGB); odd = step-through frame, so a stolen bike's vehicle colour carries its look, over the network too. */
-  colour: number;
-  down: number; // s left lying in the road
+  colour: number; // sRGB; odd = step-through, so the look survives theft and the network
+  down: number; // s left lying
   fall: number;
-  lie: number; // m from the bike to the fallen rider, short of any wall
+  lie: number; // m, bike to fallen rider
   stuck: number;
   wedged: number;
-  bold: number; // s left pushing through whatever is in the way
+  bold: number; // s left pushing through
   pull: number; // m off the route, + = right
   passing: { collider: RAPIER.Collider; pull: number; timer: number } | null;
   bell: number;
@@ -164,7 +162,7 @@ export class Cyclists {
   ) {
     this.group.name = 'cyclists';
     this.spawnable = this.mainNetwork();
-    const capacity = target + 32; // room for bikes stolen and left standing
+    const capacity = target + 32; // + stolen bikes left standing
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.25 });
     const mesh = (g: THREE.BufferGeometry, count: number) => {
       const m = new THREE.InstancedMesh(g, material, count);
@@ -227,7 +225,6 @@ export class Cyclists {
     this.riders.splice(this.riders.indexOf(r), 1);
   }
 
-  /** Nearest rider within `range` m, on the bike or knocked off it. */
   nearest(x: number, z: number, range: number): Rider | null {
     let best: Rider | null = null;
     for (const r of this.riders) {
@@ -240,7 +237,6 @@ export class Cyclists {
     return best;
   }
 
-  /** Takes the bike from its rider, who drops out of the traffic: where it is, how fast it's going, and who rode it. */
   steal(r: Rider): { x: number; z: number; heading: number; speed: number; colour: number; avatar: number } {
     const t = r.body.translation();
     const taken = { x: t.x, z: t.y, heading: r.heading, speed: r.down > 0 ? 0 : r.speed, colour: r.colour, avatar: r.avatar };
@@ -248,9 +244,9 @@ export class Cyclists {
     return taken;
   }
 
-  /** (vx, vz) in m/s; true if it threw the rider off. */
+  /** (vx, vz) in m/s; true if the rider fell. */
   hit(r: Rider, x: number, z: number, vx: number, vz: number, light: boolean): boolean {
-    // Our own velocity as we rode into it: the body's is already after the shove.
+    // pre-shove velocity: the body's is already after it
     const t = r.body.translation(), ox = Math.cos(r.heading) * r.speed, oz = Math.sin(r.heading) * r.speed;
     const dx = t.x - x, dz = t.y - z, d = Math.hypot(dx, dz) || 1;
     const closing = ((vx - ox) * dx + (vz - oz) * dz) / d;
@@ -265,7 +261,6 @@ export class Cyclists {
     r.fall = Math.atan2(dz, dx);
     r.speed = 0;
     r.passing = null;
-    // The bike goes over away from the blow.
     r.roll = Math.sin(r.fall - r.heading) >= 0 ? 0.3 : -0.3;
     const len = Math.hypot(dx, dz) || 1, fling = Math.min(speed * 0.5, 6);
     r.body.collider(0).setCollisionGroups(FALLEN);
@@ -276,7 +271,7 @@ export class Cyclists {
   private lane(step: Step): { pts: number[]; cap: number } {
     const e = this.graph.edges[step.edge];
     const off = e.l ?? 0;
-    // Cut back by the offset at both ends, so turns meet the next street's lane instead of overshooting the kerb.
+    // trim by the offset so turns meet the next lane, not the kerb
     return { pts: trimPolyline(this.graph.lane(step, off), Math.min(off, 4), Math.min(off, 4)), cap: e.s };
   }
 
@@ -396,7 +391,6 @@ export class Cyclists {
     }
     const fx = Math.cos(r.heading), fz = Math.sin(r.heading);
     const forward = v.x * fx + v.y * fz;
-    // Something solid stopped us: carry on from the speed we really have.
     if (forward < r.speed - 1) r.speed = Math.max(0, forward + 0.5);
 
     const look = 1.5 + r.speed * 0.45;
@@ -456,7 +450,7 @@ export class Cyclists {
     if (r.speed >= was - 0.01 && r.speed > 0.3) r.pedals += (r.speed * dt) / BIKE.development;
     r.spin += (r.speed * dt) / R;
 
-    // No tighter than a ~2 m radius, so it leans into bends rather than pivoting.
+    // >= ~2 m radius, so it leans rather than pivots
     const maxTurn = (r.speed + 0.6) / 2.2;
     const yaw = Math.max(-maxTurn, Math.min(maxTurn, err * 3.5));
     r.heading = wrapAngle(r.heading + yaw * dt);
@@ -468,7 +462,6 @@ export class Cyclists {
     r.body.setLinvel({ x: v.x + (wx - v.x) * k, y: v.y + (wz - v.y) * k }, true);
   }
 
-  /** Gap ahead (m); may also start a pass round what's there. */
   private lookAhead(r: Rider, x: number, z: number, fx: number, fz: number): number {
     const len = 2.5 + r.speed * 1.2;
     const near: { gap: number; hit: RAPIER.Collider | null } = { gap: Infinity, hit: null };
@@ -481,7 +474,7 @@ export class Cyclists {
         if (collider === r.passing?.collider) return true;
         const p = collider.translation();
         const along = (p.x - x) * fx + (p.y - z) * fz;
-        // Alongside isn't in the way: two riders side by side would otherwise each wait for the other.
+        // alongside isn't ahead, else side-by-side riders deadlock
         if (along < 0.4) return true;
         const g = along - HALF_LENGTH - extent(collider, fx, fz);
         if (g < near.gap) {
@@ -513,7 +506,6 @@ export class Cyclists {
       const o = owner.entity as Rider;
       return o.down > 0 || o.speed < r.cruise - 1;
     }
-    // Parked cars, and traffic that has stood still a while; never one pulling away.
     if (owner.kind === 'vehicle') {
       const v = owner.entity as Vehicle;
       return !v.remote && Math.abs(v.forwardSpeed) < (v.driven ? (r.stuck > 2 ? 0.3 : -1) : 0.5);
@@ -528,7 +520,6 @@ export class Cyclists {
     const left = across - reach, right = across + reach;
     const v = hit.parent()?.linvel();
     const oncoming = !!v && v.x * fx + v.y * fz < -0.5;
-    // Overtake on the left, as traffic does, and keep right of whatever comes the other way; else the shorter way round.
     const rightFirst = oncoming || Math.abs(right) * 1.6 < Math.abs(left);
     for (const pull of rightFirst ? [right, left] : [left, right]) {
       if (Math.abs(pull) > 2.6) continue;
@@ -552,7 +543,7 @@ export class Cyclists {
     }
   }
 
-  /** False if there's no route near enough and the rider is gone. */
+  /** False if no route is near and the rider was removed. */
   private rejoin(r: Rider): boolean {
     const t = r.body.translation();
     const near = this.graph.nearest(t.x, t.y, 30);
@@ -575,7 +566,6 @@ export class Cyclists {
     return true;
   }
 
-  /** Riders, and the private bikes that are vehicles now: stolen and left standing, or ridden by the player or another player. */
   render(alpha: number, camera: THREE.Vector3, vehicles: Vehicle[], riding: Vehicle | null, avatar: number) {
     this.drawn = this.counts[0] = this.counts[1] = 0;
     for (const r of this.riders) {
@@ -597,7 +587,7 @@ export class Cyclists {
       if (Math.hypot(v.x - camera.x, v.z - camera.z) > this.view) continue;
       const m = ridePose(this.matrix, v, alpha, v === riding || v.remote ? v.roll : STAND_LEAN);
       if (!this.draw(m, v.colour, v === riding ? this.crowd.saddle(avatar) : SADDLE, v.wheelSpin, v.pedals)) break;
-      // Another player's rider comes with their avatar (net/multiplayer.ts).
+      // remote riders are drawn with their avatar (net/multiplayer.ts)
       if (v === riding) this.crowd.add(avatar, m, 'ride', v.pedals, Math.hypot(v.x - camera.x, v.z - camera.z));
     }
     for (const [k, frame] of this.frames.entries()) {
@@ -612,7 +602,6 @@ export class Cyclists {
     }
   }
 
-  /** One bike at `m`; false when there's no room left. */
   private draw(m: THREE.Matrix4, colour: number, saddle: number, spin: number, pedals: number): boolean {
     const n = this.drawn;
     if (n >= this.trim.instanceMatrix.count) return false;

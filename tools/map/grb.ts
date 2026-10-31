@@ -5,7 +5,7 @@ import { RAW_DIR } from './config.ts';
 import { interiorPoint, outlineGrid, pointInRing, project, signedArea, type Pt } from './geo.ts';
 import { lambert72ToLatLon } from './lambert72.ts';
 
-/** GRB LBLTYPE: 'hoofdgebouw' / 'bijgebouw' stand on the ground; 'afdak' is a canopy, 'verdieping' an upper floor jutting out. */
+/** GRB LBLTYPE: 'hoofdgebouw'/'bijgebouw' on the ground, 'afdak' canopy, 'verdieping' jutting upper floor. */
 export interface GrbFootprint {
   outer: Pt[];
   height: number;
@@ -15,13 +15,13 @@ export interface GrbFootprint {
 export interface GrbMatch {
   height: number;
   type: string;
-  /** Share of the OSM outline standing on ground-level GRB buildings; only worked out for 'verdieping'. */
+  /** Share of the outline on ground-level GRB; 'verdieping' only. */
   ground: number;
 }
 
 const RAISED = new Set(['afdak', 'verdieping']);
 
-/** OSM footprint → measured 3D GRB height; Flemish OSM outlines were imported from GRB, so most match one-to-one. */
+/** Flemish OSM outlines were imported from GRB, so most match one-to-one. */
 export async function loadGrbHeights(): Promise<((outer: Pt[]) => GrbMatch | undefined) | undefined> {
   const shp = `${RAW_DIR}/grb/buildings.shp`;
   if (!existsSync(shp)) {
@@ -32,7 +32,7 @@ export async function loadGrbHeights(): Promise<((outer: Pt[]) => GrbMatch | und
   const source = await shapefile.open(shp, `${RAW_DIR}/grb/buildings.dbf`);
   for (let r = await source.read(); !r.done; r = await source.read()) {
     const { geometry, properties } = r.value as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon, Record<string, unknown>>;
-    const height = properties.HN_P99 as number; // m above ground: LiDAR roof surface, 99th percentile ≈ ridge
+    const height = properties.HN_P99 as number; // m, LiDAR roof P99 ≈ ridge
     if (properties.H_KWAL === 'Slecht' || !(height > 2)) continue;
     const type = properties.LBLTYPE as string;
     const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
@@ -41,10 +41,7 @@ export async function loadGrbHeights(): Promise<((outer: Pt[]) => GrbMatch | und
   return grbMatcher(buildings);
 }
 
-/**
- * The GRB footprint under a point inside the OSM outline (not its vertex centroid, which an L- or U-shape leaves outside).
- * One a quarter or four times the outline's size is another building, whose height says nothing about this one.
- */
+/** A footprint under 1/4 or over 4× the outline's area is another building. */
 export function grbMatcher(buildings: GrbFootprint[]): (outer: Pt[]) => GrbMatch | undefined {
   const near = outlineGrid(buildings);
   const areas = new Map(buildings.map((g) => [g, Math.abs(signedArea(g.outer))]));

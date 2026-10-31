@@ -9,7 +9,7 @@ interface Route {
 
 interface Probed {
   collider: RAPIER.Collider;
-  gap: number; // to its near side, not its centre: measuring to a 7 m tram section's middle let followers drive into it
+  gap: number; // to its near side: to a 7 m section's middle, followers drove into it
   across: number;
   side: number;
   dx: number;
@@ -19,7 +19,7 @@ interface Probed {
 const STEP = 4;
 let box: RAPIER.Cuboid | null = null;
 
-/** Boxes along the route, so it sees round bends; stops after the first box where found() returned true (nothing beyond is nearer). */
+/** Boxes along the route to see round bends; stops at the first box where found() is true. */
 export function probeRoute(
   physics: Physics,
   route: Route,
@@ -39,7 +39,7 @@ export function probeRoute(
     const len = Math.min(STEP, look - a);
     const start = pointAt(route.p, route.cum, s0);
     const dx = start.dx * dir, dz = start.dz * dir;
-    // A little longer than the piece, so neighbouring boxes overlap on bends.
+    // longer than the piece, so boxes overlap on bends
     box.halfExtents = { x: len / 2 + 0.3, y: halfWidth };
     physics.world.intersectionsWithShape(
       { x: start.x + (dx * len) / 2, y: start.z + (dz * len) / 2 },
@@ -69,7 +69,6 @@ export function probeRoute(
   }
 }
 
-/** How far a collider reaches from its centre along the unit vector (ux, uz). */
 export function extent(collider: RAPIER.Collider, ux: number, uz: number): number {
   if (collider.shapeType() === RAPIER.ShapeType.Ball) return collider.radius();
   if (collider.shapeType() !== RAPIER.ShapeType.Cuboid) return 1;

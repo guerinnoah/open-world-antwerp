@@ -1,22 +1,18 @@
-// Real sun position over Antwerp and live weather, driving the day/night and sky in environment.ts.
-// URL overrides for demoing: ?time=HH (0–23, Antwerp local hour), ?weather=clear|cloudy|overcast|rain|storm, ?clouds=0..1&rain=0..1.
-
 export const ANTWERP = { lat: 51.2213, lon: 4.3997 };
 
 export interface SkyState {
-  elevation: number; // sun angle above the horizon, radians (negative at night)
-  azimuth: number; // compass bearing to the sun, radians clockwise from north
+  elevation: number; // rad above the horizon, negative at night
+  azimuth: number; // rad clockwise from north
   cloud: number; // 0 clear … 1 overcast
   rain: number; // 0 dry … 1 heavy
 }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-// Low-precision solar position (NOAA almanac), good to ~0.01° — plenty for lighting. Works off the absolute instant, so
-// the machine's own timezone is irrelevant; longitude places the sun correctly over Antwerp.
+// NOAA low-precision almanac (~0.01°); uses the absolute instant, so the machine's timezone is irrelevant.
 export function sunPosition(date: Date, lat = ANTWERP.lat, lon = ANTWERP.lon): { elevation: number; azimuth: number } {
   const rad = Math.PI / 180;
-  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0; // days since the J2000 epoch
+  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0; // days since J2000
   const meanLong = (280.46 + 0.9856474 * n) * rad;
   const meanAnom = (357.528 + 0.9856003 * n) * rad;
   const eclLong = meanLong + (1.915 * Math.sin(meanAnom) + 0.02 * Math.sin(2 * meanAnom)) * rad;
@@ -27,7 +23,7 @@ export function sunPosition(date: Date, lat = ANTWERP.lat, lon = ANTWERP.lon): {
   const hourAngle = gmst + lon * rad - ra;
   const latr = lat * rad;
   const elevation = Math.asin(Math.sin(latr) * Math.sin(dec) + Math.cos(latr) * Math.cos(dec) * Math.cos(hourAngle));
-  // atan2(...) is measured from south; + π gives a bearing from north, matching the game's azimuth convention.
+  // atan2 measures from south; + π gives a bearing from north.
   const azimuth = Math.atan2(Math.sin(hourAngle), Math.cos(hourAngle) * Math.sin(latr) - Math.tan(dec) * Math.cos(latr)) + Math.PI;
   return { elevation, azimuth };
 }
@@ -36,12 +32,11 @@ const antwerpParts = (date: Date, options: Intl.DateTimeFormatOptions) => Object
   new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Brussels', hour12: false, ...options }).formatToParts(date).map((x) => [x.type, x.value]),
 );
 
-// The instant at which Antwerp's wall clock reads `hour` today (DST-aware via Intl).
 function atAntwerpHour(hour: number): Date {
   const now = new Date();
   const p = antwerpParts(now, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const asIfUtc = Date.UTC(+p.year, +p.month - 1, +p.day, p.hour === '24' ? 0 : +p.hour, +p.minute, +p.second);
-  const offsetMs = asIfUtc - now.getTime(); // how far Brussels is ahead of UTC right now
+  const offsetMs = asIfUtc - now.getTime();
   const h = Math.floor(hour), m = Math.round((hour - h) * 60);
   return new Date(Date.UTC(+p.year, +p.month - 1, +p.day, h, m, 0) - offsetMs);
 }
@@ -56,7 +51,6 @@ export interface Clock {
   weekend: boolean;
 }
 
-/** Antwerp's hour and weekday now (or at ?time=), for the De Lijn schedule. */
 export function antwerpClock(params: URLSearchParams): Clock {
   const p = antwerpParts(clockDate(params), { hour: '2-digit', weekday: 'short' });
   return { hour: +p.hour % 24, weekend: p.weekday === 'Sat' || p.weekday === 'Sun' };
@@ -67,7 +61,6 @@ const WEATHER_PRESETS: Record<string, { cloud: number; rain: number }> = {
   overcast: { cloud: 0.95, rain: 0 }, rain: { cloud: 1, rain: 0.7 }, storm: { cloud: 1, rain: 1 },
 };
 
-/** Sun from the real (or ?time=) clock, plus any weather the URL pins; live weather is fetched separately. */
 export function initialSky(params: URLSearchParams): SkyState {
   const sun = sunPosition(clockDate(params));
   let cloud = 0, rain = 0;
@@ -80,12 +73,11 @@ export function initialSky(params: URLSearchParams): SkyState {
   return { ...sun, cloud: Math.max(cloud, rain * 0.9), rain };
 }
 
-/** True when no weather is pinned in the URL, so we should fetch the real conditions. */
 export function useLiveWeather(params: URLSearchParams): boolean {
   return !params.get('weather') && !params.has('clouds') && !params.has('rain');
 }
 
-/** Antwerp's current cloud cover and rain from Open-Meteo (free, no key); null on failure so the sky stays clear. */
+/** Open-Meteo (free, no key); null on failure. */
 export async function liveWeather(): Promise<{ cloud: number; rain: number } | null> {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${ANTWERP.lat}&longitude=${ANTWERP.lon}&current=cloud_cover,precipitation`;
   const ctrl = new AbortController();

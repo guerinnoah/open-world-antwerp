@@ -10,7 +10,7 @@ import {
   serveStops, spawnPoint, stack, stopAfter, type Obstacle, type Run, type Sectioned,
 } from './transit';
 
-const MAX_SPEED = 14; // m/s ≈ 50 km/h, a city tram's cruising top
+const MAX_SPEED = 14; // m/s ≈ 50 km/h
 const ACCEL = 1.1;
 const BRAKE = 1.6;
 const DWELL = 7;
@@ -20,17 +20,17 @@ const DESPAWN = 600;
 const OUT_OF_SIGHT = 150;
 const LAYOVER = 40;
 const PATIENCE = 4;
-const PINNED = 0.3; // m a car or person may be pushed into the tram before it counts as pinned
+const PINNED = 0.3; // m of overlap before it counts as pinned
 const GIVE_UP = 20;
 const NEARBY = 60;
 const KINDS: SectionKind[] = ['cab', 'mid', 'rear'];
 
-// Driven by the player (m/s, m/s²): an Albatros tops out at 85 km/h; steel on steel coasts a long way.
+// player-driven (m/s, m/s²): an Albatros tops out at 85 km/h
 const HAND_MAX = 23.5;
 const HAND_ACCEL = 2.8;
 const HAND_REVERSE = 4;
 const SERVICE_BRAKE = 3.2;
-const EMERGENCY_BRAKE = 6; // the magnetic track brake
+const EMERGENCY_BRAKE = 6; // magnetic track brake
 const COAST = 0.25;
 const HANDOVER = 3;
 
@@ -53,10 +53,10 @@ export interface Tram extends Sectioned {
 
 export class Trams {
   readonly trams: Tram[] = [];
-  readonly bells: [number, number][] = []; // where a tram rang its bell this step; drained by the game
+  readonly bells: [number, number][] = [];
   readonly group = new THREE.Group();
   private runs: Run[];
-  private spawnRuns: Run[]; // lines in service this hour; the clock is fixed per session
+  private spawnRuns: Run[]; // this hour's lines; clock fixed per session
   private spawnTimer = 0;
   private meshes: SectionMeshes<SectionKind>;
 
@@ -81,9 +81,8 @@ export class Trams {
       for (const t of [...this.trams]) {
         if (t.controls || !this.trams.includes(t)) continue;
         const d = noseDistance(t, px, pz);
-        // Two trams waiting on each other (nose to nose on single track) don't wait GIVE_UP: the farther one goes.
+        // nose to nose on single track: the farther one goes, without waiting GIVE_UP
         const other = t.waitingFor?.waitingFor === t && t.stuck > 8 && !t.waitingFor.controls ? t.waitingFor : null;
-        // At the end of the track it lays over until out of sight, like a bus at its terminus.
         const done = t.layover > 0 && d > (t.layover > LAYOVER ? NEARBY : OUT_OF_SIGHT);
         if (other && noseDistance(other, px, pz) > d) this.remove(other);
         else if (done || d > DESPAWN || (t.stuck > GIVE_UP && d > NEARBY) || other) this.remove(t);
@@ -103,7 +102,7 @@ export class Trams {
     const [run, s] = at;
     if (this.trams.some((t) => t.run.p === run.p && Math.abs(t.s - s) < 80)) return;
 
-    const layout = LAYOUTS[Math.random() < 0.55 ? 0 : 1]; // Antwerp runs both lengths, about as many long as short
+    const layout = LAYOUTS[Math.random() < 0.55 ? 0 : 1]; // Antwerp runs both lengths, ~evenly
     const { offsets, length } = stack(layout, SECTION_LENGTH);
     if (s < length + 1) return;
     const tram: Tram = {
@@ -112,14 +111,14 @@ export class Trams {
     };
     const poses = this.poses(tram);
     if (poses.some((pose, i) => occupied(this.physics, pose, SECTION_LENGTH[layout[i]] / 2 + 1, WIDTH / 2 + 0.2, COLLIDES))) return;
-    // Collision events, so the game hears the player's tram ploughing into cars.
+    // collision events: the game hears the player's tram hitting cars
     addSections(this.physics, tram, 'tram', poses, layout.map((kind) => SECTION_LENGTH[kind] / 2), WIDTH / 2, true);
     this.trams.push(tram);
   }
 
   remove(t: Tram) {
     removeSectioned(this.physics, this.trams, t);
-    // Its partner in a deadlock would otherwise pick it again in the same despawn tick.
+    // else its deadlock partner picks it again this tick
     for (const o of this.trams) if (o.waitingFor === t) o.waitingFor = null;
     t.waitingFor = null;
   }
@@ -209,7 +208,7 @@ export class Trams {
   private advance(t: Tram, ahead: Obstacle, move: number, dt: number): number {
     const speed = Math.abs(move) / dt;
     if (speed > 0.1) {
-      // Shunt touching cars along and aside: their handbrake and tyres would hold them on the rails against a push.
+      // shunt touching cars: their handbrake would hold them on the rails
       for (const { body, dx, dz, side } of ahead.touching) {
         const v = body.linvel();
         const nx = -dz * side, nz = dx * side;

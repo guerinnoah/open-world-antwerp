@@ -60,6 +60,17 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #hud .street { position: absolute; right: 18px; bottom: 86px; font-size: 22px; letter-spacing: 0.02em; opacity: 0; }
 #hud .street.show { animation: street 4s ease forwards; }
 @keyframes street { 0% { opacity: 0; } 10%, 75% { opacity: 1; } 100% { opacity: 0; } }
+#hud .district { position: absolute; right: 18px; bottom: 114px; font: italic 900 38px/1 system-ui, sans-serif; letter-spacing: -0.01em; text-shadow: 0 3px 0 #000, 0 0 14px rgb(0 0 0 / 0.6); opacity: 0; }
+#hud .vehicle { position: absolute; right: 18px; bottom: 160px; font: italic 800 26px/1 system-ui, sans-serif; color: #ffd479; text-shadow: 0 2px 0 #000, 0 0 10px rgb(0 0 0 / 0.6); opacity: 0; }
+#hud :is(.district, .vehicle).show { animation: street 5s ease forwards; }
+#hud .stars { position: absolute; right: 14px; top: 58px; display: flex; flex-direction: row-reverse; gap: 1px; font-size: 30px; line-height: 1; }
+#hud .stars[hidden] { display: none; }
+#hud .stars span { color: rgb(255 255 255 / 0.22); text-shadow: 0 2px 3px rgb(0 0 0 / 0.7); }
+#hud .stars span.on { color: #fff; }
+#hud .stars.searching span.on { animation: stars-search 0.5s steps(1) infinite alternate; }
+@keyframes stars-search { to { opacity: 0.25; } }
+#hud .stars.up { animation: stars-up 0.5s ease-out; }
+@keyframes stars-up { from { transform: scale(1.35); } }
 #hud .fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; }
 #hud .fade.out { animation: fade-in-from-black 0.5s ease-out; }
 @keyframes fade-in-from-black { from { opacity: 1; } to { opacity: 0; } }
@@ -80,6 +91,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 @keyframes wasted-black { 0%, 85% { background: rgb(0 0 0 / 0); } 100% { background: #000; } }
 #hud .wasted span { width: 100%; padding: 12px 0; background: linear-gradient(90deg, transparent, rgb(0 0 0 / 0.55) 25%, rgb(0 0 0 / 0.55) 75%, transparent); text-align: center; font: italic 900 76px/1 system-ui, sans-serif; letter-spacing: 0.02em; text-transform: uppercase; color: #ff3b30; text-shadow: 0 3px 0 #000, 0 0 24px rgb(0 0 0 / 0.6); }
 #hud .wasted.show span { animation: wasted-in 0.6s ease-out 0.6s both; }
+#hud .wasted.busted span { color: #4aa3ff; }
 @keyframes wasted-in { from { opacity: 0; transform: scale(1.3); } }
 body.wasted :is(#game, #minimap) { filter: grayscale(1) brightness(0.8); transition: filter 1.5s; }
 
@@ -114,7 +126,10 @@ body > button.sound { position: fixed; top: 10px; right: 10px; width: 40px; heig
 body > button.view { position: fixed; top: 10px; right: 58px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; font: 700 13px system-ui, sans-serif; line-height: 1; cursor: pointer; }
 
 @media (pointer: coarse) {
-  #hud .speed { bottom: auto; top: 58px; font-size: 30px; }
+  #hud .speed { bottom: auto; top: 80px; font-size: 30px; }
+  #hud .stars { top: 52px; font-size: 22px; }
+  #hud .district { bottom: auto; top: 118px; font-size: 22px; }
+  #hud .vehicle { bottom: auto; top: 144px; font-size: 16px; }
   #hud .controls-list { display: none; }
   #hud .street { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 54px; font-size: 18px; }
   #credits { top: 6px; bottom: auto; left: 8px; right: 90px; font-size: 9px; }

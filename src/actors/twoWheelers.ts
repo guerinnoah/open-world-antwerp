@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { lerpPose } from '../core/util';
 import type { Vehicle } from './vehicle';
 
-// Frame for bikes, scooters and motorbikes (m): x forward, y up, z to the rider's right, origin on the ground between the wheels.
+// Frame (m): x forward, y up, z rider's right, origin on the ground between the wheels.
 export type V3 = [number, number, number];
 
 export function rod(a: V3, b: V3, r: number, seg: number): THREE.BufferGeometry {
@@ -21,7 +21,7 @@ export function block(c: V3, size: V3, rz = 0): THREE.BufferGeometry {
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const turn = new THREE.Quaternion(), lean = new THREE.Quaternion(), at = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1);
 
-/** `heading` is a Rapier angle; `roll` in rad, + = over to the right. */
+/** `heading`: Rapier angle; `roll`: rad, + = right. */
 export function pose(out: THREE.Matrix4, x: number, y: number, z: number, heading: number, roll: number): THREE.Matrix4 {
   turn.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, -heading).multiply(lean.setFromAxisAngle(X_AXIS, roll));
   return out.compose(at.set(x, y, z), turn, ONE);

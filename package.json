@@ -23,6 +23,7 @@
     "map:fetch-ortho": "tsx tools/map/fetch-ortho.ts",
     "map:fetch-trees": "tsx tools/map/fetch-trees.ts",
     "map:fetch-gtfs": "tsx tools/map/fetch-gtfs.ts",
+    "map:fetch-districts": "tsx tools/map/fetch-districts.ts",
     "drive": "tsx tools/dev/drive.ts",
     "mobile": "tsx tools/dev/mobile.ts",
     "m2": "tsx tools/dev/m2.ts",

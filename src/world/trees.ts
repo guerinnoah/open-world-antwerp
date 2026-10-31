@@ -6,7 +6,6 @@ import { TREE_KINDS } from './treeKinds';
 const CHUNK = 250;
 const STRIDE = 4; // [x, z, kind, girth]
 
-/** A crown blob, each vertex pushed in or out a stable amount so it reads as a lumpy canopy rather than a gem. */
 function crown(r: number, sx: number, sy: number, sz: number, tx: number, ty: number, tz: number, hex: number) {
   const geo = new THREE.IcosahedronGeometry(r, 1).scale(sx, sy, sz);
   const pos = geo.getAttribute('position');
@@ -19,24 +18,21 @@ function crown(r: number, sx: number, sy: number, sz: number, tx: number, ty: nu
   return coloured(geo.translate(tx, ty, tz), hex);
 }
 
-// One crown shape per TREE_KINDS index, with colours baked into vertex colours (the per-instance colour only jitters
-// brightness/warmth). Trees are scaled per-tree from the real trunk girth, so old planes tower over fresh street saplings.
 function kindGeometry(kind: number): THREE.BufferGeometry {
-  if (kind === 1) { // conifer: a narrow dark cone over a short trunk
+  if (kind === 1) {
     const trunk = new THREE.CylinderGeometry(0.16, 0.26, 2.0, 6).translate(0, 1.0, 0);
     const lower = new THREE.ConeGeometry(1.9, 4.4, 7).translate(0, 3.6, 0);
     const upper = new THREE.ConeGeometry(1.2, 2.8, 7).translate(0, 5.8, 0);
     return mergeGeometries([coloured(trunk, 0x4f4030), coloured(lower, 0x33502f), coloured(upper, 0x3c5c36)]);
   }
-  if (kind === 2) { // plane: tall pale trunk, broad spreading crown
+  if (kind === 2) {
     const trunk = new THREE.CylinderGeometry(0.22, 0.34, 4.2, 6).translate(0, 2.1, 0);
     return mergeGeometries([coloured(trunk, 0x7d7362), crown(3.4, 1.25, 0.95, 1.25, 0, 6.4, 0, 0x7f9a46), crown(2.2, 1, 1, 1, 0.6, 8.2, -0.3, 0x8caa52)]);
   }
-  if (kind === 3) { // blossom: small ornamental, light airy crown
+  if (kind === 3) {
     const trunk = new THREE.CylinderGeometry(0.1, 0.16, 2.0, 6).translate(0, 1.0, 0);
     return mergeGeometries([coloured(trunk, 0x5b4636), crown(1.7, 1.15, 0.95, 1.15, 0, 3.1, 0, 0x9ab86a), crown(1.05, 1, 1, 1, 0.3, 4.0, -0.2, 0xa6c478)]);
   }
-  // broadleaf (default): rounded medium crown
   const trunk = new THREE.CylinderGeometry(0.16, 0.24, 3.6, 6).translate(0, 1.8, 0);
   return mergeGeometries([coloured(trunk, 0x5b4636), crown(2.6, 1, 1.15, 1, 0, 5.6, 0, 0x6f9a3e), crown(1.7, 1, 1, 1, 0.5, 7.4, -0.3, 0x7cab49)]);
 }
@@ -47,7 +43,7 @@ export function createTrees(trees: number[]): THREE.Group {
   const geometries = TREE_KINDS.map((_, k) => kindGeometry(k));
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
 
-  // Crowns sway, trunks don't; gently, as the shadow pass doesn't sway.
+  // Gently: the shadow pass doesn't sway.
   const time = { value: 0 };
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = time;
@@ -60,7 +56,6 @@ transformed.x += (sin(wt) + 0.3 * sin(wt * 2.7)) * sway;
 transformed.z += cos(wt * 0.8) * sway * 0.55;`);
   };
 
-  // Group by chunk, then by kind: one InstancedMesh per (chunk, kind) keeps draw calls and culling local.
   const chunks = new Map<string, number[][]>();
   for (let i = 0; i < trees.length; i += STRIDE) {
     const x = trees[i], z = trees[i + 1], kind = trees[i + 2] || 0, girth = trees[i + 3] || 0;
@@ -84,12 +79,12 @@ transformed.z += cos(wt * 0.8) * sway * 0.55;`);
         const x = list[i], z = list[i + 1], girth = list[i + 2];
         const r = stableRandom(x, z);
         const r2 = stableRandom(z + 2.3, x - 5.1);
-        // Girth (cm) → overall scale; unknown girth (0) falls back to an average street tree.
+        // girth: cm, 0 = unknown
         const s = Math.min(Math.max(0.5 + (girth || 90) / 200, 0.55), 1.7) * (0.9 + r * 0.2);
         quat.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, r * Math.PI * 2);
         matrix.compose(position.set(x, 0, z), quat, scale.set(s, s * (0.92 + r * 0.2), s));
         mesh.setMatrixAt(i / 3, matrix);
-        // Brightness and a slight warm/cool tint, near-neutral so trunks stay brown.
+        // Near-neutral so trunks stay brown.
         const b = 0.8 + r * 0.35;
         mesh.setColorAt(i / 3, colour.setRGB(b * (0.96 + r2 * 0.08), b * (0.99 + r * 0.03), b * (0.95 + (1 - r2) * 0.06)));
       }

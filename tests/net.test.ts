@@ -172,7 +172,7 @@ describe('relay', () => {
     return { ws, next, send, inbox };
   };
 
-  /** A hand-written WebSocket handshake, for requests the ws client won't make. */
+  // hand-written handshake, for requests the ws client won't make
   const raw = (target: string) => {
     const socket = tcp((server.address() as AddressInfo).port, '127.0.0.1');
     raws.push(socket);
@@ -255,7 +255,7 @@ describe('relay', () => {
     for (const [c, x] of [[near, 10], [far, 1000]] as const) {
       c.send({ t: 's', s: encodeState(state({ x })) });
       c.send({ t: 'chat', text: 'here' });
-      await a.next('chat'); // the relay knows where they are
+      await a.next('chat');
     }
     const times = (c: typeof a) => c.inbox.flatMap((m) => (m.t === 's' && m.id === idA ? [m.s[0]] : []));
     const synced = (text: string) => {
@@ -317,7 +317,6 @@ describe('relay', () => {
     await watcher.next('welcome');
     const red = { kind: 2, colour: 0xff0000 };
     a.send({ t: 'took', x: 10, z: 20, ...red });
-    // Getting out leaves nothing parked behind.
     a.send({ t: 's', s: encodeState(state({ mode: 1, x: 30, z: 40, angle: 1.5, ...red })) });
     a.send({ t: 's', s: encodeState(state({ x: 31, z: 40 })) });
     a.send({ t: 'chat', text: 'done' });
@@ -344,7 +343,7 @@ describe('relay', () => {
     a.send({ t: 'chat', text: 42 });
     for (let i = 0; i < CHAT_BURST + 5; i++) a.send({ t: 'chat', text: `spam ${i}` });
     await new Promise((resolve) => setTimeout(resolve, 200));
-    // The server allows a couple more than the game's CHAT_BURST (network timing), then drops the rest.
+    // the relay allows one more than CHAT_BURST for network timing
     const got = b.inbox.filter((m) => m.t === 'chat');
     expect(got.map((m) => m.t === 'chat' && m.text)).toEqual(Array.from({ length: CHAT_BURST + 1 }, (_, i) => `spam ${i}`));
     expect(a.inbox.some((m) => m.t === 'chat')).toBe(false);

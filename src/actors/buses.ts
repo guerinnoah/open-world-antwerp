@@ -15,7 +15,7 @@ import { ARTIC_SPEC, BUS_SPEC, Vehicle } from './vehicle';
 const MAX_SPEED = 11;
 const ACCEL = 1.3;
 const BRAKE = 1.8;
-const LATERAL = 2; // m/s² of cornering, so a right-angle turn is taken at ~12 km/h
+const LATERAL = 2; // m/s²; ~12 km/h round a right angle
 const SPAWN_MIN = 160;
 const SPAWN_MAX = 420;
 const DESPAWN = 550;
@@ -42,8 +42,8 @@ export class Buses {
   readonly honks: [number, number][] = [];
   readonly group = new THREE.Group();
   private runs: Run<BusRun>[];
-  private spawnRuns: Run<BusRun>[]; // lines in service this hour; the clock is fixed per session
-  private vehicles: Vehicle[] = []; // out of service: the player's, parked and other players'; their colour is the display row
+  private spawnRuns: Run<BusRun>[];
+  private vehicles: Vehicle[] = []; // out of service; colour = display row
   private spawnTimer = 0;
   private nextId = 0;
   private meshes: SectionMeshes<BusKind>;
@@ -170,7 +170,7 @@ export class Buses {
     const { gap, owner, solid } = obstacleAhead(this.physics, b, b.s, 1, 3 + (b.speed * b.speed) / (2 * BRAKE) + 2, WIDTH / 2, 0.2);
     b.waitingFor = owner?.kind === 'bus' ? (owner.entity as Bus) : undefined;
     if (gap < Infinity) {
-      // Out of patience it nudges cars and people aside; buses and trams only if two buses block each other (lower id goes).
+      // impatient: nudge cars and people; transit only in a bus deadlock (lower id goes)
       const transit = owner?.kind === 'bus' || owner?.kind === 'tram';
       const pushy = !transit || (b.waitingFor?.waitingFor === b && b.id < b.waitingFor.id);
       target = Math.min(target, b.blocked < PATIENCE || !pushy ? Math.max(0, (gap - 1.5) * 0.7) : 2);
@@ -185,7 +185,6 @@ export class Buses {
 
     b.speed += Math.max(-BRAKE * 1.5 * dt, Math.min(ACCEL * dt, target - b.speed));
     let move = b.speed * dt;
-    // Nothing shoves a tram, a bus or another player's car (kinematic), so it would end up inside them.
     if (solid && move > gap - 0.1) {
       move = Math.max(0, gap - 0.1);
       b.speed = 0;

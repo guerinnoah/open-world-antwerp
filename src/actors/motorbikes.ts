@@ -14,9 +14,9 @@ const MOPED_PAINTS = [0xa8d5c2, 0xe9dfc4, 0xb3202a, 0x8fb8d8, 0xf1f0ea, 0x2f3e46
 interface Type {
   geo: RideGeometry;
   clip: Clip;
-  parkedRoll: number; // rad, + = to the right: on its side stand, or 0 on a centre stand
+  parkedRoll: number; // rad, + = right; 0 on a centre stand
   parkedSteer: number;
-  lock: [number, number]; // rad at full lock: at a standstill and at top speed
+  lock: [number, number]; // rad at full lock: [standstill, top speed]
 }
 
 const TYPES: Type[] = [
@@ -25,10 +25,10 @@ const TYPES: Type[] = [
 ];
 const typeOf = (v: Vehicle) => (v.spec.name === 'moped' ? 1 : 0);
 
-/** Vespa colours rather than car greys, derived from the car paint so every game agrees. */
+/** From the car paint, so every game agrees. */
 const mopedPaint = (colour: number) => MOPED_PAINTS[(colour ^ (colour >>> 9)) % MOPED_PAINTS.length];
 
-/** Vertex colour plus a 'paint' mask: masked parts take the bike's instanceColor, so paint and trim share one mesh. */
+/** 'paint' parts take instanceColor, so paint and trim share one mesh. */
 function part(g: THREE.BufferGeometry, hex: number, paint = false): THREE.BufferGeometry {
   const geo = coloured(g, hex);
   geo.setAttribute('paint', new THREE.BufferAttribute(new Float32Array(geo.getAttribute('position').count).fill(paint ? 1 : 0), 1));

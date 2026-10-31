@@ -11,17 +11,17 @@ const SPAWN_MAX = 140;
 const DESPAWN = 170;
 const RADIUS = 0.3;
 const FLEE_SPEED = 4.5;
-const KEEP_RIGHT = 0.35; // m, so people going opposite ways pass instead of walking into each other
+const KEEP_RIGHT = 0.35; // m, so opposite walkers pass
 const CROSS_CHANCE = 0.15;
-const KERB = 0.5; // m: walking lines stop this far short of the kerb of a road they cross
+const KERB = 0.5; // m short of the kerb when crossing
 const SHARED_INSET = 0.6;
 const OFF_PATH = 2.5;
 const NO_PAVEMENT = 0.1;
 const CENTRE_CORE = 150;
 const CENTRE_EDGE = 900;
 const CENTRE_SPINE = ['stadhuis', 'cathedral', 'boerentoren', 'centraal'];
-const MAX_WEIGHT = 3; // busiest pavement: a main road (1) in the old town (×3)
-const BUSY_REF = 600; // busyness-weighted m of pavement in spawn range that `base` is for (side streets only ≈ 350)
+const MAX_WEIGHT = 3; // main road (1) in the old town (×3)
+const BUSY_REF = 600; // weighted m of pavement in range that `base` assumes
 const MAX_CROWD = 2.2;
 
 function streetWeight(e: GraphEdge, shared: boolean): number {
@@ -72,7 +72,7 @@ export class Pedestrians {
   private target: number;
   private weight: Float32Array;
   private mid: Float32Array;
-  /** Per walk edge: [left, right] of the centreline looking a → b (m; 0 = down the middle, -1 = no pavement). */
+  /** Per walk edge: [left, right] looking a → b (m; 0 = centreline, -1 = none). */
   private sides: Float32Array;
   private trim: Float32Array;
 
@@ -109,7 +109,7 @@ export class Pedestrians {
       const shared = left === 0 && right === 0 && e.w >= 6 && alongRoad(e.p, (d) => d < 1);
       if (shared) left = right = e.w / 2 - SHARED_INSET;
       else if ((left !== 0 || right !== 0) && e.len > 20) {
-        // On a dual carriageway the map puts the inner pavement on the other carriageway.
+        // dual carriageways: the map puts the inner pavement on the other one
         if (left > 0 && alongRoad(offsetPolyline(e.p, -left), (d, w) => d < w / 2 + 0.3)) left = -1;
         if (right > 0 && alongRoad(offsetPolyline(e.p, right), (d, w) => d < w / 2 + 0.3)) right = -1;
       }
@@ -169,7 +169,7 @@ export class Pedestrians {
     const len = Math.hypot(dx, dz) || 1;
     const fling = Math.min(speed * 0.6, 9);
     p.body.setLinvel({ x: (dx / len) * fling, y: (dz / len) * fling }, true);
-    p.body.collider(0).setCollisionGroups(groups(GROUP.PED, GROUP.STATIC | GROUP.PED)); // no WHEELS: don't get dragged by the car
+    p.body.collider(0).setCollisionGroups(groups(GROUP.PED, GROUP.STATIC | GROUP.PED)); // no WHEELS: cars don't drag them
   }
 
   inFront(x: number, z: number, angle: number, range: number, cone: number): Ped | null {
@@ -272,7 +272,7 @@ export class Pedestrians {
       if (p.timer <= 0) {
         p.state = 'flee';
         p.timer = 5;
-        p.body.collider(0).setCollisionGroups(groups(GROUP.PED, GROUP.STATIC | WHEELS | GROUP.PED)); // back on their feet: solid to cars again
+        p.body.collider(0).setCollisionGroups(groups(GROUP.PED, GROUP.STATIC | WHEELS | GROUP.PED));
       }
     } else if (p.state === 'flee') {
       p.timer -= dt;
@@ -294,7 +294,6 @@ export class Pedestrians {
       wantX = p.pts[p.i * 2] - t.x;
       wantZ = p.pts[p.i * 2 + 1] - t.y;
       const d = Math.hypot(wantX, wantZ);
-      // Stuck behind someone: step right to get round, and soon give up on that point rather than shove forever.
       p.timer = Math.hypot(v.x, v.y) < 0.3 * p.speed ? p.timer + dt : 0;
       if (p.i > 0 && segmentDistance(p.pts, p.i - 1, t.x, t.y) > OFF_PATH) this.rejoin(p);
       else if (d < 0.8 || p.timer > 2) {

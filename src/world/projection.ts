@@ -1,4 +1,4 @@
-export const ORIGIN = { lat: 51.2213, lon: 4.3997 }; // Brabo fountain, Grote Markt; local +x = east, +z = south (north = -z)
+export const ORIGIN = { lat: 51.2213, lon: 4.3997 }; // Brabo fountain, Grote Markt; +x = east, +z = south
 
 const RAD = Math.PI / 180;
 const phi = ORIGIN.lat * RAD;

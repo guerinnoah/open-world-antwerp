@@ -26,7 +26,7 @@ const MODELS = {
     cyl(0.07, 0.06, 3.2, 0, 0x5b5f63), box(0.24, 0.9, 0.3, 0, 2.3, 0, 0x1c1d1f),
     box(0.02, 0.16, 0.16, -0.13, 2.95, 0, 0xd8251f), box(0.02, 0.16, 0.16, -0.13, 2.67, 0, 0x6a4f12), box(0.02, 0.16, 0.16, -0.13, 2.39, 0, 0x184a26),
   ]),
-  terrace: () => mergeGeometries([ // a chair either side along z; ~200 triangles, as there are a thousand
+  terrace: () => mergeGeometries([ // ~200 triangles: there are a thousand
     cyl(0.36, 0.36, 0.03, 0.74, 0x2a2a2a, 10), cyl(0.03, 0.03, 0.74, 0, 0x2a2a2a, 5), cyl(0.22, 0.2, 0.03, 0, 0x2a2a2a, 6),
     ...[-1, 1].flatMap((s) => [
       box(0.42, 0.04, 0.42, 0, 0.44, s * 0.62, 0x8b6a45), box(0.42, 0.42, 0.04, 0, 0.48, s * 0.84, 0x8b6a45),
@@ -61,7 +61,7 @@ export interface Breakable {
   blocksPeople: boolean;
   tall: boolean;
   metal: boolean;
-  keep: number; // share of a car's speed it keeps after ploughing through
+  keep: number; // share of a car's speed kept after ploughing through
   parts: PropRef[];
 }
 
@@ -167,7 +167,6 @@ export function createProps(city: CityData, viewScale = 1, night = 0): Props {
       chunks.push({ mesh, x: cx, z: cz, view: VIEW[kind] * viewScale + size * 0.7 });
     }
   }
-  // An additive orb at each lamp head (m up) stands in for real lights at night.
   if (night > 0.05) {
     const heads = [...items.lamp.map((it) => [it[0], it[1], 7.4] as const), ...items.lantern.map((it) => [it[0], it[1], 3.9] as const)];
     const glow = new THREE.InstancedMesh(
