@@ -13,7 +13,7 @@ const query = `[out:json][timeout:120];(way["place"~"^(quarter|suburb)$"](${b});
 console.log('Querying Overpass for quarters…');
 const res = await fetch(ENDPOINT, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'gta-antwerp-map-pipeline/0.1' },
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'open-world-antwerp-map-pipeline/0.1' },
   body: new URLSearchParams({ data: query }),
 });
 if (!res.ok) throw new Error(`Overpass ${res.status}: ${(await res.text()).slice(0, 500)}`);

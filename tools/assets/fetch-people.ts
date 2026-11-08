@@ -35,7 +35,7 @@ const REPO = 'microsoft/Microsoft-Rocketbox';
 const RAW = `https://raw.githubusercontent.com/${REPO}/master/Assets`;
 const API = `https://api.github.com/repos/${REPO}/contents/Assets`;
 const OUT = 'data/raw/people';
-const ua = { headers: { 'User-Agent': 'gta-antwerp-asset-pipeline/0.1' } };
+const ua = { headers: { 'User-Agent': 'open-world-antwerp-asset-pipeline/0.1' } };
 const exists = (p: string) => access(p).then(() => true, () => false);
 
 async function download(url: string, file: string) {

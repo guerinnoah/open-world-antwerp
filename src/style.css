@@ -5,7 +5,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #title { position: fixed; inset: 0; z-index: 10; display: grid; align-items: end; padding: 6vh 6vw; overflow-y: auto; background: linear-gradient(100deg, rgb(15 17 22 / 0.9) 0%, rgb(15 17 22 / 0.6) 40%, rgb(15 17 22 / 0) 70%); transition: opacity 0.5s; }
 #title.gone { opacity: 0; pointer-events: none; }
 #title .card { max-width: 420px; }
-#title h1 { margin: 0; font: italic 900 76px/0.88 system-ui, sans-serif; letter-spacing: -0.02em; text-transform: uppercase; text-shadow: 0 4px 18px rgb(0 0 0 / 0.5); }
+#title h1 { margin: 0; font: italic 900 min(64px, 13vw)/0.88 system-ui, sans-serif; letter-spacing: -0.02em; text-transform: uppercase; white-space: nowrap; text-shadow: 0 4px 18px rgb(0 0 0 / 0.5); }
 #title h1 span { display: block; color: #ff3b30; }
 #title .tagline { margin: 16px 0 22px; font-size: 16px; line-height: 1.45; color: rgb(255 255 255 / 0.9); }
 #title .controls { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 7px 14px; margin: 0 0 14px; font-size: 14px; }
@@ -15,7 +15,6 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #title dd { margin: 0; color: rgb(255 255 255 / 0.85); }
 #title kbd { display: inline-block; min-width: 14px; margin-right: 3px; padding: 2px 6px; border-radius: 5px; border: 1px solid rgb(255 255 255 / 0.35); border-bottom-width: 2px; background: rgb(255 255 255 / 0.08); font: 700 12px system-ui, sans-serif; text-align: center; }
 #title .touch { display: none; }
-#title .fine { margin: 14px 0 0; font-size: 11px; color: rgb(255 255 255 / 0.5); }
 #loading { height: 52px; display: flex; flex-direction: column; justify-content: center; gap: 10px; font-size: 18px; font-weight: 600; }
 #loading span { animation: loading-pulse 1s ease-in-out infinite alternate; }
 #loading .bar { width: 220px; height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.2); overflow: hidden; }
@@ -25,12 +24,11 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #title .play:hover { background: #ffd60a; }
 @media (pointer: coarse) {
   #title { background: linear-gradient(to top, rgb(15 17 22 / 0.92) 0%, rgb(15 17 22 / 0.7) 55%, rgb(15 17 22 / 0.2) 100%); }
-  #title h1 { font-size: 54px; }
   #title .tagline { font-size: 15px; }
   #title .keys { display: none; }
   #title .touch { display: grid; }
 }
-@media (max-height: 520px) {
+@media (max-height: 520px) and (orientation: landscape) {
   #title { padding: 4vh 5vw; }
   #title .card { max-width: none; display: grid; grid-template-columns: auto minmax(0, 360px); column-gap: 32px; align-items: end; }
   #title h1 { font-size: 44px; grid-row: span 2; }

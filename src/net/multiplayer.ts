@@ -441,7 +441,7 @@ export class Multiplayer {
     const url = `${location.origin}${location.pathname}`;
     try {
       if (navigator.share && coarsePointer()) {
-        await navigator.share({ title: 'GTA Antwerp', text: 'Come drive around Antwerp with me', url });
+        await navigator.share({ title: 'Open World Antwerp', text: 'Come drive around Antwerp with me', url });
       } else {
         await navigator.clipboard.writeText(url);
         this.chat.system('Invite link copied. Friends who open it join you here.');
@@ -469,9 +469,9 @@ function stored(key: string, value?: string): string | null {
 function pickName(params: URLSearchParams): string {
   const name =
     cleanName(params.get('name')) ||
-    cleanName(stored('gta-antwerp.name')) ||
+    cleanName(stored('open-world-antwerp.name')) ||
     `${pick(NICKNAMES)} ${100 + Math.floor(Math.random() * 900)}`;
-  return stored('gta-antwerp.name', name) ?? name;
+  return stored('open-world-antwerp.name', name) ?? name;
 }
 
 function avatarFor(crowd: Crowd, look: string): number {

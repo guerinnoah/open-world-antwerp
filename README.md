@@ -1,4 +1,4 @@
-# GTA Antwerp
+# Open World Antwerp
 
 An open-world driving sandbox in a real 1:1 slice of central Antwerp, playable in the browser. Steal a car, drive a
 tram or bus, ride a Velo bike or e-scooter, walk into shops, or drive into the Scheldt. Do it in front of the police
@@ -61,4 +61,4 @@ Gamepads work too.
 - Logos: Wikimedia Commons, credited in `public/map/logos.html`
 - Radio: the public live streams of VRT and DPG Media
 
-Not affiliated with Rockstar Games or Take-Two Interactive, nor with any brand shown in the game.
+Not affiliated with any brand shown in the game.

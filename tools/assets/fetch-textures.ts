@@ -20,7 +20,7 @@ const TEXTURES = {
 
 const OUT = 'public/textures';
 await mkdir(OUT, { recursive: true });
-const ua = { headers: { 'User-Agent': 'gta-antwerp-asset-pipeline/0.1' } };
+const ua = { headers: { 'User-Agent': 'open-world-antwerp-asset-pipeline/0.1' } };
 const only = process.argv.slice(2);
 
 for (const [name, asset] of Object.entries(TEXTURES)) {

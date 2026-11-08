@@ -4,7 +4,7 @@ import { RAW_DIR } from './config.ts';
 import { logoItemsOf } from './signs.ts';
 
 const DIR = `${RAW_DIR}/logos`;
-const HEADERS = { 'User-Agent': 'gta-antwerp-map-pipeline/0.1 (non-commercial hobby game)' };
+const HEADERS = { 'User-Agent': 'open-world-antwerp-map-pipeline/0.1 (non-commercial hobby game)' };
 
 export interface LogoEntry {
   label: string;

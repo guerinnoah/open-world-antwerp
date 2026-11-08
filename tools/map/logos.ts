@@ -87,10 +87,10 @@ export async function loadLogos(): Promise<Logos> {
 <html lang="en">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>GTA Antwerp: names and logos</title>
+<title>Open World Antwerp: names and logos</title>
 <style>body { font: 15px/1.5 system-ui, sans-serif; max-width: 42em; margin: 2em auto; padding: 0 1em; color: #222; }</style>
 <h1>Names and logos on signs</h1>
-<p>GTA Antwerp is a free, non-commercial hobby game. It is not affiliated with, sponsored or endorsed by any business
+<p>Open World Antwerp is a free, non-commercial hobby game. It is not affiliated with, sponsored or endorsed by any business
 or organisation whose name or logo appears in it. Names and logos are shown only to depict the city as it really is,
 and remain the trademarks of their owners.</p>
 <p>Shop and venue names come from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>.${credits.length ? ` The logos

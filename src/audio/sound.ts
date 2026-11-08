@@ -1,8 +1,8 @@
 import { Radio, STATIONS, type RadioStatus, type Station } from './radio';
 
-const MUTE_KEY = 'gta-antwerp-muted';
-const STATION_KEY = 'gta-antwerp-station';
-const RADIO_OFF_KEY = 'gta-antwerp-radio-off';
+const MUTE_KEY = 'open-world-antwerp-muted';
+const STATION_KEY = 'open-world-antwerp-station';
+const RADIO_OFF_KEY = 'open-world-antwerp-radio-off';
 const GEARS = [0, 18, 38, 62, 92, 140]; // km/h where each gear starts
 const IDLE_RPM = 850;
 const MAX_RPM = 5600;

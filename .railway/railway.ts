@@ -5,7 +5,7 @@ export const partial = 'relay';
 /** The game itself is on Vercel, built with VITE_MULTIPLAYER_URL pointing here. */
 export default defineRailway(() => {
   const relay = service('relay', {
-    source: github('noahg9/gta-antwerp', { branch: 'main' }),
+    source: github('guerinnoah/open-world-antwerp', { branch: 'main' }),
     // client-only pushes would otherwise restart the relay and drop everyone
     build: { builder: 'RAILPACK', watchPatterns: ['server/**', 'src/net/protocol.ts', 'package.json', 'pnpm-lock.yaml'] },
     start: 'node server/main.ts',
@@ -14,7 +14,7 @@ export default defineRailway(() => {
     env: { TRUST_PROXY: '1' }, // behind Railway's proxy: per-address limits read X-Forwarded-For
   });
 
-  return project('gta-antwerp', {
+  return project('open-world-antwerp', {
     variables: { managed: true },
     resources: [relay],
   });
