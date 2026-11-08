@@ -306,7 +306,7 @@ export class Multiplayer {
       };
     }
     const v = player.body.linvel();
-    const hidden = indoors || !player.object.visible; // hidden on foot = driving a tram, not shared
+    const hidden = indoors || !player.body.isEnabled(); // disabled on foot = driving a tram, not shared
     return {
       time, mode: 0, x: player.x, z: player.z, angle: wrapAngle(player.heading), vx: v.x, vz: v.y, spin: 0, kind: -1, colour: 0,
       steer: 0, throttle: 0, sink: player.sink, flags: (player.down > 0 ? FLAG.DOWN : 0) | (hidden ? FLAG.INDOORS : 0),

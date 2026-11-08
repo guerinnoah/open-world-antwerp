@@ -29,6 +29,8 @@ const STOP_GAP = 7; // m, centre to centre
 const BUST_RANGE = 14; // m, centre to centre
 const STALL = 4; // s to make 6 m of progress
 const DODGE = 1.8; // m
+const CORNER_LOOK = 3; // m: looking further ahead cuts sharp corners into the building
+const SPAWN_TRIES = 5;
 const CHASE_LIMIT = 1.6; // × the street's limit: flat out, narrow streets end in walls
 
 const [PATROL_CAR, PATROL_VAN] = ['police', 'policevan'].map((n) => VEHICLE_TYPES.find(([s]) => s.name === n)![0]);
@@ -63,6 +65,7 @@ interface Driver {
   honkCooldown: number;
   yielding: number; // s
   overtaking: number; // s
+  passRight: boolean; // oncoming: each keeps to its own right
   pull: number; // m off the lane, + = right
   chase: boolean;
   reroute: number; // s
@@ -77,7 +80,7 @@ export interface TrafficHost {
   addVehicle(v: Vehicle): void;
   removeVehicle(v: Vehicle): void;
   /** Flat [x, z, …]; without it pursuers drive straight. */
-  route?(x: number, z: number, heading: number, tx: number, tz: number): number[] | null;
+  route?(x: number, z: number, heading: number | null, tx: number, tz: number): number[] | null;
   wet?(x: number, z: number): boolean;
 }
 
@@ -134,7 +137,8 @@ export class Traffic {
       this.police = [...this.drivers.values()].filter((d) => d.chase).map((d) => d.v);
       this.sirens = this.host.vehicles.filter((v) => v.siren && (v.driven || v.remote));
       for (let n = initial ? this.target * 3 : 2; n > 0 && this.drivers.size < this.target; n--) {
-        this.spawn(px, pz, initial ? 40 : SPAWN_MIN);
+        const edge = this.graph.randomEdgeNear(px, pz, initial ? 40 : SPAWN_MIN, SPAWN_MAX, (i) => this.graph.edges[i].len > 12);
+        if (edge >= 0) this.spawn(edge);
       }
     }
     this.spotted = false;
@@ -192,7 +196,6 @@ export class Traffic {
 
   private callUnits(px: number, pz: number) {
     if (this.dispatch > 0 || this.police.length >= this.units) return;
-    this.dispatch = DISPATCH;
     const [gx, gz] = this.lastSeen;
     let d: Driver | undefined, best = SIGHT * 2;
     for (const o of this.drivers.values()) {
@@ -201,9 +204,11 @@ export class Traffic {
     }
     // Got well away: no more cars join.
     if (!d && Math.hypot(gx - px, gz - pz) < DESPAWN - COP_SPAWN[1]) {
-      d = this.spawn(gx, gz, COP_SPAWN[0], COP_SPAWN[1], this.units >= 3 && Math.random() < 0.3 ? PATROL_VAN : PATROL_CAR);
+      const edge = this.quickestEdge(gx, gz);
+      if (edge >= 0) d = this.spawn(edge, this.units >= 3 && Math.random() < 0.3 ? PATROL_VAN : PATROL_CAR);
     }
     if (!d) return;
+    this.dispatch = DISPATCH;
     d.chase = true;
     d.reroute = d.yielding = d.overtaking = d.pull = d.dodge = d.wedges = 0;
     d.anchor = [d.v.x, d.v.z, 0];
@@ -211,13 +216,25 @@ export class Traffic {
     if (!d.v.siren) this.respond(d, true);
   }
 
+  /** Near in a straight line can be a long way round by road. */
+  private quickestEdge(gx: number, gz: number): number {
+    let best = -1, shortest = Infinity;
+    for (let n = 0; n < SPAWN_TRIES; n++) {
+      const edge = this.graph.randomEdgeNear(gx, gz, COP_SPAWN[0], COP_SPAWN[1], (i) => this.graph.edges[i].len > 12);
+      if (edge < 0) continue;
+      const p = this.graph.edges[edge].p, m = (p.length / 2) >> 1;
+      const route = this.host.route?.(p[m * 2], p[m * 2 + 1], null, gx, gz);
+      const length = route ? lengthFrom(route, 0) : Infinity;
+      if (best < 0 || length < shortest) [best, shortest] = [edge, length];
+    }
+    return best;
+  }
+
   private laneOffset(step: Step): number {
     return this.graph.edges[step.edge].o ? 0 : TWO_WAY_LANE;
   }
 
-  private spawn(px: number, pz: number, minD: number, maxD = SPAWN_MAX, forced?: VehicleSpec): Driver | undefined {
-    const edge = this.graph.randomEdgeNear(px, pz, minD, maxD, (i) => this.graph.edges[i].len > 12);
-    if (edge < 0) return;
+  private spawn(edge: number, forced?: VehicleSpec): Driver | undefined {
     const e = this.graph.edges[edge];
     const step: Step = { edge, forward: e.o ? true : Math.random() < 0.5 };
     // Facing the last sighting, not a U-turn.
@@ -242,7 +259,7 @@ export class Traffic {
     this.host.addVehicle(v);
     const d: Driver = {
       id: this.nextId++, v, pts: [], limits: [], i: 1, last: step, temper: 0.85 + Math.random() * 0.2,
-      stuck: 0, bold: 0, deadEnd: false, wedged: 0, reversing: 0, honkCooldown: 0, yielding: 0, overtaking: 0, pull: 0,
+      stuck: 0, bold: 0, deadEnd: false, wedged: 0, reversing: 0, honkCooldown: 0, yielding: 0, overtaking: 0, passRight: false, pull: 0,
       chase: false, reroute: 0, dodge: 0, wedges: 0, anchor: [x, z, 0], searching: null,
     };
     this.append(d, step, [x, z, ...lane.slice(k * 2 + 2)]);
@@ -258,13 +275,13 @@ export class Traffic {
     for (let i = 0; i < d.limits.length; i++) d.limits[i] *= k;
   }
 
-  private sirenBehind(v: Vehicle): boolean {
+  private sirenComing(v: Vehicle): boolean {
     for (const s of this.sirens) {
       if (s === v) continue;
       const c = Math.cos(s.angle), n = Math.sin(s.angle);
       const rx = v.x - s.x, rz = v.z - s.z;
       const ahead = rx * c + rz * n;
-      if (ahead > 0 && ahead < HEARD && Math.abs(-rx * n + rz * c) < 4 && Math.cos(v.angle - s.angle) > 0.5) return true;
+      if (ahead > 0 && ahead < HEARD && Math.abs(-rx * n + rz * c) < 4 && Math.abs(Math.cos(v.angle - s.angle)) > 0.5) return true;
     }
     return false;
   }
@@ -323,8 +340,10 @@ export class Traffic {
         this.reveal(suspect.x, suspect.z);
       }
       const at = d.anchor;
-      if (Math.hypot(x - at[0], z - at[1]) > 6) d.anchor = [x, z, 0];
-      else if ((at[2] += dt) > STALL && Math.hypot(suspect.x - x, suspect.z - z) > BUST_RANGE) {
+      if (Math.hypot(x - at[0], z - at[1]) > 6 && speed > 0) {
+        d.anchor = [x, z, 0];
+        d.wedges = 0;
+      } else if ((at[2] += dt) > STALL && Math.hypot(suspect.x - x, suspect.z - z) > BUST_RANGE) {
         d.reversing = 1.2;
         this.sidestep(d);
       }
@@ -348,13 +367,14 @@ export class Traffic {
       this.despawn(v);
       return;
     }
-    while (d.i < n - 1 && Math.hypot(d.pts[d.i * 2] - x, d.pts[d.i * 2 + 1] - z) < look) d.i++;
+    while (d.i < n - 1 && Math.hypot(d.pts[d.i * 2] - x, d.pts[d.i * 2 + 1] - z) < (d.chase && this.sharp(d, d.i) ? CORNER_LOOK : look)) d.i++;
 
-    if (!v.siren && this.sirens.length && this.sirenBehind(v)) d.yielding = 1.5;
+    if (!v.siren && this.sirens.length && this.sirenComing(v)) d.yielding = 1.5;
     d.yielding -= dt;
     d.overtaking -= dt;
     d.dodge -= Math.sign(d.dodge) * Math.min(Math.abs(d.dodge), dt);
-    const pull = d.yielding > 0 ? PULL_OVER : d.overtaking > 0 ? -(d.chase ? CHASE_OVERTAKE : OVERTAKE) : d.dodge ? Math.sign(d.dodge) * DODGE : 0;
+    const overtake = (d.chase ? CHASE_OVERTAKE : OVERTAKE) * (d.passRight ? 1 : -1);
+    const pull = d.yielding > 0 ? PULL_OVER : d.overtaking > 0 ? overtake : d.dodge ? Math.sign(d.dodge) * DODGE : 0;
     d.pull += (pull - d.pull) * Math.min(1, 1.8 * dt);
     let dx = d.pts[d.i * 2] - x, dz = d.pts[d.i * 2 + 1] - z;
     if (Math.abs(d.pull) > 0.05) {
@@ -395,7 +415,9 @@ export class Traffic {
       const inTheWay = other && (other.yielding > 0 || (suspect && Math.abs(other.v.forwardSpeed) < 2));
       if (v.siren && inTheWay && gap < 25) {
         d.overtaking = 1.5;
-        target = Math.max(target, Math.min(3, gap - 1.5));
+        d.passRight = Math.cos(other.v.angle - a) < 0;
+        // A pursuer right up against it still has to creep, or it can never swing out.
+        target = Math.max(target, suspect ? 2.5 : Math.min(3, gap - 1.5));
       }
       if (player && d.stuck > 1.2 && d.honkCooldown <= 0) {
         this.honks.push([x, z]);
@@ -431,6 +453,13 @@ export class Traffic {
     const throttle = error > 0.3 ? Math.min(1, 0.25 + error / 3) : error < -0.3 ? Math.max(-1, error / 4 - 0.2) : 0.12;
     // boost: traffic isn't capped to the player's regular-speed limit — it already self-limits to each road's speed.
     v.controls = { steer, throttle: target < 0.3 && speed < 0.3 ? 0 : throttle, handbrake: target < 0.3 && speed < 0.5, boost: true };
+  }
+
+  private sharp(d: Driver, i: number): boolean {
+    const p = d.pts, k = i * 2;
+    if (k < 2 || k + 3 >= p.length) return false;
+    const ax = p[k] - p[k - 2], az = p[k + 1] - p[k - 1], bx = p[k + 2] - p[k], bz = p[k + 3] - p[k + 1];
+    return Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz)) > 0.6;
   }
 
   private pullUp(s: Suspect, dist: number): number {

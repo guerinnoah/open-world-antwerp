@@ -29,6 +29,9 @@ function streetWeight(e: GraphEdge, shared: boolean): number {
   return e.w >= 11 ? 1 : e.w >= 8 ? 0.6 : 0.2;
 }
 
+const CLEAR_AHEAD = 25; // m
+const CLEAR_SIDE = 2.5; // m
+
 const distanceTo = (p: number[], x: number, z: number) => nearestSegment(p, x, z).d;
 
 type State = 'walk' | 'down' | 'flee';
@@ -46,6 +49,7 @@ export interface Ped {
   fall: number;
   prev: { x: number; z: number };
   avatar: number;
+  away?: [number, number]; // which way to run, when it isn't simply from the player
 }
 
 export function personBody(world: RAPIER.World, x: number, z: number, radius: number, mass: number, damping: number): RAPIER.RigidBody {
@@ -164,6 +168,7 @@ export class Pedestrians {
   knockDown(p: Ped, dx: number, dz: number, speed: number) {
     if (p.state === 'down') return;
     p.state = 'down';
+    p.away = undefined;
     p.timer = 2.2 + Math.random();
     p.fall = Math.atan2(dz, dx);
     const len = Math.hypot(dx, dz) || 1;
@@ -185,6 +190,21 @@ export class Pedestrians {
       bestD = d;
     }
     return best;
+  }
+
+  /** Off the path of a car on a chase, towards the nearer side. */
+  clearWay(x: number, z: number, angle: number) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    for (const p of this.peds) {
+      if (p.state === 'down') continue;
+      const t = p.body.translation(), rx = t.x - x, rz = t.y - z;
+      const ahead = rx * c + rz * s, side = -rx * s + rz * c;
+      if (ahead < 0 || ahead > CLEAR_AHEAD || Math.abs(side) > CLEAR_SIDE) continue;
+      const k = side < 0 ? -1 : 1;
+      p.state = 'flee';
+      p.timer = 1.5;
+      p.away = [-s * k, c * k];
+    }
   }
 
   scare(x: number, z: number, radius: number) {
@@ -276,8 +296,8 @@ export class Pedestrians {
       }
     } else if (p.state === 'flee') {
       p.timer -= dt;
-      wantX = t.x - px;
-      wantZ = t.y - pz;
+      wantX = p.away ? p.away[0] : t.x - px;
+      wantZ = p.away ? p.away[1] : t.y - pz;
       speed = FLEE_SPEED;
       if (p.timer <= 0) this.rejoin(p);
     } else {
@@ -320,6 +340,7 @@ export class Pedestrians {
   }
 
   private rejoin(p: Ped) {
+    p.away = undefined;
     const t = p.body.translation();
     const near = this.graph.nearest(t.x, t.y, 40);
     if (!near) {

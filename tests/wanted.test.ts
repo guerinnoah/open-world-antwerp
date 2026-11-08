@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { Pedestrians, type Ped } from '../src/actors/pedestrians';
 import { Traffic, type Suspect, type TrafficHost } from '../src/actors/traffic';
 import { VEHICLE_TYPES, Vehicle } from '../src/actors/vehicle';
 import { Router, snap } from '../src/game/gps';
@@ -230,6 +231,35 @@ describe('police chase', () => {
     expect(Math.hypot(goal[0] - SIDE / 2, goal[1] - SIDE / 2)).toBeLessThan(2);
     traffic.pursue(0, null);
     for (const v of [...host.vehicles]) traffic.despawn(v);
+  });
+
+  it('gets traffic ahead to pull over for a siren, whichever way it is facing', () => {
+    const traffic = new Traffic(physics, graph, host, 0) as unknown as { sirens: Vehicle[]; sirenComing(v: Vehicle): boolean };
+    const sedan = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
+    const siren = new Vehicle(physics.world, sedan, 0xffffff, 0, 0, 0);
+    traffic.sirens = [siren];
+    const comes = (x: number, angle: number) => {
+      const v = new Vehicle(physics.world, sedan, 0xffffff, x, 0, angle);
+      const yes = traffic.sirenComing(v);
+      physics.remove(v.body);
+      return yes;
+    };
+    expect(comes(30, 0)).toBe(true);
+    expect(comes(30, Math.PI)).toBe(true);
+    expect(comes(-30, 0)).toBe(false);
+    expect(comes(30, Math.PI / 2)).toBe(false);
+    expect(comes(60, Math.PI)).toBe(false);
+    physics.remove(siren.body);
+  });
+
+  it('clears people off the path of a pursuer, to the nearer side', () => {
+    const ped = (x: number, z: number, state = 'walk') => ({ state, timer: 0, body: { translation: () => ({ x, y: z }) } }) as unknown as Ped;
+    const left = ped(10, -1), right = ped(10, 1), behind = ped(-5, 0), aside = ped(10, 6), down = ped(10, 0, 'down');
+    Pedestrians.prototype.clearWay.call({ peds: [left, right, behind, aside, down] } as unknown as Pedestrians, 0, 0, 0);
+    expect([left.state, right.state]).toEqual(['flee', 'flee']);
+    expect(left.away![1]).toBeCloseTo(-1);
+    expect(right.away![1]).toBeCloseTo(1);
+    expect([behind.state, aside.state, down.state]).toEqual(['walk', 'walk', 'down']);
   });
 
   it('cannot see you indoors', () => {

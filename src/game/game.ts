@@ -191,7 +191,7 @@ export class Game {
     this.districts = districts;
   }
 
-  route(x: number, z: number, heading: number, tx: number, tz: number): number[] | null {
+  route(x: number, z: number, heading: number | null, tx: number, tz: number): number[] | null {
     const start = snap(this.drive, x, z, 60), goal = snap(this.drive, tx, tz, 120);
     return (start && goal && this.chaseRouter.route(start, goal, true, heading, true)?.points) || null;
   }
@@ -334,6 +334,7 @@ export class Game {
     const focus = this.focus;
     this.traffic.pursue(this.wanted.units, this.wanted.level ? this.trackSuspect() : null);
     this.traffic.update(dt, focus.x, focus.z);
+    if (this.steps % 15 === 0) for (const v of this.traffic.police) this.peds.clearWay(v.x, v.z, v.angle);
     this.peds.update(dt, focus.x, focus.z);
     this.cyclists.update(dt, focus.x, focus.z);
     this.trams.update(dt, focus.x, focus.z);
