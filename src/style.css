@@ -5,7 +5,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #title { position: fixed; inset: 0; z-index: 10; display: grid; align-items: end; padding: 6vh 6vw; overflow-y: auto; background: linear-gradient(100deg, rgb(15 17 22 / 0.9) 0%, rgb(15 17 22 / 0.6) 40%, rgb(15 17 22 / 0) 70%); transition: opacity 0.5s; }
 #title.gone { opacity: 0; pointer-events: none; }
 #title .card { max-width: 420px; }
-#title h1 { margin: 0; font: italic 900 min(64px, 13vw)/0.88 system-ui, sans-serif; letter-spacing: -0.02em; text-transform: uppercase; white-space: nowrap; text-shadow: 0 4px 18px rgb(0 0 0 / 0.5); }
+#title h1 { margin: 0; font: 800 min(72px, 15vw)/1 system-ui, sans-serif; letter-spacing: -0.02em; white-space: nowrap; text-shadow: 0 4px 18px rgb(0 0 0 / 0.5); }
 #title h1 span { display: block; color: #ff3b30; }
 #title .tagline { margin: 16px 0 22px; font-size: 16px; line-height: 1.45; color: rgb(255 255 255 / 0.9); }
 #title .controls { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 7px 14px; margin: 0 0 14px; font-size: 14px; }
@@ -47,7 +47,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #credits summary::-webkit-details-marker { display: none; }
 #credits details > div { position: absolute; bottom: calc(100% + 6px); right: 0; width: max-content; max-width: 80vw; padding: 8px 10px; border-radius: 6px; background: rgb(20 22 28 / 0.85); color: rgb(255 255 255 / 0.85); line-height: 1.6; text-align: right; }
 
-#hud { position: fixed; inset: 0; pointer-events: none; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.6); }
+#hud { position: fixed; inset: 0; z-index: 1; pointer-events: none; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.6); }
 #hud .speed { position: absolute; right: 18px; bottom: 34px; font-size: 40px; font-variant-numeric: tabular-nums; }
 #hud .speed small { font-size: 16px; opacity: 0.8; }
 #hud .controls-list { position: absolute; left: 16px; bottom: 206px; font: 600 13px system-ui, sans-serif; color: #fff; opacity: 0.82; background: rgb(15 17 22 / 0.5); padding: 6px 10px; border-radius: 7px; white-space: pre-line; line-height: 1.55; text-shadow: 0 1px 2px rgb(0 0 0 / 0.5); }
@@ -55,28 +55,25 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #hud .hint { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px; background: rgb(15 17 22 / 0.65); font-size: 16px; text-shadow: none; }
 #hud .toast { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); max-width: 90vw; text-align: center; font-size: 22px; opacity: 0; transition: opacity 0.4s; }
 #hud .toast.show { opacity: 1; }
-#hud .street { position: absolute; right: 18px; bottom: 86px; font-size: 22px; letter-spacing: 0.02em; opacity: 0; }
+#hud :is(.police, .vehicle, .street, .district) { position: absolute; right: 18px; padding: 4px 10px; border-radius: 8px; background: rgb(15 17 22 / 0.65); font-size: 15px; text-shadow: none; }
+#hud .street { top: 146px; opacity: 0; }
 #hud .street.show { animation: street 4s ease forwards; }
 @keyframes street { 0% { opacity: 0; } 10%, 75% { opacity: 1; } 100% { opacity: 0; } }
-#hud .district { position: absolute; right: 18px; bottom: 114px; font: italic 900 38px/1 system-ui, sans-serif; letter-spacing: -0.01em; text-shadow: 0 3px 0 #000, 0 0 14px rgb(0 0 0 / 0.6); opacity: 0; }
-#hud .vehicle { position: absolute; right: 18px; bottom: 160px; font: italic 800 26px/1 system-ui, sans-serif; color: #ffd479; text-shadow: 0 2px 0 #000, 0 0 10px rgb(0 0 0 / 0.6); opacity: 0; }
+#hud .district { top: 174px; opacity: 0; }
+#hud .vehicle { top: 118px; opacity: 0; }
 #hud :is(.district, .vehicle).show { animation: street 5s ease forwards; }
-#hud .stars { position: absolute; right: 14px; top: 58px; display: flex; flex-direction: row-reverse; gap: 1px; font-size: 30px; line-height: 1; }
-#hud .stars[hidden] { display: none; }
-#hud .stars span { color: rgb(255 255 255 / 0.22); text-shadow: 0 2px 3px rgb(0 0 0 / 0.7); }
-#hud .stars span.on { color: #fff; }
-#hud .stars.searching span.on { animation: stars-search 0.5s steps(1) infinite alternate; }
-@keyframes stars-search { to { opacity: 0.25; } }
-#hud .stars.up { animation: stars-up 0.5s ease-out; }
-@keyframes stars-up { from { transform: scale(1.35); } }
+#hud .police { top: 58px; }
 #hud .fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; }
 #hud .fade.out { animation: fade-in-from-black 0.5s ease-out; }
 @keyframes fade-in-from-black { from { opacity: 1; } to { opacity: 0; } }
-#hud .health { position: absolute; left: 34px; bottom: 16px; width: 140px; height: 8px; border-radius: 4px; overflow: hidden; background: rgb(20 22 28 / 0.75); box-shadow: 0 2px 6px rgb(0 0 0 / 0.4); }
+#hud .fade.defeat { animation: defeat-black var(--defeat) ease-in forwards; }
+@keyframes defeat-black { 0%, 40% { opacity: 0; } 100% { opacity: 1; } }
+#hud .health { position: absolute; left: 16px; bottom: 12px; width: 176px; height: 8px; border-radius: 4px; overflow: hidden; background: rgb(20 22 28 / 0.75); box-shadow: 0 2px 6px rgb(0 0 0 / 0.4); transition: opacity 0.3s; }
+#hud .health.full { opacity: 0; }
 #hud .health > div { position: absolute; inset: 0 auto 0 0; background: #4caf50; }
 #hud .health > .lost { background: #fff; transition: width 0.5s ease-in 0.4s; }
 #hud .health.low > :not(.lost) { background: #ff3b30; animation: health-low 0.5s ease-in-out infinite alternate; }
-#hud .stamina { position: absolute; left: 34px; bottom: 28px; width: 140px; height: 5px; border-radius: 3px; overflow: hidden; background: rgb(20 22 28 / 0.75); box-shadow: 0 2px 6px rgb(0 0 0 / 0.4); }
+#hud .stamina { position: absolute; left: 16px; bottom: 22px; width: 176px; height: 5px; border-radius: 3px; overflow: hidden; background: rgb(20 22 28 / 0.75); box-shadow: 0 2px 6px rgb(0 0 0 / 0.4); }
 #hud .stamina[hidden] { display: none; }
 #hud .stamina > div { position: absolute; inset: 0 auto 0 0; background: #f5c542; }
 #hud .stamina.low > div { background: #ff8c1a; }
@@ -84,14 +81,6 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #hud .hurt { position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 45%, rgb(220 20 20 / 0.65)); opacity: 0; }
 #hud .hurt.flash { animation: hurt 0.8s ease-out; }
 @keyframes hurt { from { opacity: var(--hurt); } }
-#hud .wasted { position: fixed; inset: 0; display: grid; place-items: center; visibility: hidden; }
-#hud .wasted.show { visibility: visible; animation: wasted-black var(--wasted) ease-in forwards; }
-@keyframes wasted-black { 0%, 85% { background: rgb(0 0 0 / 0); } 100% { background: #000; } }
-#hud .wasted span { width: 100%; padding: 12px 0; background: linear-gradient(90deg, transparent, rgb(0 0 0 / 0.55) 25%, rgb(0 0 0 / 0.55) 75%, transparent); text-align: center; font: italic 900 76px/1 system-ui, sans-serif; letter-spacing: 0.02em; text-transform: uppercase; color: #ff3b30; text-shadow: 0 3px 0 #000, 0 0 24px rgb(0 0 0 / 0.6); }
-#hud .wasted.show span { animation: wasted-in 0.6s ease-out 0.6s both; }
-#hud .wasted.busted span { color: #4aa3ff; }
-@keyframes wasted-in { from { opacity: 0; transform: scale(1.3); } }
-body.wasted :is(#game, #minimap) { filter: grayscale(1) brightness(0.8); transition: filter 1.5s; }
 
 #touch { position: fixed; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
 #touch .stick { position: absolute; left: 28px; bottom: 34px; width: 130px; height: 130px; border-radius: 50%; background: rgb(255 255 255 / 0.12); border: 2px solid rgb(255 255 255 / 0.3); pointer-events: auto; touch-action: none; }
@@ -102,7 +91,7 @@ body.wasted :is(#game, #minimap) { filter: grayscale(1) brightness(0.8); transit
 #touch .punch { right: 120px; bottom: 160px; width: 64px; height: 64px; font-size: 12px; }
 #touch[data-seat="foot"] .handbrake, #touch[data-seat="vehicle"] .punch { display: none; }
 
-#minimap { position: fixed; left: 16px; bottom: 30px; width: 170px; height: 170px; border-radius: 50%; border: 3px solid rgb(20 22 28 / 0.75); box-shadow: 0 2px 10px rgb(0 0 0 / 0.4); cursor: pointer; }
+#minimap { position: fixed; left: 16px; bottom: 30px; width: 170px; height: 170px; border-radius: 10px; border: 3px solid rgb(20 22 28 / 0.75); box-shadow: 0 2px 10px rgb(0 0 0 / 0.4); cursor: pointer; }
 
 #worldmap { position: fixed; inset: 0; z-index: 20; background: #2a2d33; touch-action: none; user-select: none; -webkit-user-select: none; }
 #worldmap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
@@ -125,18 +114,17 @@ body > button.view { position: fixed; top: 10px; right: 58px; width: 40px; heigh
 
 @media (pointer: coarse) {
   #hud .speed { bottom: auto; top: 80px; font-size: 30px; }
-  #hud .stars { top: 52px; font-size: 22px; }
-  #hud .district { bottom: auto; top: 118px; font-size: 22px; }
-  #hud .vehicle { bottom: auto; top: 144px; font-size: 16px; }
+  #hud .police { top: 52px; }
   #hud .controls-list { display: none; }
-  #hud .street { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: 54px; font-size: 18px; }
   #credits { top: 6px; bottom: auto; left: 8px; right: 90px; font-size: 9px; }
   #credits details > div { top: calc(100% + 6px); bottom: auto; left: 0; right: auto; text-align: left; }
   #stats { bottom: auto; top: 40px; }
   #minimap { left: 10px; top: 34px; bottom: auto; width: 120px; height: 120px; }
-  #hud .health { left: 23px; top: 166px; bottom: auto; width: 100px; height: 6px; }
-  #hud .stamina { left: 23px; top: 157px; bottom: auto; width: 100px; }
-  #hud .wasted span { font-size: 54px; }
+  #hud .health { left: 10px; top: 171px; bottom: auto; width: 126px; height: 6px; }
+  #hud .stamina { left: 10px; top: 163px; bottom: auto; width: 126px; }
+}
+@media (pointer: coarse) and (max-height: 520px) {
+  #hud :is(.vehicle, .street, .district) { right: 196px; }
 }
 
 #net { position: fixed; top: 10px; left: 10px; display: grid; grid-template-columns: auto auto 1fr; justify-items: start; gap: 6px; pointer-events: none; }

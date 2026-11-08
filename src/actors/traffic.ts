@@ -26,7 +26,7 @@ const MIN_REROUTE = 0.3; // s
 const SEARCHED = 25; // m
 const WET_STEP = 5; // m: quays have no wall to stop a car
 const STOP_GAP = 7; // m, centre to centre
-const BUST_RANGE = 14; // m, centre to centre
+const ARREST_RANGE = 14; // m, centre to centre
 const STALL = 4; // s to make 6 m of progress
 const DODGE = 1.8; // m
 const CORNER_LOOK = 3; // m: further cuts corners into buildings
@@ -173,7 +173,7 @@ export class Traffic {
   }
 
   pinned(x: number, z: number): boolean {
-    return this.police.some((v) => Math.abs(v.forwardSpeed) < 3 && this.sight(v, x, z, BUST_RANGE) < Infinity);
+    return this.police.some((v) => Math.abs(v.forwardSpeed) < 3 && this.sight(v, x, z, ARREST_RANGE) < Infinity);
   }
 
   private sight(v: { x: number; z: number }, x: number, z: number, range: number): number {
@@ -349,7 +349,7 @@ export class Traffic {
       if (Math.hypot(x - at[0], z - at[1]) > 6 && speed > 0) {
         d.anchor = [x, z, 0];
         d.wedges = 0;
-      } else if ((at[2] += dt) > STALL && Math.hypot(suspect.x - x, suspect.z - z) > BUST_RANGE) {
+      } else if ((at[2] += dt) > STALL && Math.hypot(suspect.x - x, suspect.z - z) > ARREST_RANGE) {
         d.reversing = 1.2;
         this.sidestep(d);
       }

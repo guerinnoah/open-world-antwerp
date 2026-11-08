@@ -7,7 +7,7 @@ const { browser, page } = await open({ context: { viewport: { width: 1200, heigh
 await load(page, `${base}/?title&nologos&solo&quality=high&time=16&weather=clear`, 90_000);
 await page.addStyleTag({
   content: `#title .tagline, #title .controls, #title .more, #title .play, #credits { display: none !important; }
-    #title { padding: 0 0 56px 64px; } #title h1 { font-size: 84px; }`,
+    #title { padding: 0 0 56px 64px; } #title h1 { font-size: 96px; }`,
 });
 await page.waitForTimeout(3000);
 await sharp(await page.screenshot()).resize(1200, 630).jpeg({ quality: 82, mozjpeg: true }).toFile('public/og.jpg');

@@ -39,9 +39,6 @@ export class Minimap {
     const c = this.ctx, r = SIZE / 2, k = (r / VIEW_RADIUS) / SCALE;
     c.save();
     c.clearRect(0, 0, SIZE, SIZE);
-    c.beginPath();
-    c.arc(r, r, r - 2, 0, Math.PI * 2);
-    c.clip();
     const turn = -Math.PI / 2 - yaw;
     c.translate(r, r);
     c.rotate(turn);
@@ -54,7 +51,7 @@ export class Minimap {
       const dx = px - x, dz = pz - z;
       const sx = (dx * Math.cos(turn) - dz * Math.sin(turn)) * (r / VIEW_RADIUS);
       const sy = (dx * Math.sin(turn) + dz * Math.cos(turn)) * (r / VIEW_RADIUS);
-      const d = Math.hypot(sx, sy), edge = r - 9;
+      const d = Math.max(Math.abs(sx), Math.abs(sy)), edge = r - 9;
       return d > edge ? [r + (sx / d) * edge, r + (sy / d) * edge, true] : [r + sx, r + sy, false];
     };
     c.font = '600 10px system-ui, sans-serif';

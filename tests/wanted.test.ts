@@ -5,7 +5,7 @@ import { VEHICLE_TYPES, Vehicle, type VehicleSpec } from '../src/actors/vehicle'
 
 const PATROL = VEHICLE_TYPES.find(([spec]) => spec.name === 'police')![0];
 import { Router, snap } from '../src/game/gps';
-import { MAX_STARS, Wanted } from '../src/game/wanted';
+import { MAX_LEVEL, Wanted } from '../src/game/wanted';
 import { Physics } from '../src/physics/physics';
 import type { CityData, GraphData } from '../src/world/cityData';
 import { Districts } from '../src/world/districts';
@@ -23,7 +23,7 @@ describe('wanted level', () => {
     expect(w.level).toBe(2);
   });
 
-  it('adds one star per rampage, not one per person hit', () => {
+  it('adds one level per rampage, not one per person hit', () => {
     const w = new Wanted();
     for (let i = 0; i < 5; i++) w.crime(true);
     expect(w.level).toBe(1);
@@ -31,18 +31,18 @@ describe('wanted level', () => {
       w.crime(true);
       w.update(0.5, true, false);
     }
-    expect(w.level).toBe(MAX_STARS);
+    expect(w.level).toBe(MAX_LEVEL);
   });
 
   it('gives the police time to arrive before the search starts', () => {
     const w = new Wanted();
     w.crime(true);
     for (let t = 0; t < 20; t += 0.5) w.update(0.5, false, false);
-    expect(w.searching).toBe(false);
+    expect(w.status).toBe('on the way');
     expect(w.level).toBe(1);
   });
 
-  it('is lost after long enough out of sight, and longer with more stars', () => {
+  it('is lost after long enough out of sight, and longer at higher levels', () => {
     const w = new Wanted();
     w.crime(true);
     w.update(0.1, true, false);
@@ -57,19 +57,22 @@ describe('wanted level', () => {
     expect(t3).toBeGreaterThan(t + 5);
   });
 
-  it('flashes the stars while searching, and a sighting resets the search', () => {
+  it('reports police on the way until seen, then chasing, then searching once out of sight', () => {
     const w = new Wanted();
+    expect(w.status).toBe(null);
     w.crime(true);
+    expect(w.status).toBe('on the way');
     w.update(0.1, true, false);
+    expect(w.status).toBe('chasing');
     w.update(1, false, false);
-    expect(w.searching).toBe(false);
+    expect(w.status).toBe('chasing');
     w.update(1, false, false);
-    expect(w.searching).toBe(true);
+    expect(w.status).toBe('searching');
     w.update(0.1, true, false);
-    expect(w.searching).toBe(false);
+    expect(w.status).toBe('chasing');
   });
 
-  it('forgets the gap between stars after Wasted or Busted', () => {
+  it('forgets the gap between levels after being knocked out or arrested', () => {
     const w = new Wanted();
     expect(w.crime(true)).toBe(true);
     w.clear();
@@ -83,14 +86,14 @@ describe('wanted level', () => {
     expect(w.level).toBe(3);
   });
 
-  it('busts you after being held beside a police car, not for brushing past one', () => {
+  it('arrests you after being held beside a police car, not for brushing past one', () => {
     const w = new Wanted();
     w.crime(true);
     w.update(1, true, true);
     w.update(0.1, true, false);
     w.update(1, true, true);
     expect(w.level).toBe(1);
-    expect(w.update(1, true, true)).toBe('busted');
+    expect(w.update(1, true, true)).toBe('arrested');
     expect(w.level).toBe(0);
   });
 });
@@ -287,7 +290,7 @@ describe('police chase', () => {
     for (const v of [...host.vehicles]) traffic.despawn(v);
   });
 
-  it('rams a moving car from two stars, and pulls up instead once it stops', () => {
+  it('rams a moving car from level two, and pulls up instead once it stops', () => {
     const traffic = new Traffic(physics, graph, host, 0);
     const sedan = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
     const getaway = new Vehicle(physics.world, sedan, 0xffffff, 30, SIDE - 40, -Math.PI / 2);

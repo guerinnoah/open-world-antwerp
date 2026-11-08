@@ -1,6 +1,5 @@
 import type { Sound } from '../audio/sound';
 import { coarsePointer } from '../core/quality';
-import { MAX_STARS } from '../game/wanted';
 
 /** Reading offsetWidth forces the reflow that restarts the animation. */
 function replay(el: HTMLElement, className: string, on = true) {
@@ -29,7 +28,7 @@ export class Hud {
   private street = document.createElement('div');
   private district = document.createElement('div');
   private vehicle = document.createElement('div');
-  private stars = document.createElement('div');
+  private police = document.createElement('div');
   private fadeEl = document.createElement('div');
   private health = document.createElement('div');
   private healthBars = [document.createElement('div'), document.createElement('div')]; // the lost chunk lingers behind the fill
@@ -38,11 +37,10 @@ export class Hud {
   private controlsEl = document.createElement('div');
   private lastControls = '';
   private hurtEl = document.createElement('div');
-  private wastedEl = document.createElement('div');
   private toastTimer = 0;
   private dead = false;
   private viewBtn: HTMLButtonElement | null = null;
-  private last = { speed: '', hint: '', health: -1, stamina: -1, stars: 0 };
+  private last = { speed: '', hint: '', health: -1, stamina: -1, police: '' };
 
   constructor() {
     this.root.id = 'hud';
@@ -52,10 +50,8 @@ export class Hud {
     this.street.className = 'street';
     this.district.className = 'district';
     this.vehicle.className = 'vehicle';
-    this.stars.className = 'stars';
-    this.stars.hidden = true;
-    this.stars.append(...Array.from({ length: MAX_STARS }, () => Object.assign(document.createElement('span'), { textContent: '★' })));
-    this.speed.hidden = this.hint.hidden = true;
+    this.police.className = 'police';
+    this.speed.hidden = this.hint.hidden = this.police.hidden = true;
     this.fadeEl.className = 'fade';
     this.health.className = 'health';
     this.healthBars[0].className = 'lost';
@@ -66,9 +62,7 @@ export class Hud {
     this.controlsEl.className = 'controls-list';
     this.controlsEl.hidden = true;
     this.hurtEl.className = 'hurt';
-    this.wastedEl.className = 'wasted';
-    this.wastedEl.innerHTML = '<span>Wasted</span>';
-    this.root.append(this.hurtEl, this.speed, this.hint, this.toastEl, this.street, this.district, this.vehicle, this.stars, this.health, this.stamina, this.controlsEl, this.wastedEl, this.fadeEl);
+    this.root.append(this.hurtEl, this.speed, this.hint, this.toastEl, this.street, this.district, this.vehicle, this.police, this.health, this.stamina, this.controlsEl, this.fadeEl);
     document.body.append(this.root);
     // A focused <summary> would toggle on the Enter/Space game keys.
     document.querySelector('#credits summary')?.addEventListener('click', (e) => (e.currentTarget as HTMLElement).blur());
@@ -96,6 +90,7 @@ export class Hud {
     this.last.health = pct;
     for (const bar of this.healthBars) bar.style.width = `${pct}%`;
     this.health.classList.toggle('low', pct < 25);
+    this.health.classList.toggle('full', pct >= 100);
   }
 
   setControls(lines: string[]) {
@@ -121,13 +116,11 @@ export class Hud {
   }
 
   /** s until the screen goes black; 0 clears it. */
-  wasted(seconds: number, busted = false) {
+  defeat(seconds: number) {
     this.dead = seconds > 0;
-    this.wastedEl.firstElementChild!.textContent = busted ? 'Busted' : 'Wasted';
-    this.wastedEl.classList.toggle('busted', busted);
-    this.wastedEl.style.setProperty('--wasted', `${seconds}s`);
-    this.wastedEl.classList.toggle('show', this.dead);
-    document.body.classList.toggle('wasted', this.dead);
+    this.fadeEl.style.setProperty('--defeat', `${seconds}s`);
+    this.fadeEl.classList.toggle('defeat', this.dead);
+    document.body.classList.toggle('defeat', this.dead);
     if (this.dead) this.setHint('');
   }
 
@@ -184,13 +177,12 @@ export class Hud {
     this.fadeEl.style.opacity = '1';
   }
 
-  setWanted(level: number, searching: boolean) {
-    this.stars.classList.toggle('searching', searching);
-    if (level === this.last.stars) return;
-    if (level > this.last.stars) replay(this.stars, 'up');
-    this.last.stars = level;
-    this.stars.hidden = !level;
-    [...this.stars.children].forEach((s, i) => s.classList.toggle('on', i < level));
+  setPolice(status: string | null) {
+    const text = status ? `Police ${status}` : '';
+    if (text === this.last.police) return;
+    this.last.police = text;
+    this.police.textContent = text;
+    this.police.hidden = !text;
   }
 
   setDistrict(name: string) {
