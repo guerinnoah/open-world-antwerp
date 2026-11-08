@@ -1,7 +1,9 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { Pedestrians, type Ped } from '../src/actors/pedestrians';
 import { Traffic, type Suspect, type TrafficHost } from '../src/actors/traffic';
-import { VEHICLE_TYPES, Vehicle } from '../src/actors/vehicle';
+import { VEHICLE_TYPES, Vehicle, type VehicleSpec } from '../src/actors/vehicle';
+
+const PATROL = VEHICLE_TYPES.find(([spec]) => spec.name === 'police')![0];
 import { Router, snap } from '../src/game/gps';
 import { MAX_STARS, Wanted } from '../src/game/wanted';
 import { Physics } from '../src/physics/physics';
@@ -106,8 +108,9 @@ describe('districts', () => {
   });
 });
 
-// A 240 m square ring road, two-way at 50 km/h.
+// A 240 m square ring road, two-way at 50 km/h, with open ground inside.
 const SIDE = 240;
+const MIDDLE = { x: SIDE / 2, z: SIDE / 2 - 5 }; // just under Game.route's 120 m snap to a road
 function ring(): GraphData['drive'] {
   const corners = [[0, 0], [SIDE / 2, 0], [SIDE, 0], [SIDE, SIDE / 2], [SIDE, SIDE], [SIDE / 2, SIDE], [0, SIDE], [0, SIDE / 2]];
   const edges = corners.map(([x0, z0], i) => {
@@ -118,6 +121,116 @@ function ring(): GraphData['drive'] {
   });
   return { nodes: corners.flat(), edges };
 }
+
+describe('police on a long straight', () => {
+  const DT = 1 / 60;
+  const LENGTH = 400;
+  // One-way, and a loop so nothing reaches a dead end; the top side is the long straight.
+  const corners = [0, 0, LENGTH, 0, LENGTH, 50, 0, 50];
+  const road = new NavGraph({
+    nodes: corners,
+    edges: [0, 1, 2, 3].map((i) => {
+      const b = (i + 1) % 4, p = [corners[i * 2], corners[i * 2 + 1], corners[b * 2], corners[b * 2 + 1]];
+      return { a: i, b, p, len: Math.hypot(p[2] - p[0], p[3] - p[1]), o: 1 as const, s: 50 / 3.6, w: 10 };
+    }),
+  }, true);
+  const router = new Router(road);
+  const setup = async (trees: number[] = []) => {
+    const physics = await Physics.create({ bounds: { minX: -60, minZ: -60, maxX: LENGTH + 60, maxZ: 60 }, buildings: [], trees } as unknown as CityData);
+    const host: TrafficHost = {
+      vehicles: [],
+      addVehicle(v) {
+        this.vehicles.push(v);
+        physics.owners.set(v.body.collider(0).handle, { kind: 'vehicle', entity: v });
+      },
+      removeVehicle(v) {
+        this.vehicles.splice(this.vehicles.indexOf(v), 1);
+        physics.remove(v.body);
+      },
+      route(x, z, heading, tx, tz) {
+        const start = snap(road, x, z, 60), goal = snap(road, tx, tz, 120);
+        return (start && goal && router.route(start, goal, true, heading, true)?.points) || null;
+      },
+      wet: () => false,
+    };
+    const traffic = new Traffic(physics, road, host, 0);
+    const inner = traffic as unknown as { spawn(edge: number, forced: VehicleSpec): { v: Vehicle } | undefined; rejoin(d: unknown): void };
+    const place = (spec: VehicleSpec, x: number, angle: number) => {
+      let d;
+      while (!(d = inner.spawn(0, spec)));
+      d.v.body.setTranslation({ x, y: 0 }, true);
+      d.v.body.setRotation(angle, true);
+      d.v.body.setLinvel({ x: 0, y: 0 }, true);
+      d.v.sync();
+      inner.rejoin(d);
+      return d.v;
+    };
+    const run = (suspect: Suspect, seconds: number, until: () => boolean) => {
+      for (let t = 0; t < seconds; t += DT) {
+        traffic.pursue(1, suspect);
+        traffic.update(DT, suspect.x, suspect.z);
+        for (const v of host.vehicles) v.step(DT);
+        physics.step();
+        for (const v of host.vehicles) v.sync();
+        if (until()) return true;
+      }
+      return false;
+    };
+    return { physics, traffic, place, run };
+  };
+  const SEDAN = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
+
+  it('swings out round a parked car rather than stopping behind it', async () => {
+    const { physics, place, run } = await setup();
+    const parked = new Vehicle(physics.world, SEDAN, 0xffffff, 200, 0, 0);
+    physics.owners.set(parked.body.collider(0).handle, { kind: 'vehicle', entity: parked });
+    const cop = place(PATROL, 110, 0);
+    const suspect: Suspect = { x: 270, z: 0, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    expect(run(suspect, 40, () => cop.x > parked.body.translation().x + 3)).toBe(true);
+  });
+
+  it.each([['moving', false], ['stopped', true]])('gets round a %s car coming the other way without hitting it at speed', async (_, stopped) => {
+    const { physics, traffic, place, run } = await setup();
+    const cop = place(PATROL, 300, Math.PI);
+    const oncoming = place(SEDAN, 170, 0);
+    if (stopped) (traffic as unknown as { drivers: Map<Vehicle, { limits: number[] }> }).drivers.get(oncoming)!.limits.fill(0);
+    const suspect: Suspect = { x: 150, z: 0, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    let hardest = 0;
+    const passed = run(suspect, 30, () => {
+      physics.world.contactPair(cop.body.collider(0), oncoming.body.collider(0), (m) => {
+        if (m.numContacts()) hardest = Math.max(hardest, Math.abs(cop.forwardSpeed) + Math.abs(oncoming.forwardSpeed));
+      });
+      return cop.x < oncoming.x - 3;
+    });
+    expect(passed).toBe(true);
+    expect(hardest).toBeLessThan(6); // m/s closing
+  });
+
+  it('sees a tree between the edges of the car, which a line of sight misses', async () => {
+    const between = await setup([50, 0.45, 0, 30]);
+    const clear = await setup([50, 1.5, 0, 30]);
+    const run = (s: typeof between) => {
+      s.physics.step();
+      const car = new Vehicle(s.physics.world, SEDAN, 0xffffff, 0, 0, 0);
+      return (s.traffic as unknown as { clearRun(v: Vehicle, x: number, z: number, dist: number): boolean }).clearRun(car, 100, 0, 100);
+    };
+    expect(run(between)).toBe(false);
+    expect(run(clear)).toBe(true);
+  });
+
+  it('stays put rather than driving off the end of a stub when there is nowhere dry to go', async () => {
+    const { physics, traffic, place } = await setup();
+    const cop = place(PATROL, 100, 0);
+    const inner = traffic as unknown as { drivers: Map<Vehicle, { pts: number[]; limits: number[] }>; routeTo(d: unknown, x: number, z: number, speed: number): void; host: TrafficHost };
+    inner.host.wet = () => true;
+    inner.host.route = () => null;
+    const d = inner.drivers.get(cop)!;
+    inner.routeTo(d, 100, 50, 16);
+    expect(d.pts).toEqual([cop.x, cop.z, cop.x, cop.z]);
+    expect(d.limits).toEqual([0, 0]);
+    physics.step();
+  });
+});
 
 describe('police chase', () => {
   const DT = 1 / 60;
@@ -131,6 +244,7 @@ describe('police chase', () => {
       vehicles: [],
       addVehicle(v) {
         this.vehicles.push(v);
+        physics.owners.set(v.body.collider(0).handle, { kind: 'vehicle', entity: v });
       },
       removeVehicle(v) {
         this.vehicles.splice(this.vehicles.indexOf(v), 1);
@@ -140,6 +254,7 @@ describe('police chase', () => {
         const start = snap(graph, x, z, 60), goal = snap(graph, tx, tz, 120);
         return (start && goal && router.route(start, goal, true, heading, true)?.points) || null;
       },
+      wet: () => false,
     };
   });
 
@@ -157,7 +272,7 @@ describe('police chase', () => {
 
   it('sends a police car that finds you off the road and pulls up beside you', () => {
     const traffic = new Traffic(physics, graph, host, 0);
-    const suspect: Suspect = { x: SIDE / 2, z: SIDE / 2, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    const suspect: Suspect = { ...MIDDLE, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
     const pinned = run(traffic, suspect, 1, 60, () => traffic.pinned(suspect.x, suspect.z));
     expect(traffic.police).toHaveLength(1);
     expect(traffic.police[0].siren).toBe(true);
@@ -176,6 +291,7 @@ describe('police chase', () => {
     const traffic = new Traffic(physics, graph, host, 0);
     const sedan = VEHICLE_TYPES.find(([spec]) => spec.name === 'sedan')![0];
     const getaway = new Vehicle(physics.world, sedan, 0xffffff, 30, SIDE - 40, -Math.PI / 2);
+    physics.owners.set(getaway.body.collider(0).handle, { kind: 'vehicle', entity: getaway });
     const suspect: Suspect = { x: getaway.x, z: getaway.z, vx: 0, vz: -3, speed: 75 / 3.6, ram: true, hidden: false, car: getaway };
     const hit = run(traffic, suspect, 1, 60, () => {
       getaway.sync();
@@ -200,12 +316,12 @@ describe('police chase', () => {
 
   it('stops at the water rather than driving in after you', () => {
     const moat = (x: number, z: number) => {
-      const r = Math.hypot(x - SIDE / 2, z - SIDE / 2);
+      const r = Math.hypot(x - MIDDLE.x, z - MIDDLE.z);
       return r > 15 && r < 35;
     };
     const wetHost: TrafficHost = { ...host, wet: moat };
     const traffic = new Traffic(physics, graph, wetHost, 0);
-    const suspect: Suspect = { x: SIDE / 2, z: SIDE / 2, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    const suspect: Suspect = { ...MIDDLE, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
     let swam = false;
     run(traffic, suspect, 1, 40, () => {
       swam ||= traffic.police.some((v) => moat(v.x, v.z));
@@ -220,15 +336,15 @@ describe('police chase', () => {
 
   it('heads for where it last saw you, not where you went', () => {
     const traffic = new Traffic(physics, graph, host, 0);
-    const suspect: Suspect = { x: SIDE / 2, z: SIDE / 2, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    const suspect: Suspect = { ...MIDDLE, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
     expect(run(traffic, suspect, 1, 60, () => traffic.spotted)).toBe(true);
     const cop = traffic.police[0];
     const seenAt = [cop.x, cop.z];
-    Object.assign(suspect, { hidden: true, x: SIDE / 2 + (SIDE / 2 - seenAt[0]) * 0.5, z: SIDE / 2 + (SIDE / 2 - seenAt[1]) * 0.5 });
+    Object.assign(suspect, { hidden: true, x: MIDDLE.x + (MIDDLE.x - seenAt[0]) * 0.5, z: MIDDLE.z + (MIDDLE.z - seenAt[1]) * 0.5 });
     run(traffic, suspect, 1, 3, () => false);
     const d = (traffic as unknown as { drivers: Map<Vehicle, { pts: number[]; searching: [number, number] | null }> }).drivers.get(cop)!;
     const goal = d.searching ?? d.pts.slice(-2);
-    expect(Math.hypot(goal[0] - SIDE / 2, goal[1] - SIDE / 2)).toBeLessThan(2);
+    expect(Math.hypot(goal[0] - MIDDLE.x, goal[1] - MIDDLE.z)).toBeLessThan(2);
     traffic.pursue(0, null);
     for (const v of [...host.vehicles]) traffic.despawn(v);
   });
@@ -254,17 +370,90 @@ describe('police chase', () => {
 
   it('clears people off the path of a pursuer, to the nearer side', () => {
     const ped = (x: number, z: number, state = 'walk') => ({ state, timer: 0, body: { translation: () => ({ x, y: z }) } }) as unknown as Ped;
-    const left = ped(10, -1), right = ped(10, 1), behind = ped(-5, 0), aside = ped(10, 6), down = ped(10, 0, 'down');
-    Pedestrians.prototype.clearWay.call({ peds: [left, right, behind, aside, down] } as unknown as Pedestrians, 0, 0, 0);
-    expect([left.state, right.state]).toEqual(['flee', 'flee']);
-    expect(left.away![1]).toBeCloseTo(-1);
-    expect(right.away![1]).toBeCloseTo(1);
+    const east = ped(1, 10), west = ped(-1, 10), behind = ped(0, -5), aside = ped(6, 10), down = ped(0, 10, 'down');
+    Pedestrians.prototype.clearWay.call({ peds: [east, west, behind, aside, down] } as unknown as Pedestrians, 0, 0, Math.PI / 2);
+    expect([east.state, west.state]).toEqual(['flee', 'flee']);
+    expect(east.away![0]).toBeCloseTo(1);
+    expect(west.away![0]).toBeCloseTo(-1);
     expect([behind.state, aside.state, down.state]).toEqual(['walk', 'walk', 'down']);
+  });
+
+  it('forgets a pursuer the moment it goes, so nothing reads a removed body', () => {
+    const traffic = new Traffic(physics, graph, host, 0);
+    const suspect: Suspect = { ...MIDDLE, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    run(traffic, suspect, 1, 10, () => traffic.police.length === 1);
+    traffic.despawn(traffic.police[0]);
+    expect(traffic.police).toHaveLength(0);
+    expect(() => traffic.pinned(suspect.x, suspect.z)).not.toThrow();
+    run(traffic, suspect, 1, 10, () => traffic.police.length === 1);
+    const jacked = traffic.police[0];
+    traffic.release(jacked);
+    expect(traffic.police).toHaveLength(0);
+    traffic.pursue(0, null);
+    physics.remove(jacked.body);
+    host.vehicles.splice(host.vehicles.indexOf(jacked), 1);
+    for (const v of [...host.vehicles]) traffic.despawn(v);
+  });
+
+  it('stands down a car that stays stuck, and sends another in its place', () => {
+    const traffic = new Traffic(physics, graph, host, 0);
+    const suspect: Suspect = { ...MIDDLE, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    run(traffic, suspect, 1, 10, () => traffic.police.length === 1);
+    const stuck = traffic.police[0];
+    (traffic as unknown as { drivers: Map<Vehicle, { wedges: number }> }).drivers.get(stuck)!.wedges = 3;
+    expect(run(traffic, suspect, 1, 15, () => traffic.police.length === 1 && traffic.police[0] !== stuck)).toBe(true);
+    expect(stuck.siren).toBe(false);
+    traffic.pursue(0, null);
+    for (const v of [...host.vehicles]) traffic.despawn(v);
+  });
+
+  it('takes the quickest of several dispatch spots by road', () => {
+    const edge = (i: number) => graph.edges[i].p;
+    const roads: TrafficHost = { ...host, route: (x) => (x < SIDE / 2 ? [x, 0, x, 500] : [x, 0, x, 50]) };
+    const traffic = new Traffic(physics, graph, roads, 0) as unknown as { quickestEdge(x: number, z: number): number };
+    let quick = 0;
+    for (let n = 0; n < 40; n++) {
+      const p = edge(traffic.quickestEdge(MIDDLE.x, MIDDLE.z)), m = (p.length / 2) >> 1;
+      if (p[m * 2] >= SIDE / 2) quick++;
+    }
+    expect(quick).toBeGreaterThan(30);
+  });
+
+  it('never spawns a chase car in plain view of the suspect, even on a long edge running past them', () => {
+    const traffic = new Traffic(physics, graph, host, 0);
+    const spawn = (traffic as unknown as { spawn(edge: number, forced: typeof PATROL): { v: Vehicle } | undefined }).spawn.bind(traffic);
+    const suspect: Suspect = { x: 140, z: 5, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: false, car: null };
+    traffic.pursue(1, suspect);
+    let placed = 0, refused = 0;
+    for (let n = 0; n < 60; n++) {
+      const d = spawn(1, PATROL);
+      if (!d) {
+        refused++;
+        continue;
+      }
+      placed++;
+      expect(Math.hypot(d.v.x - suspect.x, d.v.z - suspect.z)).toBeGreaterThanOrEqual(90);
+      traffic.despawn(d.v);
+    }
+    expect(placed).toBeGreaterThan(0);
+    expect(refused).toBeGreaterThan(0);
+    // Round a corner it may: old-town streets are too slow to come from further off.
+    const wall = vi.spyOn(physics, 'castStatic').mockReturnValue(0);
+    let close = false;
+    for (let n = 0; n < 60; n++) {
+      const d = spawn(1, PATROL);
+      if (!d) continue;
+      close ||= Math.hypot(d.v.x - suspect.x, d.v.z - suspect.z) < 90;
+      traffic.despawn(d.v);
+    }
+    wall.mockRestore();
+    expect(close).toBe(true);
+    traffic.pursue(0, null);
   });
 
   it('cannot see you indoors', () => {
     const traffic = new Traffic(physics, graph, host, 0);
-    const suspect: Suspect = { x: SIDE / 2, z: SIDE / 2, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: true, car: null };
+    const suspect: Suspect = { ...MIDDLE, vx: 0, vz: 0, speed: 60 / 3.6, ram: false, hidden: true, car: null };
     run(traffic, suspect, 1, 20, () => false);
     expect(traffic.police).toHaveLength(1);
     expect(traffic.spotted).toBe(false);

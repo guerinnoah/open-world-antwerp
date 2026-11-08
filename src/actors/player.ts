@@ -154,7 +154,6 @@ export class Player {
     this.body.setTranslation({ x, y: z }, true);
     this.body.setLinvel({ x: 0, y: 0 }, true);
     this.body.setEnabled(true);
-    this.object.visible = true;
     this.heading = heading;
     this.down = this.sink = this.lean = this.punch = 0;
     this.swimming = false;
@@ -163,7 +162,6 @@ export class Player {
 
   hide() {
     this.body.setEnabled(false);
-    this.object.visible = false;
   }
 
   render(alpha: number, dt: number, crowd: Crowd) {

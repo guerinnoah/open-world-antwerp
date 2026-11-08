@@ -4,7 +4,7 @@ import { uploadFirst } from '../core/instancing';
 import { coloured, weightedPick, wrapAngle } from '../core/util';
 import { GROUP, RAPIER, WHEELS, groups, type Owner, type Physics } from '../physics/physics';
 import type { NavGraph, Step } from '../world/navGraph';
-import { lengthFrom, nearestSegment, segmentDistance, trimPolyline } from '../world/polyline';
+import { lengthFrom, nearestSegment, segmentDistance, trimPolyline, turnAt } from '../world/polyline';
 import { BIKE } from './bikeGeometry';
 import type { Crowd } from './crowd';
 import { extent } from './trackProbe';
@@ -415,9 +415,8 @@ export class Cyclists {
     let target = Math.min(r.cruise, r.caps[r.i]);
     let dist = Math.hypot(dx, dz);
     for (let j = r.i; j < n - 1 && dist < 25; j++) {
-      const ax = r.pts[j * 2] - r.pts[j * 2 - 2], az = r.pts[j * 2 + 1] - r.pts[j * 2 - 1];
       const bx = r.pts[j * 2 + 2] - r.pts[j * 2], bz = r.pts[j * 2 + 3] - r.pts[j * 2 + 1];
-      const turn = Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz));
+      const turn = turnAt(r.pts, j);
       if (turn > 0.35) {
         const corner = r.cruise + (CORNER - r.cruise) * Math.min(turn / 1.6, 1);
         target = Math.min(target, Math.sqrt(corner * corner + 2 * BRAKE * 0.6 * Math.max(dist - 2, 0)));

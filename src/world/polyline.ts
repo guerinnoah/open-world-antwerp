@@ -39,6 +39,12 @@ export function lengthFrom(p: number[], from: number): number {
   return total;
 }
 
+/** Rad, at vertex i of a flat polyline. */
+export function turnAt(p: number[], i: number): number {
+  const k = i * 2, ax = p[k] - p[k - 2], az = p[k + 1] - p[k - 1], bx = p[k + 2] - p[k], bz = p[k + 3] - p[k + 1];
+  return Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz));
+}
+
 export function pointAt(p: number[], cum: number[], s: number): { x: number; z: number; dx: number; dz: number } {
   let lo = 0, hi = cum.length - 1;
   s = Math.max(0, Math.min(s, cum[hi]));

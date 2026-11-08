@@ -1,7 +1,7 @@
-import { weightedPick } from '../core/util';
-import { RAPIER, type Physics } from '../physics/physics';
+import { weightedPick, wrapAngle } from '../core/util';
+import { GROUP, RAPIER, groups, type Physics } from '../physics/physics';
 import type { NavGraph, Step } from '../world/navGraph';
-import { lengthFrom, segmentDistance } from '../world/polyline';
+import { lengthFrom, segmentDistance, turnAt } from '../world/polyline';
 import { extent } from './trackProbe';
 import { VEHICLE_TYPES, Vehicle, isEmergency, isPolice, paintFor, type VehicleSpec } from './vehicle';
 
@@ -13,9 +13,9 @@ const CORNER_SPEED = 3.5; // m/s through a right angle
 const DECEL = 3; // m/s²
 const RESPONDING = 1.35; // × the speed limit
 const PULL_OVER = 1.3; // m right
-const OVERTAKE = 1.1; // m left
-const CHASE_OVERTAKE = 2.2; // m left
-const HEARD = 45; // m behind a siren
+const OVERTAKE = 1.1; // m
+const CHASE_OVERTAKE = 2.2; // m
+const HEARD = 45; // m ahead of a siren
 const SIGHT = 90; // m
 const WITNESS = 60; // m
 const CLOSE = 60; // m
@@ -29,7 +29,9 @@ const STOP_GAP = 7; // m, centre to centre
 const BUST_RANGE = 14; // m, centre to centre
 const STALL = 4; // s to make 6 m of progress
 const DODGE = 1.8; // m
-const CORNER_LOOK = 3; // m: looking further ahead cuts sharp corners into the building
+const CORNER_LOOK = 3; // m: further cuts corners into buildings
+const SHARP = 0.6; // rad
+const STUCK_FOR_GOOD = 3; // stuck spells without progress
 const SPAWN_TRIES = 5;
 const CHASE_LIMIT = 1.6; // × the street's limit: flat out, narrow streets end in walls
 
@@ -42,12 +44,14 @@ export interface Suspect {
   vz: number;
   speed: number; // m/s
   ram: boolean;
-  hidden: boolean; // indoors
+  hidden: boolean;
   car: Vehicle | null; // not braked for when ramming
 }
 
 /** Once you stop they pull up instead, to arrest you. */
 const ramming = (s: Suspect) => s.ram && Math.hypot(s.vx, s.vz) > 2;
+
+const fade = (t: number, dt: number) => t - Math.sign(t) * Math.min(Math.abs(t), dt);
 
 interface Driver {
   id: number;
@@ -63,32 +67,31 @@ interface Driver {
   wedged: number;
   reversing: number;
   honkCooldown: number;
-  yielding: number; // s
-  overtaking: number; // s
-  passRight: boolean; // oncoming: each keeps to its own right
+  yielding: number;
+  overtaking: number; // s; the sign is the side, + = right
   pull: number; // m off the lane, + = right
   chase: boolean;
-  reroute: number; // s
+  reroute: number;
   dodge: number; // s; the sign is the side, + = right
   wedges: number;
   anchor: [number, number, number]; // x, z, s since
-  searching: [number, number] | null; // the sighting it's cruising round
+  searching: [number, number] | null;
 }
 
 export interface TrafficHost {
   readonly vehicles: Vehicle[];
   addVehicle(v: Vehicle): void;
   removeVehicle(v: Vehicle): void;
-  /** Flat [x, z, …]; without it pursuers drive straight. */
-  route?(x: number, z: number, heading: number | null, tx: number, tz: number): number[] | null;
-  wet?(x: number, z: number): boolean;
+  /** Flat [x, z, …]. */
+  route(x: number, z: number, heading: number | null, tx: number, tz: number): number[] | null;
+  wet(x: number, z: number): boolean;
 }
 
 export class Traffic {
   readonly honks: [number, number][] = [];
   sirens: Vehicle[] = []; // driven ones, refreshed with spawning
   police: Vehicle[] = []; // pursuers, refreshed with spawning
-  spotted = false; // this step
+  spotted = false;
   private suspect: Suspect | null = null;
   private lastSeen: [number, number] = [0, 0]; // pursuers only home in on what they can see
   private units = 0;
@@ -115,10 +118,11 @@ export class Traffic {
 
   release(v: Vehicle) {
     this.drivers.delete(v);
+    this.police = this.police.filter((p) => p !== v); // now, not at the next refresh: pinned() reads these bodies
   }
 
   despawn(v: Vehicle) {
-    this.drivers.delete(v);
+    this.release(v);
     this.host.removeVehicle(v);
   }
 
@@ -128,17 +132,15 @@ export class Traffic {
     if (initial || this.spawnTimer <= 0) {
       this.spawnTimer = 0.25;
       for (const d of this.drivers.values()) {
-        const dist = Math.hypot(d.v.x - px, d.v.z - pz);
-        // Keeps getting stuck: swapped, out of sight, for a fresh one.
-        if (dist > DESPAWN || (d.chase && d.wedges >= 3 && dist > SIGHT)) this.despawn(d.v);
+        if (Math.hypot(d.v.x - px, d.v.z - pz) > DESPAWN) this.despawn(d.v);
+        else if (d.chase && d.wedges >= STUCK_FOR_GOOD) this.standDown(d); // frees its place for a car that may get through
         else if (isEmergency(d.v.spec) && !d.chase && Math.random() < 0.0025) this.respond(d, !d.v.siren);
       }
-      if (this.units) this.callUnits(px, pz);
+      this.callUnits(px, pz);
       this.police = [...this.drivers.values()].filter((d) => d.chase).map((d) => d.v);
       this.sirens = this.host.vehicles.filter((v) => v.siren && (v.driven || v.remote));
       for (let n = initial ? this.target * 3 : 2; n > 0 && this.drivers.size < this.target; n--) {
-        const edge = this.graph.randomEdgeNear(px, pz, initial ? 40 : SPAWN_MIN, SPAWN_MAX, (i) => this.graph.edges[i].len > 12);
-        if (edge >= 0) this.spawn(edge);
+        this.spawn(this.edgeNear(px, pz, initial ? 40 : SPAWN_MIN, SPAWN_MAX));
       }
     }
     this.spotted = false;
@@ -150,14 +152,15 @@ export class Traffic {
     this.units = units;
     this.suspect = suspect;
     if (units || !this.police.length) return;
-    for (const d of this.drivers.values()) {
-      if (!d.chase) continue;
-      d.chase = false;
-      d.dodge = 0;
-      if (d.v.siren) this.respond(d, false);
-      this.rejoin(d);
-    }
+    for (const d of this.drivers.values()) if (d.chase) this.standDown(d);
     this.police = [];
+  }
+
+  private standDown(d: Driver) {
+    d.chase = false;
+    d.dodge = 0;
+    this.respond(d, false);
+    this.rejoin(d);
   }
 
   reveal(x: number, z: number) {
@@ -173,22 +176,21 @@ export class Traffic {
     return this.police.some((v) => Math.abs(v.forwardSpeed) < 3 && this.sight(v, x, z, BUST_RANGE) < Infinity);
   }
 
-  /** Infinity when out of range or blocked. */
-  private sight(v: Vehicle, x: number, z: number, range: number): number {
+  private sight(v: { x: number; z: number }, x: number, z: number, range: number): number {
     const dx = x - v.x, dz = z - v.z, dist = Math.hypot(dx, dz);
     if (dist > range) return Infinity;
     if (dist < 1) return dist;
     return this.physics.castStatic(v.x, v.z, dx / dist, dz / dist, dist) < dist - 0.5 ? Infinity : dist;
   }
 
-  /** Both sides of the car: a centre line of sight can still clip a corner. */
+  /** The car's whole width: a line of sight can still clip a corner or a trunk. */
   private clearRun(v: Vehicle, x: number, z: number, dist: number): boolean {
-    const dx = (x - v.x) / dist, dz = (z - v.z) / dist, half = v.spec.width / 2;
-    return [-half, half].every((o) => this.physics.castStatic(v.x - dz * o, v.z + dx * o, dx, dz, dist) >= dist - 0.5) && this.dry(v.x, v.z, x, z);
+    const half = Math.max(dist - 0.5, 0.1) / 2, a = Math.atan2(z - v.z, x - v.x);
+    const flags = RAPIER.QueryFilterFlags.EXCLUDE_DYNAMIC, solid = groups(GROUP.VEHICLE, GROUP.STATIC);
+    return !this.physics.boxOverlaps(v.x + Math.cos(a) * half, v.z + Math.sin(a) * half, a, half, v.spec.width / 2, flags, solid) && this.dry(v.x, v.z, x, z);
   }
 
   private dry(x0: number, z0: number, x1: number, z1: number): boolean {
-    if (!this.host.wet) return true;
     const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / WET_STEP);
     for (let k = 1; k <= n; k++) if (this.host.wet(x0 + ((x1 - x0) * k) / n, z0 + ((z1 - z0) * k) / n)) return false;
     return true;
@@ -200,17 +202,16 @@ export class Traffic {
     let d: Driver | undefined, best = SIGHT * 2;
     for (const o of this.drivers.values()) {
       const dist = Math.hypot(o.v.x - gx, o.v.z - gz);
-      if (!o.chase && isPolice(o.v.spec) && dist < best) [d, best] = [o, dist];
+      if (!o.chase && isPolice(o.v.spec) && o.wedges < STUCK_FOR_GOOD && dist < best) [d, best] = [o, dist];
     }
     // Got well away: no more cars join.
     if (!d && Math.hypot(gx - px, gz - pz) < DESPAWN - COP_SPAWN[1]) {
-      const edge = this.quickestEdge(gx, gz);
-      if (edge >= 0) d = this.spawn(edge, this.units >= 3 && Math.random() < 0.3 ? PATROL_VAN : PATROL_CAR);
+      d = this.spawn(this.quickestEdge(gx, gz), this.units >= 3 && Math.random() < 0.3 ? PATROL_VAN : PATROL_CAR);
     }
     if (!d) return;
     this.dispatch = DISPATCH;
     d.chase = true;
-    d.reroute = d.yielding = d.overtaking = d.pull = d.dodge = d.wedges = 0;
+    d.reroute = d.yielding = d.overtaking = d.pull = d.wedges = 0;
     d.anchor = [d.v.x, d.v.z, 0];
     d.searching = null;
     if (!d.v.siren) this.respond(d, true);
@@ -220,14 +221,18 @@ export class Traffic {
   private quickestEdge(gx: number, gz: number): number {
     let best = -1, shortest = Infinity;
     for (let n = 0; n < SPAWN_TRIES; n++) {
-      const edge = this.graph.randomEdgeNear(gx, gz, COP_SPAWN[0], COP_SPAWN[1], (i) => this.graph.edges[i].len > 12);
+      const edge = this.edgeNear(gx, gz, COP_SPAWN[0], COP_SPAWN[1]);
       if (edge < 0) continue;
       const p = this.graph.edges[edge].p, m = (p.length / 2) >> 1;
-      const route = this.host.route?.(p[m * 2], p[m * 2 + 1], null, gx, gz);
+      const route = this.host.route(p[m * 2], p[m * 2 + 1], null, gx, gz);
       const length = route ? lengthFrom(route, 0) : Infinity;
       if (best < 0 || length < shortest) [best, shortest] = [edge, length];
     }
     return best;
+  }
+
+  private edgeNear(x: number, z: number, minD: number, maxD: number): number {
+    return this.graph.randomEdgeNear(x, z, minD, maxD, (i) => this.graph.edges[i].len > 12);
   }
 
   private laneOffset(step: Step): number {
@@ -235,9 +240,10 @@ export class Traffic {
   }
 
   private spawn(edge: number, forced?: VehicleSpec): Driver | undefined {
+    if (edge < 0) return;
     const e = this.graph.edges[edge];
     const step: Step = { edge, forward: e.o ? true : Math.random() < 0.5 };
-    // Facing the last sighting, not a U-turn.
+    // Else it starts with a U-turn.
     if (forced) {
       const n = this.graph.nodes, [gx, gz] = this.lastSeen;
       step.forward = Math.hypot(n[e.b * 2] - gx, n[e.b * 2 + 1] - gz) < Math.hypot(n[e.a * 2] - gx, n[e.a * 2 + 1] - gz);
@@ -247,9 +253,11 @@ export class Traffic {
     const t = Math.random();
     const x = lane[k * 2] + (lane[k * 2 + 2] - lane[k * 2]) * t, z = lane[k * 2 + 1] + (lane[k * 2 + 3] - lane[k * 2 + 1]) * t;
     const angle = Math.atan2(lane[k * 2 + 3] - lane[k * 2 + 1], lane[k * 2 + 2] - lane[k * 2]);
+    const s = this.suspect;
+    if (forced && s && this.sight({ x, z }, s.x, s.z, COP_SPAWN[0]) < Infinity) return; // in plain view: the edge's middle is far off, this point may not be
     const spec = forced ?? weightedPick(VEHICLE_TYPES, VEHICLE_TYPES.map(([, w]) => w))[0];
     if (this.physics.boxOverlaps(x, z, angle, spec.length / 2 + 2, spec.width / 2 + 0.3)) return;
-    // Cars spawned this frame aren't in Rapier's query structures until the next step: check them directly.
+    // Cars spawned this frame aren't in Rapier's query structures yet.
     for (const other of this.drivers.keys()) if (Math.hypot(other.x - x, other.z - z) < 12) return;
 
     const v = new Vehicle(this.physics.world, spec, paintFor(spec), x, z, angle);
@@ -259,12 +267,12 @@ export class Traffic {
     this.host.addVehicle(v);
     const d: Driver = {
       id: this.nextId++, v, pts: [], limits: [], i: 1, last: step, temper: 0.85 + Math.random() * 0.2,
-      stuck: 0, bold: 0, deadEnd: false, wedged: 0, reversing: 0, honkCooldown: 0, yielding: 0, overtaking: 0, passRight: false, pull: 0,
+      stuck: 0, bold: 0, deadEnd: false, wedged: 0, reversing: 0, honkCooldown: 0, yielding: 0, overtaking: 0, pull: 0,
       chase: false, reroute: 0, dodge: 0, wedges: 0, anchor: [x, z, 0], searching: null,
     };
     this.append(d, step, [x, z, ...lane.slice(k * 2 + 2)]);
     this.drivers.set(v, d);
-    if (!forced && Math.random() < (spec.siren ?? 0)) this.respond(d, true);
+    if (Math.random() < (spec.siren ?? 0)) this.respond(d, true);
     return d;
   }
 
@@ -277,7 +285,6 @@ export class Traffic {
 
   private sirenComing(v: Vehicle): boolean {
     for (const s of this.sirens) {
-      if (s === v) continue;
       const c = Math.cos(s.angle), n = Math.sin(s.angle);
       const rx = v.x - s.x, rz = v.z - s.z;
       const ahead = rx * c + rz * n;
@@ -330,7 +337,6 @@ export class Traffic {
   private drive(d: Driver, dt: number) {
     const v = d.v;
     const x = v.x, z = v.z, a = v.angle;
-    const fx = Math.cos(a), fz = Math.sin(a);
     const speed = v.forwardSpeed;
     const suspect = d.chase ? this.suspect : null;
     if (suspect) {
@@ -348,14 +354,14 @@ export class Traffic {
         this.sidestep(d);
       }
       d.reroute -= dt;
-      if (seen < CLOSE && this.clearRun(v, suspect.x, suspect.z, seen)) {
+      if (seen < CLOSE && this.clearRun(v, suspect.x, suspect.z, seen) && this.onlyThemAhead(v, suspect)) {
         this.closeIn(d, suspect, seen, dt);
         return;
       }
       if (!this.hunt(d, seen < Infinity, suspect.speed)) return;
     } else this.extend(d);
 
-    // Knocked off the route: measured to the current segment, not the next point, which can be far on long straights.
+    // To the segment: the next point can be far on a long straight.
     if ((!suspect || d.searching) && segmentDistance(d.pts, d.i - 1, x, z) > 15) {
       this.rejoin(d);
       return;
@@ -367,56 +373,61 @@ export class Traffic {
       this.despawn(v);
       return;
     }
-    while (d.i < n - 1 && Math.hypot(d.pts[d.i * 2] - x, d.pts[d.i * 2 + 1] - z) < (d.chase && this.sharp(d, d.i) ? CORNER_LOOK : look)) d.i++;
+    while (d.i < n - 1 && Math.hypot(d.pts[d.i * 2] - x, d.pts[d.i * 2 + 1] - z) < (d.chase && turnAt(d.pts, d.i) > SHARP ? CORNER_LOOK : look)) d.i++;
 
-    if (!v.siren && this.sirens.length && this.sirenComing(v)) d.yielding = 1.5;
+    if (!v.siren && this.sirenComing(v)) d.yielding = 1.5;
     d.yielding -= dt;
-    d.overtaking -= dt;
-    d.dodge -= Math.sign(d.dodge) * Math.min(Math.abs(d.dodge), dt);
-    const overtake = (d.chase ? CHASE_OVERTAKE : OVERTAKE) * (d.passRight ? 1 : -1);
-    const pull = d.yielding > 0 ? PULL_OVER : d.overtaking > 0 ? overtake : d.dodge ? Math.sign(d.dodge) * DODGE : 0;
+    d.overtaking = fade(d.overtaking, dt);
+    d.dodge = fade(d.dodge, dt);
+    const pull = d.yielding > 0 ? PULL_OVER : d.overtaking ? Math.sign(d.overtaking) * (d.chase ? CHASE_OVERTAKE : OVERTAKE) : d.dodge ? Math.sign(d.dodge) * DODGE : 0;
     d.pull += (pull - d.pull) * Math.min(1, 1.8 * dt);
     let dx = d.pts[d.i * 2] - x, dz = d.pts[d.i * 2 + 1] - z;
+    let dist = Math.hypot(dx, dz);
     if (Math.abs(d.pull) > 0.05) {
       const ux = d.pts[d.i * 2] - d.pts[d.i * 2 - 2], uz = d.pts[d.i * 2 + 1] - d.pts[d.i * 2 - 1];
       const len = Math.hypot(ux, uz) || 1;
-      dx -= (uz / len) * d.pull;
-      dz += (ux / len) * d.pull;
+      // Pursuers offset a point just ahead: at a far vertex it hardly steers. Traffic stays gentle, parked cars line its side.
+      const near = d.chase ? Math.min(1, look / (dist || 1)) : 1;
+      dx = dx * near - (uz / len) * d.pull;
+      dz = dz * near + (ux / len) * d.pull;
     }
-    const alpha = Math.atan2(-dx * fz + dz * fx, dx * fx + dz * fz);
+    const alpha = wrapAngle(Math.atan2(dz, dx) - a);
     const steer = Math.max(-1, Math.min(1, alpha * 2.2));
 
     let target = d.limits[d.i];
-    let dist = Math.hypot(dx, dz);
     for (let j = d.i; j < n - 1 && dist < 45; j++) {
-      const ax = d.pts[j * 2] - d.pts[j * 2 - 2], az = d.pts[j * 2 + 1] - d.pts[j * 2 - 1];
       const bx = d.pts[j * 2 + 2] - d.pts[j * 2], bz = d.pts[j * 2 + 3] - d.pts[j * 2 + 1];
-      const turn = Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz));
+      const turn = turnAt(d.pts, j);
       if (turn > 0.35) {
         const corner = d.limits[j] + (CORNER_SPEED - d.limits[j]) * Math.min(turn / 1.6, 1);
         target = Math.min(target, Math.sqrt(corner * corner + 2 * DECEL * Math.max(dist - 4, 0)));
       }
       dist += Math.hypot(bx, bz);
     }
-    target = Math.min(target, Math.abs(alpha) > 0.6 ? CORNER_SPEED + 1 : target);
+    if (Math.abs(alpha) > 0.6) target = Math.min(target, CORNER_SPEED + 1);
     if (d.yielding > 0) target = Math.min(target, 3);
     if (suspect && !ramming(suspect)) target = Math.min(target, this.pullUp(suspect, Math.hypot(suspect.x - x, suspect.z - z)));
 
     d.honkCooldown -= dt;
     if (d.bold <= 0) {
-      const { gap, blocker, player } = this.obstacleAhead(v, x, z, a, speed);
-      // Two AI cars blocking each other (crossing at a junction) would wait forever: a siren, then the lower id, goes first.
+      const { gap, blocker, player } = this.obstacleAhead(v);
+      // Else two AI cars crossing wait forever: a siren, then the lower id, goes first.
       const other = blocker && this.drivers.get(blocker);
       const first = other && (v.siren !== other.v.siren ? v.siren : other.id > d.id);
-      const yieldsToUs = first && this.blocks(v, other);
-      const rammingThem = suspect && ramming(suspect) && blocker && blocker === suspect.car;
-      // The gap is to its near side, so this stops about 1.3 m short, as it always did behind a car.
-      if (gap < Infinity && !yieldsToUs && !rammingThem) target = Math.min(target, Math.max(0, (gap - 1) * 0.9));
-      const inTheWay = other && (other.yielding > 0 || (suspect && Math.abs(other.v.forwardSpeed) < 2));
-      if (v.siren && inTheWay && gap < 25) {
-        d.overtaking = 1.5;
-        d.passRight = Math.cos(other.v.angle - a) < 0;
-        // A pursuer right up against it still has to creep, or it can never swing out.
+      const headOn = !!blocker && Math.cos(blocker.angle - a) < -0.5;
+      const yieldsToUs = first && !headOn && this.blocks(v, other);
+      const rammingThem = suspect && ramming(suspect) && blocker === suspect.car;
+      // Stops about 1.3 m short of its near side.
+      if (!yieldsToUs && !rammingThem) target = Math.min(target, Math.max(0, (gap - 1) * 0.9));
+      const inTheWay = (other && other.yielding > 0) || (suspect && blocker && blocker !== suspect.car && Math.abs(blocker.forwardSpeed) < 2);
+      if (v.siren && blocker && inTheWay && gap < 25) {
+        // The side it isn't on; dead ahead, oncoming cars each keep right. Chosen once, or it dithers.
+        if (!d.overtaking) {
+          const side = (blocker.z - z) * Math.cos(a) - (blocker.x - x) * Math.sin(a);
+          d.overtaking = Math.abs(side) > 0.3 ? -side : headOn ? 1 : -1;
+        }
+        d.overtaking = Math.sign(d.overtaking) * 1.5;
+        // Point-blank it must still creep, or it can't swing out.
         target = Math.max(target, suspect ? 2.5 : Math.min(3, gap - 1.5));
       }
       if (player && d.stuck > 1.2 && d.honkCooldown <= 0) {
@@ -451,22 +462,15 @@ export class Traffic {
     }
     const error = target - speed;
     const throttle = error > 0.3 ? Math.min(1, 0.25 + error / 3) : error < -0.3 ? Math.max(-1, error / 4 - 0.2) : 0.12;
-    // boost: traffic isn't capped to the player's regular-speed limit — it already self-limits to each road's speed.
+    // boost: no player speed cap; it follows each road's limit.
     v.controls = { steer, throttle: target < 0.3 && speed < 0.3 ? 0 : throttle, handbrake: target < 0.3 && speed < 0.5, boost: true };
-  }
-
-  private sharp(d: Driver, i: number): boolean {
-    const p = d.pts, k = i * 2;
-    if (k < 2 || k + 3 >= p.length) return false;
-    const ax = p[k] - p[k - 2], az = p[k + 1] - p[k - 1], bx = p[k + 2] - p[k], bz = p[k + 3] - p[k + 1];
-    return Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz)) > 0.6;
   }
 
   private pullUp(s: Suspect, dist: number): number {
     return Math.min(s.speed, Math.hypot(s.vx, s.vz) + Math.max(0, dist - STOP_GAP) * 0.8);
   }
 
-  /** To the last sighting, then cruising round it. False when there's nothing left to do this step. */
+  /** False: nothing left to do this step. */
   private hunt(d: Driver, seen: boolean, speed: number): boolean {
     const v = d.v, [gx, gz] = this.lastSeen;
     if (seen || (d.searching && Math.hypot(d.searching[0] - gx, d.searching[1] - gz) > SEARCHED)) d.searching = null;
@@ -482,18 +486,23 @@ export class Traffic {
       this.extend(d);
       return true;
     }
-    const off = d.i >= d.pts.length / 2 - 1 || segmentDistance(d.pts, d.i - 1, v.x, v.z) > 15;
+    const off = (d.pts.length > 4 && d.i >= d.pts.length / 2 - 1) || segmentDistance(d.pts, d.i - 1, v.x, v.z) > 15;
     if (d.reroute <= 0 || (off && d.reroute < REROUTE - MIN_REROUTE)) this.routeTo(d, gx, gz, speed);
     return true;
   }
 
+  /** closeIn has no eye for traffic or people: those are for the road driving, which goes round them. */
+  private onlyThemAhead(v: Vehicle, s: Suspect): boolean {
+    const { gap, blocker, player } = this.obstacleAhead(v);
+    return gap === Infinity || (blocker ? blocker === s.car : player);
+  }
+
   private closeIn(d: Driver, s: Suspect, dist: number, dt: number) {
     const v = d.v, speed = v.forwardSpeed;
-    // Aim ahead of them to cut across rather than trail.
+    // Cut across rather than trail.
     const lead = Math.min(dist / 15, 1.2);
     const ax = s.x + s.vx * lead - v.x, az = s.z + s.vz * lead - v.z;
-    const fx = Math.cos(v.angle), fz = Math.sin(v.angle);
-    const alpha = Math.atan2(-ax * fz + az * fx, ax * fx + az * fz);
+    const alpha = wrapAngle(Math.atan2(az, ax) - v.angle);
     const steer = Math.max(-1, Math.min(1, alpha * 2.5));
     let target = ramming(s) ? Math.hypot(s.vx, s.vz) + 5 : this.pullUp(s, dist);
     if (Math.abs(alpha) > 1.2) target = Math.min(target, CORNER_SPEED + 2);
@@ -506,7 +515,7 @@ export class Traffic {
   private sidestep(d: Driver) {
     const v = d.v;
     d.wedges++;
-    d.anchor = [v.x, v.z, 0]; // one count per stuck spell: the stall and wedge checks both land here
+    d.anchor = [v.x, v.z, 0]; // one count per try: the stall and wedge checks both land here
     let side = d.dodge > 0 ? -1 : 1, best = 6;
     for (const o of this.host.vehicles) {
       const dist = o === v ? Infinity : Math.hypot(o.x - v.x, o.z - v.z);
@@ -517,9 +526,8 @@ export class Traffic {
 
   private routeTo(d: Driver, gx: number, gz: number, speed: number) {
     const v = d.v;
-    // Clear, dry and close: straight there.
     const dist = Math.hypot(gx - v.x, gz - v.z);
-    const route = (dist > 1 && dist < SIGHT && this.clearRun(v, gx, gz, dist) ? null : this.host.route?.(v.x, v.z, v.angle, gx, gz)) ?? [];
+    const route = (dist > 1 && dist < SIGHT * 2 && this.clearRun(v, gx, gz, dist) ? null : this.host.route(v.x, v.z, v.angle, gx, gz)) ?? [];
     const n = route.length;
     // Off the road to a park or square, not into a dock.
     if (n ? this.dry(route[n - 2], route[n - 1], gx, gz) : this.dry(v.x, v.z, gx, gz)) route.push(gx, gz);
@@ -528,18 +536,19 @@ export class Traffic {
     let k = 0;
     for (; k < route.length - 2; k += 2) {
       const px = route[k] - v.x, pz = route[k + 1] - v.z, away = Math.hypot(px, pz);
-      if (away > 8 && (away > 20 || px * fx + pz * fz > 0)) break;
+      if (away > CORNER_LOOK && (away > 20 || px * fx + pz * fz > 0)) break;
     }
     d.pts = [v.x, v.z];
     for (let i = k; i < route.length; i += 2) {
       const n = d.pts.length;
       if (Math.hypot(route[i] - d.pts[n - 2], route[i + 1] - d.pts[n - 1]) >= 1) d.pts.push(route[i], route[i + 1]);
     }
-    if (d.pts.length < 4) d.pts.push(v.x + fx * 5, v.z + fz * 5);
+    const stay = d.pts.length < 4; // nowhere dry to go
+    if (stay) d.pts.push(v.x, v.z);
     d.limits = [];
     for (let i = 0; i < d.pts.length; i += 2) {
       const near = this.graph.nearest(d.pts[i], d.pts[i + 1], 8);
-      d.limits.push(near ? Math.min(speed, this.graph.edges[near.edge].s * CHASE_LIMIT) : CORNER_SPEED * 2);
+      d.limits.push(stay ? 0 : near ? Math.min(speed, this.graph.edges[near.edge].s * CHASE_LIMIT) : CORNER_SPEED * 2);
     }
     d.i = 1;
     d.deadEnd = false;
@@ -554,8 +563,9 @@ export class Traffic {
     return ahead > 0 && ahead < o.spec.length / 2 + 4 + Math.max(o.forwardSpeed, 0) * 1.3 + v.spec.length && Math.abs(side) < 2;
   }
 
-  private obstacleAhead(v: Vehicle, x: number, z: number, a: number, speed: number): { gap: number; blocker?: Vehicle; player: boolean } {
-    const len = 4 + Math.max(speed, 0) * 1.3;
+  private obstacleAhead(v: Vehicle): { gap: number; blocker?: Vehicle; player: boolean } {
+    const { x, z, angle: a } = v;
+    const len = 4 + Math.max(v.forwardSpeed, 0) * 1.3;
     const half = v.spec.length / 2;
     const fx = Math.cos(a), fz = Math.sin(a);
     this.box.halfExtents = { x: len / 2, y: 0.95 };
@@ -567,7 +577,7 @@ export class Traffic {
       a,
       this.box,
       (collider) => {
-        // To its near side: a fixed half car length off its centre put the back of a 12 m bus 5 m too far away.
+        // To its near side: a fixed half car length misjudges a 12 m bus.
         const p = collider.translation();
         const g = (p.x - x) * fx + (p.y - z) * fz - half - extent(collider, fx, fz);
         if (g < gap) {

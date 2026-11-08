@@ -10,7 +10,9 @@ const SPAWN_MIN = 30;
 const SPAWN_MAX = 140;
 const DESPAWN = 170;
 const RADIUS = 0.3;
-const FLEE_SPEED = 4.5;
+const FLEE_SPEED = 4.5; // m/s
+const CLEAR_AHEAD = 25; // m
+const CLEAR_SIDE = 2.5; // m
 const KEEP_RIGHT = 0.35; // m, so opposite walkers pass
 const CROSS_CHANCE = 0.15;
 const KERB = 0.5; // m short of the kerb when crossing
@@ -29,9 +31,6 @@ function streetWeight(e: GraphEdge, shared: boolean): number {
   return e.w >= 11 ? 1 : e.w >= 8 ? 0.6 : 0.2;
 }
 
-const CLEAR_AHEAD = 25; // m
-const CLEAR_SIDE = 2.5; // m
-
 const distanceTo = (p: number[], x: number, z: number) => nearestSegment(p, x, z).d;
 
 type State = 'walk' | 'down' | 'flee';
@@ -49,7 +48,7 @@ export interface Ped {
   fall: number;
   prev: { x: number; z: number };
   avatar: number;
-  away?: [number, number]; // which way to run, when it isn't simply from the player
+  away?: [number, number]; // else from the player
 }
 
 export function personBody(world: RAPIER.World, x: number, z: number, radius: number, mass: number, damping: number): RAPIER.RigidBody {
@@ -192,7 +191,6 @@ export class Pedestrians {
     return best;
   }
 
-  /** Off the path of a car on a chase, towards the nearer side. */
   clearWay(x: number, z: number, angle: number) {
     const c = Math.cos(angle), s = Math.sin(angle);
     for (const p of this.peds) {
@@ -200,10 +198,9 @@ export class Pedestrians {
       const t = p.body.translation(), rx = t.x - x, rz = t.y - z;
       const ahead = rx * c + rz * s, side = -rx * s + rz * c;
       if (ahead < 0 || ahead > CLEAR_AHEAD || Math.abs(side) > CLEAR_SIDE) continue;
-      const k = side < 0 ? -1 : 1;
       p.state = 'flee';
       p.timer = 1.5;
-      p.away = [-s * k, c * k];
+      p.away = side < 0 ? [s, -c] : [-s, c];
     }
   }
 
@@ -296,8 +293,7 @@ export class Pedestrians {
       }
     } else if (p.state === 'flee') {
       p.timer -= dt;
-      wantX = p.away ? p.away[0] : t.x - px;
-      wantZ = p.away ? p.away[1] : t.y - pz;
+      [wantX, wantZ] = p.away ?? [t.x - px, t.y - pz];
       speed = FLEE_SPEED;
       if (p.timer <= 0) this.rejoin(p);
     } else {

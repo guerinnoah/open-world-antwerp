@@ -1,3 +1,4 @@
+import { Multiplayer } from '../src/net/multiplayer';
 import { createServer, type Server } from 'node:http';
 import { connect as tcp, type AddressInfo, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -5,7 +6,7 @@ import { WebSocket } from 'ws';
 import { safeChat, safeName } from '../server/profanity';
 import { attachRelay, type Relay } from '../server/relay';
 import {
-  CHAT_BURST, CHAT_EVERY, CHAT_MAX, ChatLimit, PROTOCOL_VERSION, cleanChat, cleanName, decodeState,
+  CHAT_BURST, CHAT_EVERY, CHAT_MAX, ChatLimit, FLAG, PROTOCOL_VERSION, cleanChat, cleanName, decodeState,
   encodeState, type PlayerState, type ServerMessage,
 } from '../src/net/protocol';
 import { DELAY, Timeline } from '../src/net/timeline';
@@ -73,6 +74,17 @@ describe('protocol', () => {
     expect(safeName('xXfuckXx')).toBe('');
     expect(safeName('fu ck')).toBe('');
     expect(cleanName('xXfuckXx')).toBe('xXfuckXx'); // the game leaves filtering to the relay
+  });
+});
+
+describe('local state', () => {
+  const flags = (host: object) => (Multiplayer.prototype as unknown as { localState(this: { host: object }, time: number): { flags: number } }).localState.call({ host }, 0).flags;
+  const player = { x: 0, z: 0, heading: 0, sink: 0, down: 0, body: { linvel: () => ({ x: 0, y: 0 }) } };
+
+  it('hides players indoors and in trams, not in first person', () => {
+    expect(flags({ driving: null, tram: null, player, indoors: false, honking: false }) & FLAG.INDOORS).toBe(0);
+    expect(flags({ driving: null, tram: {}, player, indoors: false, honking: false }) & FLAG.INDOORS).toBe(FLAG.INDOORS);
+    expect(flags({ driving: null, tram: null, player, indoors: true, honking: false }) & FLAG.INDOORS).toBe(FLAG.INDOORS);
   });
 });
 

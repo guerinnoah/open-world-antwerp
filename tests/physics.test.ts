@@ -65,14 +65,13 @@ describe('removing', () => {
 });
 
 describe('traffic gap', () => {
-  const host: TrafficHost = { vehicles: [], addVehicle() {}, removeVehicle() {} };
+  const host: TrafficHost = { vehicles: [], addVehicle() {}, removeVehicle() {}, route: () => null, wet: () => false };
   const gapAhead = (place: () => () => void) => {
     const traffic = new Traffic(physics, {} as NavGraph, host, 0);
     const car = new Vehicle(physics.world, sedan, 0xffffff, -50, -50, 0);
     const cleanup = place();
     physics.step();
-    const { gap } = (traffic as unknown as { obstacleAhead(v: Vehicle, x: number, z: number, a: number, speed: number): { gap: number } })
-      .obstacleAhead(car, car.x, car.z, car.angle, 0);
+    const { gap } = (traffic as unknown as { obstacleAhead(v: Vehicle): { gap: number } }).obstacleAhead(car);
     cleanup();
     physics.remove(car.body);
     return gap;
