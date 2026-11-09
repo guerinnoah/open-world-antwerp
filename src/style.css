@@ -43,6 +43,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #stats { position: fixed; bottom: 8px; left: 10px; font: 11px/1.4 ui-monospace, monospace; color: rgb(255 255 255 / 0.8); text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none; }
 #credits { position: fixed; z-index: 11; bottom: 8px; right: 10px; display: flex; align-items: center; gap: 2px; font-size: 11px; color: rgb(255 255 255 / 0.6); text-shadow: 0 1px 2px #000; }
 #credits a { color: inherit; }
+#credits .repo { display: flex; padding: 2px 4px; filter: drop-shadow(0 1px 2px #000); }
 #credits summary { list-style: none; padding: 2px 4px; font-size: 13px; cursor: pointer; }
 #credits summary::-webkit-details-marker { display: none; }
 #credits details > div { position: absolute; bottom: calc(100% + 6px); right: 0; width: max-content; max-width: 80vw; padding: 8px 10px; border-radius: 6px; background: rgb(20 22 28 / 0.85); color: rgb(255 255 255 / 0.85); line-height: 1.6; text-align: right; }
