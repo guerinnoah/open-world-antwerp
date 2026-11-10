@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { coloured } from '../core/util';
 import {
-  BELLOWS, CLUSTER, DARK_GREY, FRAME, GLASS, LAMP, ROOF, SKIRT, TAIL_LIGHT, WHITE, YELLOW, box, quad, sideLivery, type SectionModel, type Sides,
+  BELLOWS, CLUSTER, DARK_GREY, FRAME, GLASS, LAMP, ROOF, SKIRT, TAIL_LIGHT, WHITE, YELLOW, box, operatorName, quad, sideLivery, type SectionModel, type Sides,
 } from './tramModel';
 
 export type BusKind = 'solo' | 'lead' | 'trailer';
@@ -109,6 +109,8 @@ function roofPod(x0: number, x1: number, parts: THREE.BufferGeometry[]) {
   parts.push(box(x0, x1, ROOF_TOP - 0.02, ROOF_TOP + 0.26, -0.95, 0.95, ROOF));
 }
 
+export const busPlate = () => operatorName(2.68, HW);
+
 export function buildBus(kind: BusKind): SectionModel {
   const L = SECTION_LENGTH[kind];
   const x0 = -L / 2, x1 = L / 2;
@@ -142,5 +144,5 @@ export function buildBus(kind: BusKind): SectionModel {
   } else {
     parts.push(box(x0 - 0.42, x0 + 0.05, FLOOR + 0.05, ROOF_TOP - 0.08, -HW + 0.08, HW - 0.08, BELLOWS));
   }
-  return { body: mergeGeometries(parts), display: mergeGeometries(displays) };
+  return { body: mergeGeometries(parts), display: mergeGeometries(displays), plate: kind === 'trailer' ? null : kind === 'solo' ? -2 : -2.5 };
 }

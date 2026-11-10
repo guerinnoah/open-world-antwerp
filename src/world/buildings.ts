@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Building } from './cityData';
+import type { ChainFronts } from './signs';
 import { freeAfterUpload } from '../core/instancing';
 import { addRoof, hash, planRoof, type MeshArrays, type Surface } from './roofs';
 import { BUILDING_LAYERS, BUILDING_SCALE, type BuildingLayer, type Textures } from './textures';
@@ -11,7 +12,7 @@ export interface BuildingArrays {
   color: Float32Array;
   /** m: walls (along, up); roofs (along the eaves, up the slope); flat roofs (x, z). */
   uvm: Float32Array;
-  /** x: BUILDING_LAYERS index; y: 1 where windows are drawn. */
+  /** x: BUILDING_LAYERS index; y: 1 where windows are drawn, + 2 × the wall's first chain stretch (signs.ts chainFronts). */
   surf: Float32Array;
   /** x: along the wall, y: wall length (0 = no facade), z: wall top (-1 = no cornice), all m; w: flags (1 street, + 2 × shop kind) + seed in [0, 1). */
   facade: Float32Array;
@@ -22,6 +23,7 @@ const layer = (name: BuildingLayer) => BUILDING_LAYERS.indexOf(name);
 
 /** Salt 5 = facade seed, 7 = wall push; signs, interiors and facadeDetail reuse them. */
 export const rand = (b: Building, salt = 0) => hash(b.rings[0][0], b.rings[0][1], salt);
+export const CHAIN_STRETCHES = 3; // most per wall (signs.ts chainFronts)
 
 const WALLS: BuildingLayer[] = ['plaster', 'brick', 'yellowBrick', 'ashlar'];
 const FLAT_ROOFS = [0x4b4b4c, 0x4b4b4c, 0x4b4b4c, 0x56565a, 0x56565a, 0x625f5b, 0x7d7a74, 0x7d7a74, 0x8f8d89];
@@ -34,7 +36,7 @@ function surfaces(b: Building): { wall: Surface; roof: Surface; flatRoof: Surfac
   return { wall, roof, flatRoof };
 }
 
-export function extrudeBuildings(buildings: Building[]): BuildingArrays {
+export function extrudeBuildings(buildings: Building[], chains?: ChainFronts['edges']): BuildingArrays {
   const out: MeshArrays = { pos: [], nor: [], col: [], uvm: [], surf: [], fac: [], idx: [] };
   const { pos, nor, col, uvm, surf, fac, idx } = out;
 
@@ -47,6 +49,7 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
     const seed = rand(b, 5);
     const shopFlags = (b.sh ?? 0) * 2;
     const street = new Set(b.sf ?? []);
+    const fronts = chains?.get(b);
     const push = 0.01 + rand(b, 7) * 0.03; // m: neighbours sharing a wall plane would z-fight
 
     b.rings.forEach((ring, r) => {
@@ -63,10 +66,11 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
         const v = pos.length / 3;
         const px = nx * push, pz = nz * push;
         pos.push(x0 + px, y0, z0 + pz, x1 + px, y0, z1 + pz, x1 + px, y1, z1 + pz, x0 + px, y1, z0 + pz);
+        const chain = r === 0 ? fronts?.get(i) ?? 0 : 0;
         for (let k = 0; k < 4; k++) {
           nor.push(nx, 0, nz);
           col.push(wall.tint.r, wall.tint.g, wall.tint.b);
-          surf.push(wall.layer, windows);
+          surf.push(wall.layer, windows + chain * 2);
         }
         uvm.push(u, y0, u + len, y0, u + len, y1, u, y1);
         const flagsSeed = (r === 0 && street.has(i) ? 1 : 0) + shopFlags + seed;
@@ -117,14 +121,17 @@ export function extrudeBuildings(buildings: Building[]): BuildingArrays {
   };
 }
 
-function createBuildingMaterial(textures: Textures, night: number): THREE.MeshStandardMaterial {
+function createBuildingMaterial(textures: Textures, night: number, stretches: Float32Array): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
+  const chains = new THREE.DataTexture(stretches, stretches.length / 4, 1, THREE.RGBAFormat, THREE.FloatType);
+  chains.needsUpdate = true;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.tAlbedo = { value: textures.buildingAlbedo };
     shader.uniforms.tNormal = { value: textures.buildingNormal };
     shader.uniforms.uScale = { value: BUILDING_LAYERS.map((l) => BUILDING_SCALE[l]) };
     shader.uniforms.uMean = { value: textures.buildingMean };
     shader.uniforms.uNight = { value: night };
+    shader.uniforms.tChains = { value: chains };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -139,7 +146,7 @@ function createBuildingMaterial(textures: Textures, night: number): THREE.MeshSt
         float layer = floor(vSurf.x + 0.5);
         vec2 tuv = vUvm / uScale[int(layer)];
         vec3 wallTex = texture(tAlbedo, vec3(tuv, layer)).rgb / uMean[int(layer)];
-        Facade fc = facadeAt(vFacade, vUvm.y, dot(wallTex, vec3(0.3, 0.59, 0.11)));`,
+        Facade fc = facadeAt(vFacade, vUvm.y, dot(wallTex, vec3(0.3, 0.59, 0.11)), floor(vSurf.y * 0.5 + 0.25));`,
       )
       .replace('#include <map_fragment>', 'diffuseColor.rgb *= wallTex;')
       .replace(
@@ -181,6 +188,7 @@ uniform sampler2DArray tNormal;
 uniform float uScale[${BUILDING_LAYERS.length}];
 uniform vec3 uMean[${BUILDING_LAYERS.length}];
 uniform float uNight;
+uniform sampler2D tChains;
 varying vec2 vUvm;
 varying vec2 vSurf;
 varying vec4 vFacade;
@@ -342,7 +350,7 @@ vec3 shopInterior(float kind, float lx, float h, float u, float bay, float bayW,
 }
 
 // f: BuildingArrays.facade; h: m up the wall
-Facade facadeAt(vec4 f, float h, float texLum) {
+Facade facadeAt(vec4 f, float h, float texLum, float chain) {
   Facade o = Facade(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0));
   if (f.y < 0.5) return o;
   float seed = fract(f.w);
@@ -383,6 +391,19 @@ Facade facadeAt(vec4 f, float h, float texLum) {
     float door = floor(fract(seed * 29.7) * nb);
     if (street && shop) { // shopfront; signs.ts hangs the real sign on the fascia
       vec3 brand = brandPaint(seed);
+      bool chained = false;
+      if (chain > 0.5) { // signs.ts chainFronts: whole bays, where a chain's stretch covers most of them
+        int first = int(chain), n = int(texelFetch(tChains, ivec2(first * 2, 0), 0).a);
+        float b0 = bay * bayW, b1 = b0 + bayW;
+        for (int k = 0; k < ${CHAIN_STRETCHES}; k++) {
+          if (k >= n) break;
+          vec2 span = texelFetch(tChains, ivec2((first + k) * 2 + 1, 0), 0).xy;
+          if (min(b1, span.y) - max(b0, span.x) >= 0.5 * min(bayW, span.y - span.x)) {
+            brand = texelFetch(tChains, ivec2((first + k) * 2, 0), 0).rgb;
+            chained = true;
+          }
+        }
+      }
       float sign = rectMask(vec2(0.0, h), vec2(-1.0, groundH - 0.95), vec2(1.0, groundH - 0.35), aa);
       bool isDoor = abs(bay - door) < 0.5;
       vec2 lo = isDoor ? vec2(-0.55, 0.0) : vec2(-bayW * 0.44, 0.5);
@@ -391,7 +412,7 @@ Facade facadeAt(vec4 f, float h, float texLum) {
       float fr = max(rectMask(vec2(lx, h), lo, hi, aa) - g, 0.0);
       vec3 glow;
       vec3 inside = shopInterior(kind, lx, h, f.x, bay, bayW, groundH, seed, aa, glow);
-      o.colour = sign * brand + fr * brand + g * inside;
+      o.colour = sign * brand + fr * (chained ? vec3(0.03, 0.032, 0.035) : brand) + g * inside; // chains: dark aluminium frames
       o.amount = max(sign, max(fr, g));
       o.glass = g;
       o.glow = g * glow;
@@ -425,7 +446,7 @@ Facade facadeAt(vec4 f, float h, float texLum) {
 
 const CHUNK = 500;
 
-export function createBuildings(buildings: Building[], textures: Textures, night = 0): THREE.Group {
+export function createBuildings(buildings: Building[], textures: Textures, night: number, chains: ChainFronts): THREE.Group {
   const chunks = new Map<string, Building[]>();
   for (const b of buildings) {
     if (b.hd) continue;
@@ -436,11 +457,11 @@ export function createBuildings(buildings: Building[], textures: Textures, night
     list.push(b);
   }
 
-  const material = createBuildingMaterial(textures, night);
+  const material = createBuildingMaterial(textures, night, chains.data);
   const group = new THREE.Group();
   group.name = 'buildings';
   for (const list of chunks.values()) {
-    const a = extrudeBuildings(list);
+    const a = extrudeBuildings(list, chains.edges);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(a.position, 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(a.normal, 3));

@@ -21,16 +21,20 @@ first, and run `pnpm exec playwright install chromium` once. Each has a `pnpm` s
 | Parameter | Effect |
 |---|---|
 | `?play` | Skip the title screen |
+| `?title` | Show the title screen in a headless browser, which skips it by default |
 | `?solo` | Play offline |
 | `?name=Anna` | Set your player name |
 | `?spawn=grotemarkt` | Start at the Grote Markt |
 | `?quality=low` | Force a quality preset (`low`, `medium`, `high`) |
 | `?stats` | Show FPS and draw calls |
 | `?fly` | Free camera over the city, no game |
+| `?fly&view=MAS` | Start the free camera at one of its named views |
+| `?fly&landmark=centraal` | Circle one landmark; `az`, `el` (degrees) and `dist` (m) set the angle |
 | `?mp` | Join multiplayer from a headless browser or `pnpm preview` |
 | `?time=22` | Force the hour (0–23, Antwerp local) instead of the real clock |
 | `?weather=rain` | Force weather: `clear`, `cloudy`, `overcast`, `rain`, `storm` (or `?clouds=0..1&rain=0..1`) |
 | `?flat` | Drop the aerial-photo ground colour for the stylised surfaces |
+| `?noao` | Turn off ambient occlusion on desktop |
 | `?fpv` | Start in first person (toggle any time with `V`) |
 | `?wanted=3` | Start with a wanted level (1–5) |
 

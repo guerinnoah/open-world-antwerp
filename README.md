@@ -1,5 +1,9 @@
 # Open World Antwerp
 
+**[Play it in your browser](https://antwerp.noahguerin.dev)**
+
+![Antwerp Centraal Station from above](public/og.jpg)
+
 An open-world driving sandbox in a real 1:1 slice of central Antwerp, playable in the browser. Drive a car, tram or
 bus, ride a Velo bike or e-scooter, walk into shops, or drive into the Scheldt. Take someone's car in front of the
 police and they'll chase you: get out of sight to lose them. Everyone online shares the same city. No guns, no missions.
@@ -28,10 +32,12 @@ The map and assets are committed under `public/`, so this is all you need. Open 
 | Punch, or next radio station in a car | R | Punch, or tap the station |
 | Horn or bell | H | |
 | Siren (emergency vehicles) | Q | Siren |
-| Map and waypoints | P | Tap the minimap |
+| Map and waypoints | P, then Backspace to clear the waypoint | Tap the minimap |
 | Chat | T | 💬 |
 | Look around | Drag the mouse | Swipe |
-| First / third person | V | 👁 |
+| First / third person | V | 1st / 3rd |
+| Radio on or off | Shift+R | 📻 |
+| Mute | M | 🔊 |
 
 Gamepads work too.
 
@@ -62,3 +68,8 @@ Gamepads work too.
 - Radio: the public live streams of VRT and DPG Media
 
 Not affiliated with any brand shown in the game.
+
+## License
+
+The code is under the [MIT License](LICENSE). The map data, people, textures and logos keep their own licences, listed
+above.

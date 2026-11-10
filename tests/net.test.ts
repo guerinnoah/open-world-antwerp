@@ -337,6 +337,37 @@ describe('relay', () => {
     expect((await late.next('welcome')).taken).toEqual([{ x: 10, z: 20, ...red }]);
   });
 
+  it('forgets taken cars once the last player leaves, so the next world starts fully parked', async () => {
+    await start();
+    const a = await connect();
+    await a.next('welcome');
+    a.send({ t: 'took', x: 10, z: 20, kind: 2, colour: 0xff0000 });
+    a.send({ t: 'chat', text: 'done' });
+    const b = await connect();
+    expect((await b.next('welcome')).taken).toHaveLength(1);
+    a.ws.close();
+    b.ws.close();
+    await until(() => relay.players === 0);
+    expect((await (await connect()).next('welcome')).taken).toEqual([]);
+  });
+
+  it('drops a flood of messages past the burst without disconnecting the sender', async () => {
+    await start();
+    const a = await connect();
+    await a.next('welcome');
+    const b = await connect();
+    await b.next('welcome');
+    const s = encodeState(state());
+    for (let i = 0; i < 200; i++) a.send({ t: 's', s });
+    await new Promise((resolve) => setTimeout(resolve, 100)); // a few tokens back, for the chat
+    a.send({ t: 'chat', text: 'still here' });
+    await b.next('chat');
+    const relayed = b.inbox.filter((m) => m.t === 's').length;
+    expect(relayed).toBeGreaterThan(70); // the burst of 80, less the hello
+    expect(relayed).toBeLessThan(160); // well short of all 200, even on a slow machine
+    expect(a.ws.readyState).toBe(WebSocket.OPEN);
+  });
+
   it('turns away an out-of-date game', async () => {
     await start();
     const old = await connect({ v: PROTOCOL_VERSION - 1 });

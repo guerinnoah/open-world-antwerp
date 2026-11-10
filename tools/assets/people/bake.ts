@@ -7,6 +7,7 @@ import { MeshoptSimplifier } from 'meshoptimizer';
 import { BIKE } from '../../../src/actors/bikeGeometry';
 import { MOPED, MOTORBIKE, type RideGeometry } from '../../../src/actors/motorbikeGeometry';
 import { SCOOTER } from '../../../src/actors/scooterGeometry';
+import { CHAIR } from '../../../src/world/interiors/chairGeometry';
 
 const fbx = new FBXLoader();
 const tga = new TGALoader();
@@ -386,6 +387,24 @@ async function bake(input: BakeInput) {
   };
   clips.moto = seated(MOTORBIKE);
   clips.moped = seated(MOPED);
+
+  const SITTING = { hips: [-0.05, CHAIR.seat + 0.09], feet: [0.4, 0.12], hands: [0.38, CHAIR.hands, 0.17] } as const;
+  const onChair = (f: number, lean: number) => {
+    bones.forEach((b, i) => b.quaternion.copy(rest[i]));
+    seat(f, SEATED_FRAMES, SITTING.hips[0], SITTING.hips[1], lean, 0.8);
+  };
+  const onTable = (s: number) => new THREE.Vector3(SITTING.hands[0], SITTING.hands[1], s * SITTING.hands[2]);
+  const sitLean = leanToReach(onTable(1), 0.08, 0.4, 0.85, (l) => onChair(0, l));
+  clips.sit = { row: rows.length, frames: SEATED_FRAMES, stride: 0, duration: +idleClip!.duration.toFixed(3) };
+  for (let f = 0; f < SEATED_FRAMES; f++) {
+    onChair(f, sitLean);
+    for (const [side, s] of [['L', -1], ['R', 1]] as const) {
+      plant(side, new THREE.Vector3(SITTING.feet[0], ankleHeight, s * SITTING.feet[1]), D(1, 1, s * 0.1));
+      grasp(side, onTable(s), D(-0.2, -1, s * 0.5));
+      curl(side, [0, 0.2, 0.2], [0.25, 0.35, 0.25]);
+    }
+    bakeRow();
+  }
   const boneData = new Uint16Array(rows.length * bones.length * 12);
   rows.forEach((row, r) => row.forEach((v, i) => (boneData[r * bones.length * 12 + i] = THREE.DataUtils.toHalfFloat(v))));
 

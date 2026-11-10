@@ -4,7 +4,7 @@ import type { Physics } from '../physics/physics';
 import type { BusRun, LineSchedule } from '../world/cityData';
 import type { Clock } from '../world/daylight';
 import { cumulative, pointAt } from '../world/polyline';
-import { AXLES, BUS_WIDTH as WIDTH, KINDS, LAYOUTS, SECTION_LENGTH, buildBus, type BusKind } from './busModel';
+import { AXLES, BUS_WIDTH as WIDTH, KINDS, LAYOUTS, SECTION_LENGTH, buildBus, busPlate, type BusKind } from './busModel';
 import type { TrafficHost } from './traffic';
 import {
   Scheduler, SectionMeshes, addSections, moveSections, noseDistance, obstacleAhead, occupied, outlineDistance, removeSectioned, savePrev, serveStops,
@@ -57,7 +57,7 @@ export class Buses {
     clock: Clock,
   ) {
     this.runs = runs.map((r) => ({ ...r, cum: cumulative(r.p) }));
-    this.meshes = new SectionMeshes(this.group, runs, KINDS, buildBus, () => target + OUT_OF_SERVICE);
+    this.meshes = new SectionMeshes(this.group, runs, KINDS, buildBus, () => target + OUT_OF_SERVICE, busPlate());
     const scheduler = new Scheduler(schedules, clock, runs.map((r) => r.line));
     this.spawnRuns = this.runs.filter((r) => scheduler.active(r.line));
     this.target = scheduler.fleet(target);

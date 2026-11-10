@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { canvasTexture, drawLabel, sans } from '../../core/canvasText';
 import type { Landmark } from '../cityData';
 import { GOLD, Kit, roundArch } from './kit';
 
@@ -9,6 +10,8 @@ const DOME = 0x56625c;
 const GLASS = 0x6f8394;
 const HALL_GLASS = 0xa9bac6;
 const IRON = 0x4a5058;
+const ENTRANCE_X = 122.4; // the footprint's facade line
+const LINTEL_Y = 8, LINTEL_H = 1, LINTEL_D = 0.6;
 
 export function centraal(_lm: Landmark): THREE.BufferGeometry {
   const kit = new Kit();
@@ -17,18 +20,28 @@ export function centraal(_lm: Landmark): THREE.BufferGeometry {
   for (const z of [-16.5, 16.5]) cornerTower(kit, 120, z);
   for (const z of [-35, 35]) wingTurret(kit, 63, z);
   trainHall(kit);
-  return kit.build();
+  const geometry = kit.build();
+  geometry.userData.dress = (mesh: THREE.Mesh) => mesh.add(stationSign()); // deferred: pnpm tris builds this without a DOM
+  return geometry;
+}
+
+function stationSign(): THREE.Mesh {
+  const map = canvasTexture(1024, 96, (g) => drawLabel(g, 'NMBS  ·  Antwerpen-Centraal', '#006ab3', '#ffffff', sans(700), 0.625, 0.97, 0.53));
+  const material = new THREE.MeshStandardMaterial({ map, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 0.84).rotateY(Math.PI / 2), material);
+  sign.position.set(ENTRANCE_X + LINTEL_D / 2 + 0.04, LINTEL_Y + LINTEL_H / 2, 0);
+  sign.receiveShadow = true;
+  return sign;
 }
 
 function stationBuilding(kit: Kit) {
   kit.box(57.3, 26, 60, 88.65, 0, 0, STONE).box(57.7, 1.2, 60.4, 88.65, 10, 0, STONE_BAND).hip(57.3, 60, 8, 88.65, 26, 0, ROOF);
   for (const z of [-34.5, 34.5]) kit.box(22, 20, 9, 71, 0, z, STONE).hip(22, 9, 4, 71, 20, z, ROOF);
 
-  // Entrance front on the footprint's facade line (x = 122.4).
   kit.box(16, 34, 26, 114.2, 0, 0, STONE).box(16.4, 1.2, 26.4, 114.2, 10, 0, STONE_BAND).gable(16, 26, 7, 114.2, 34, 0, ROOF, 'x');
-  kit.group(122.4, 0, 0, Math.PI / 2, () => {
+  kit.group(ENTRANCE_X, 0, 0, Math.PI / 2, () => {
     kit.facade(roundArch(13, 9, 24, 12), GLASS, 0.3);
-    kit.box(14, 1, 0.6, 0, 8, 0, STONE_BAND);
+    kit.box(14, LINTEL_H, LINTEL_D, 0, LINTEL_Y, 0, STONE_BAND);
     for (const u of [-3.25, 0, 3.25]) kit.box(0.4, 15, 0.5, u, 9, 0, STONE_BAND);
     kit.cylinder(2.2, 2.2, 0.4, 0, 27, 0.2, GOLD, 16).cylinder(1.7, 1.7, 0.5, 0, 27, 0.25, STONE, 16);
     for (const u of [-5.5, -1.8, 1.8, 5.5]) kit.box(2.2, 6, 0.2, u, 0, 0.15, 0x6b5f52);

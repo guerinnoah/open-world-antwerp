@@ -28,6 +28,7 @@ export async function createLandmarks(landmarks: Landmark[], textures: Textures)
     mesh.position.set(lm.x, 0, lm.z);
     mesh.rotation.y = -lm.angle;
     mesh.castShadow = mesh.receiveShadow = true;
+    geometries[i].userData.dress?.(mesh);
     group.add(mesh);
   });
   return group;

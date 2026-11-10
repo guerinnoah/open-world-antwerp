@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { attachRelay } from './server/relay';
+import { attachRelay } from './server/relay.ts';
 
 /** The dev and preview servers host the multiplayer relay on /net, so `pnpm dev` alone is enough to play together. */
 const relay: Plugin = {

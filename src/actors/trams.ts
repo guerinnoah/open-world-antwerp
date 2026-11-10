@@ -4,7 +4,7 @@ import type { Physics } from '../physics/physics';
 import type { LineSchedule, TramRun } from '../world/cityData';
 import type { Clock } from '../world/daylight';
 import { cumulative, pointAt } from '../world/polyline';
-import { LAYOUTS, SECTION_LENGTH, TRAM_WIDTH as WIDTH, buildSection, type SectionKind } from './tramModel';
+import { LAYOUTS, SECTION_LENGTH, TRAM_WIDTH as WIDTH, buildSection, tramPlate, type SectionKind } from './tramModel';
 import {
   COLLIDES, Scheduler, SectionMeshes, addSections, moveSections, noseDistance, obstacleAhead, occupied, outlineDistance, removeSectioned, savePrev,
   serveStops, spawnPoint, stack, stopAfter, type Obstacle, type Run, type Sectioned,
@@ -68,7 +68,7 @@ export class Trams {
     clock: Clock,
   ) {
     this.runs = runs.map((r) => ({ ...r, cum: cumulative(r.p) }));
-    this.meshes = new SectionMeshes(this.group, runs, KINDS, buildSection, (kind) => target * (kind === 'mid' ? 5 : 1));
+    this.meshes = new SectionMeshes(this.group, runs, KINDS, buildSection, (kind) => target * (kind === 'mid' ? 5 : 1), tramPlate());
     const scheduler = new Scheduler(schedules, clock, runs.map((r) => r.line));
     this.spawnRuns = this.runs.filter((r) => scheduler.active(r.line));
     this.target = scheduler.fleet(target);

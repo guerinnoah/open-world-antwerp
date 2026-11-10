@@ -8,7 +8,7 @@ import { loadGrbHeights } from './grb.ts';
 import { markFacades } from './facades.ts';
 import { facadeOf } from './palette.ts';
 import { OLD_TOWN_RADIUS } from '../../src/world/roofs.ts';
-import { markShopKinds, offRoad, placeSigns, placeStreetPlates, veloStations } from './signs.ts';
+import { markShopKinds, offRoad, placeSigns, placeStreetPlates, useSampledColours, veloStations } from './signs.ts';
 import { renderMinimap } from './minimap.ts';
 import { loadLogos } from './logos.ts';
 import { extractLandmarks } from './landmarks.ts';
@@ -211,6 +211,8 @@ const postsUnder = posts(raised, standing, (p) => inBounds(p) && clearOfRoads(p)
 buildings.push(...postsUnder);
 const buildingIndex = new Map(buildings.map((b, i) => [b, i]));
 const logos = await loadLogos();
+const coloursFile = `${RAW_DIR}/brand-colours.json`;
+if (existsSync(coloursFile)) useSampledColours(JSON.parse(await readFile(coloursFile, 'utf8')));
 const shopfronts = placeSigns(elements, buildingIndex, near, (p) => clearOfRoads(p) && open(p), logos.of);
 markShopKinds(shopfronts.signs, buildings);
 
@@ -284,7 +286,7 @@ console.log(
     `roads ${roads.length}, trams ${trams.length}, water ${count('water')}, green ${count('green')}, plazas ${count('plaza')}\n` +
     `landmarks ${landmarks.map((l) => `${l.id}(${l.parts.length})`).join(' ')}, trees ${trees.length / 4}, ` +
     `street-facing ${buildings.filter((b) => b.sf).length}, shops ${buildings.filter((b) => b.sh && b.sh !== 2).length}, ` +
-    `cafés ${buildings.filter((b) => b.sh === 2).length}, signs ${shopfronts.signs.length} (${shopfronts.signs.filter((s) => s[7] !== undefined).length} with ${logoRects.length} logos, ${JSON.stringify(Object.fromEntries(['hotel', 'culture', 'public', 'plate'].map((k) => [k, shopfronts.signs.filter((s) => s[4] === k).length])))}), street plates ${streetPlates.length}, velo ${velo.length / 4}, terraces ${shopfronts.terraces.length / 4}, crossings ${city.crossings.length}, lamps ${city.props.lamps.length / 2}, benches ${city.props.benches.length / 2}, ` +
+    `cafés ${buildings.filter((b) => b.sh === 2).length}, signs ${shopfronts.signs.length} (${shopfronts.signs.filter((s) => s[7] != null).length} with ${logoRects.length} logos, ${JSON.stringify(Object.fromEntries(['hotel', 'culture', 'public', 'plate'].map((k) => [k, shopfronts.signs.filter((s) => s[4] === k).length])))}), street plates ${streetPlates.length}, velo ${velo.length / 4}, terraces ${shopfronts.terraces.length / 4}, crossings ${city.crossings.length}, lamps ${city.props.lamps.length / 2}, benches ${city.props.benches.length / 2}, ` +
     `bollards ${city.props.bollards.length / 2}, signals ${city.props.signals.length / 3}\n` +
     `slice ${(maxX - minX).toFixed(0)} × ${(maxZ - minZ).toFixed(0)} m → ${OUT_DIR}/city.json ${(json.length / 1e6).toFixed(2)} MB`,
 );

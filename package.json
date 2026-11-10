@@ -20,6 +20,7 @@
     "shot": "tsx tools/dev/screenshot.ts",
     "map:fetch-grb": "tsx tools/map/fetch-grb.ts",
     "map:fetch-logos": "tsx tools/map/fetch-logos.ts",
+    "map:fetch-brand-colours": "tsx tools/map/fetch-brand-colours.ts",
     "map:fetch-ortho": "tsx tools/map/fetch-ortho.ts",
     "map:fetch-trees": "tsx tools/map/fetch-trees.ts",
     "map:fetch-gtfs": "tsx tools/map/fetch-gtfs.ts",

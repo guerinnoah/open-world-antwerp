@@ -103,7 +103,7 @@ export class Physics {
     return hit ? { dist: hit.timeOfImpact, nx: hit.normal.x, nz: hit.normal.y } : null;
   }
 
-  boxOverlaps(x: number, z: number, angle: number, halfLength: number, halfWidth: number, flags?: RAPIER.QueryFilterFlags, filter?: number): boolean {
+  boxOverlaps(x: number, z: number, angle: number, halfLength: number, halfWidth: number, flags?: RAPIER.QueryFilterFlags, filter?: number, ignore?: RAPIER.RigidBody): boolean {
     let hit = false;
     this.box.halfExtents = { x: halfLength, y: halfWidth };
     this.world.intersectionsWithShape(
@@ -116,6 +116,8 @@ export class Physics {
       },
       flags,
       filter,
+      undefined,
+      ignore,
     );
     return hit;
   }

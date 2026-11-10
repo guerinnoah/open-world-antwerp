@@ -1,4 +1,4 @@
-import type { Building, Road, RoadGraph, ShopKind, Sign, SignStyle } from '../../src/world/cityData.ts';
+import { LOGO_SHARE, LOGO_SIGN_H, SHOP_KIND, type Building, type Road, type RoadGraph, type Sign, type SignStyle } from '../../src/world/cityData.ts';
 import { besideRoad, pointInRing, project, round, round2, roadGrid, type OsmElement, type Outline, type Pt } from './geo.ts';
 
 function pointOf(e: OsmElement): Pt | undefined {
@@ -48,38 +48,67 @@ function styleOf(t: Record<string, string>): SignStyle | undefined {
   return undefined;
 }
 
-/** Chain house colours, matched on the name's start; chains never get a logo. */
-const BRANDS: [RegExp, number][] = [
+const DARK = 0x1a1a1a;
+
+/** Chain house colours, matched on the name's start. Third: the chain's lettering, where white (or dark on a light colour) is wrong. */
+const BRANDS: [RegExp, number, number?][] = [
   [/^albert heijn|^ah\b/i, 0x00a0e2], [/delhaize/i, 0xd7171f], [/^carrefour/i, 0x004e9f], [/^lidl/i, 0x0050aa],
   [/^aldi/i, 0x00205b], [/^colruyt/i, 0xf28c00], [/^okay/i, 0xe2001a], [/^spar\b/i, 0x00843d], [/^kruidvat/i, 0xe30613],
-  [/^hema/i, 0xe2001a], [/^zara/i, 0x111111], [/^h&m/i, 0xe50010], [/^action\b/i, 0x0068b3], [/^fnac/i, 0xe1a400],
+  [/^hema/i, 0xe2001a], [/^zara/i, 0x111111], [/^h&m/i, 0xe50010], [/^action\b/i, 0x0068b3], [/^fnac/i, 0xe1a400, DARK],
   [/^mediamarkt|^media markt/i, 0xdf0000], [/^primark/i, 0x0b9bd7], [/^jbc/i, 0xd40f1f], [/^torfs/i, 0x1a1a1a],
-  [/^panos/i, 0xc8102e], [/^exki/i, 0x6b8f2a], [/^starbucks/i, 0x00704a], [/^mcdonald/i, 0xda291c], [/^quick\b/i, 0xe3001b],
+  [/^panos/i, 0xc8102e], [/^exki/i, 0x6b8f2a], [/^starbucks/i, 0x00704a], [/^mcdonald/i, 0xda291c, 0xffc72c], [/^quick\b/i, 0xe3001b],
   [/^burger king/i, 0xd62300], [/^pizza hut/i, 0xc8102e], [/^domino/i, 0x006491], [/^ici paris/i, 0x111111],
   [/^di\b/i, 0xe5007e], [/^c&a/i, 0x0b4b9b], [/^inno\b/i, 0x111111], [/^bpost/i, 0xe2001a], [/^kbc/i, 0x00aeef],
   [/^bnp paribas|^bnp/i, 0x00915a], [/^ing\b/i, 0xff6200], [/^belfius/i, 0xc30045], [/^argenta/i, 0x7ab929],
+  [/^basic.?fit/i, 0xeb6800], [/^(t2 )?think twice/i, 0xe3000f], [/^le pain quotidien/i, 0xfdc400], [/^standaard boekhandel/i, 0xea524b],
+  [/^leonardo hotel/i, 0xb5003b], [/^rituals/i, 0x816356], [/^jd sports/i, 0x1a1a19], [/^crelan/i, 0x88bc1f, DARK],
+  [/^calzedonia/i, 0xd71f56], [/^jack (&|and) jones/i, 0x00268a], [/^dille (&|en) kamille/i, 0xfaf8ed],
+  [/^amorino/i, 0x100b0c, 0xd3b67a], [/^d[eé]lifrance/i, 0xbe522e], [/^dr\.? martens/i, 0xffe717],
+  // whole name only: these words also start other businesses' names (Brico Harput, Jumbo world wide, ONLY & SONS)
+  [/^brico$/i, 0x33b652, DARK], [/^jumbo$/i, 0xffcc00], [/^only$/i, 0x00112c], [/^leonidas$/i, 0x1f3a93, 0xd4af37], [/^zeeman$/i, 0x00519e],
+  [/^van ?haren$/i, 0xff5e1f], [/^tui$/i, 0xc00c12],
 ];
+
+let sampled = new Map<string, number>();
+
+/** From map:fetch-brand-colours, by brand:wikidata: chains BRANDS doesn't list. */
+export function useSampledColours(colours: Record<string, { colour: number }>) {
+  sampled = new Map(Object.entries(colours).map(([q, c]) => [q, c.colour]));
+}
+
+/** A tag's first Wikidata item, if it is one. */
+export function qid(tag?: string): string | undefined {
+  const q = tag?.split(';')[0].trim();
+  return q && /^Q\d+$/.test(q) ? q : undefined;
+}
+
+/** Not for plates: they're doctors' and offices', whose names can match a chain's. */
+export function houseOf(t: Record<string, string>): { colour: number; letters?: number } | undefined {
+  if (styleOf(t) === 'plate') return undefined;
+  const brand = BRANDS.find(([re]) => re.test(t.name) || re.test(t.brand ?? ''));
+  if (brand) return { colour: brand[1], letters: brand[2] };
+  const colour = sampled.get(qid(t['brand:wikidata']) ?? '');
+  return colour === undefined ? undefined : { colour };
+}
 
 const OPERATOR_LOGO: ReadonlySet<SignStyle> = new Set(['public', 'culture']);
 
+/** Wikidata items whose logo a sign may show, best first: fetch-logos keeps only public-domain files. Never for plates. */
 export function logoItemsOf(t: Record<string, string>): string[] {
   const style = styleOf(t);
   if (!t.name || !style || style === 'plate') return [];
-  if (t.brand || t['brand:wikidata'] || BRANDS.some(([re]) => re.test(t.name))) return [];
-  const items = [t.wikidata, OPERATOR_LOGO.has(style) ? t['operator:wikidata'] : undefined];
-  return items.flatMap((q) => (q ? [q.split(';')[0].trim()] : [])).filter((q) => /^Q\d+$/.test(q));
+  const items = [t['brand:wikidata'], t.wikidata, OPERATOR_LOGO.has(style) ? t['operator:wikidata'] : undefined];
+  return items.flatMap((tag) => qid(tag) ?? []);
 }
 
-const SHOP_KIND: Partial<Record<SignStyle, ShopKind>> = {
-  shop: 1, cafe: 2, restaurant: 2, fastfood: 2, fashion: 3, food: 4, bakery: 5, jewelry: 6, pharmacy: 7, bank: 7, service: 7,
-};
-
+/** A shop's sign makes its wall a shopfront, even one markFacades didn't find facing a street. */
 export function markShopKinds(signs: Sign[], buildings: Building[]) {
-  for (const [i, , , , style] of signs) {
+  for (const [i, edge, , , style] of signs) {
     const kind = SHOP_KIND[style];
     const b = buildings[i];
-    if (!kind || b.sh === 2) continue;
-    if (kind === 2 || !b.sh || b.sh === 1) b.sh = kind;
+    if (!kind) continue;
+    if (!b.sf?.includes(edge)) b.sf = [...(b.sf ?? []), edge].sort((p, q) => p - q);
+    if (b.sh !== 2 && (kind === 2 || !b.sh || b.sh === 1)) b.sh = kind;
   }
 }
 
@@ -143,10 +172,11 @@ export function placeSigns(
       ? Math.min(Math.max(0.5, t.name.length * 0.055 + 0.25), 1.1, len - 0.4)
       : Math.min(Math.max(2.2, shorten(t.name).length * 0.28 + 0.8), len - 0.4, big ? 9 : 7);
     const logo = plate ? undefined : logoOf(t);
+    const house = houseOf(t);
     if (logo) {
-      const logoWidth = 0.75 * 0.75 * logo.aspect; // 0.75 m sign, logo 3/4 of it (src/world/signs.ts)
+      const logoWidth = LOGO_SIGN_H * LOGO_SHARE * logo.aspect;
       const most = Math.min(len - 0.4, big ? 9 : 7);
-      const named = logo.named && width + logoWidth <= most;
+      const named = logo.named && !house && width + logoWidth <= most; // a chain's logo goes alone, as on its own signs
       width = Math.min(Math.max(1.5, named ? width + logoWidth : logoWidth + 0.5), most);
     }
     const key = `${plate ? 'p' : ''}${index.get(host.b)}:${edge}`;
@@ -169,10 +199,10 @@ export function placeSigns(
     spans.push([centre - width / 2, centre + width / 2]);
     spans.sort((a, b) => a[0] - b[0]);
     taken.set(key, spans);
-    const brand = BRANDS.find(([re]) => re.test(t.name) || re.test(t.brand ?? ''))?.[1];
     const sign: Sign = [index.get(host.b)!, edge, Math.round((centre / len) * 1000) / 1000, round(width), style, shorten(t.name)];
-    if (brand !== undefined || logo) sign.push(brand ?? null);
-    if (logo) sign.push(logo.index);
+    if (house || logo) sign.push(house?.colour ?? null);
+    if (logo || house?.letters !== undefined) sign.push(logo?.index ?? null);
+    if (house?.letters !== undefined) sign.push(house.letters);
     signs.push(sign);
 
     if (style === 'cafe' || style === 'restaurant' || (style === 'fastfood' && t.amenity === 'ice_cream')) {

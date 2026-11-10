@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { fitFont, hexOf, sans } from '../core/canvasText';
 import { uploadFirst } from '../core/instancing';
-import { rand } from './buildings';
-import type { Building, CityData, LogoRect, Sign, SignStyle } from './cityData';
+import { CHAIN_STRETCHES, rand } from './buildings';
+import { LOGO_SHARE, LOGO_SIGN_H, SHOP_KIND, type Building, type CityData, type LogoRect, type Sign, type SignStyle } from './cityData';
 import { facadeStyle } from './facadeLayout';
 
 const ATLAS = 2048;
@@ -10,9 +11,9 @@ const MAX_CELLS = 8;
 const CELL_W = 128, CELL_H = 64; // px; a name spans 1–MAX_CELLS cells in a row
 const COLS = ATLAS / CELL_W, ROWS = ATLAS / CELL_H;
 const GRID = 50;
+const SIGN_GLOW = 1.3; // × its own colour, at full night
 const NEW_PER_REFRESH = 10; // per refresh, to keep frame times even while driving
 const CAPACITY = 2000;
-const LOGO_SIGN_H = 0.75; // m; logo is 3/4 of it, as tools/map/signs.ts sizes it
 
 interface Look {
   bg: string;
@@ -51,6 +52,7 @@ interface Face {
   textRange: number;
   cell: number;
   pharmacy: boolean;
+  chain: boolean; // lit at night; its logo goes alone
   logo?: LogoRect;
 }
 
@@ -154,9 +156,62 @@ function panelGeometry(): THREE.BufferGeometry {
   return mergeGeometries([face.toNonIndexed(), back.toNonIndexed()]);
 }
 
-function solidLook(hex: number, weight: number): Look {
+
+/** White letters on all but light colours, as most chains do; `letters` for the ones that don't. */
+export function solidLook(hex: number, weight: number, letters?: number): Look {
   const c = new THREE.Color(hex);
-  return { bg: `#${c.getHexString()}`, fg: c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.6 ? '#1a1a1a' : '#ffffff', font: `${weight} {s}px "Helvetica Neue", Arial, sans-serif` };
+  const fg = letters !== undefined ? hexOf(letters) : c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.6 ? '#1a1a1a' : '#ffffff';
+  return { bg: hexOf(hex), fg, font: sans(weight) };
+}
+
+export interface ChainFronts {
+  /** Two texels per stretch: (linear r, g, b, stretches on this wall), (from, to m along it). Stretch 0 is unused. */
+  data: Float32Array;
+  edges: Map<Building, Map<number, number>>; // outline edge → its first stretch
+}
+
+const WHOLE_FRONT = 25; // m: a chain alone on a frontage up to this long paints all of it; longer likely holds unmapped shops
+const REACH = 4; // m past its sign otherwise, and at most halfway to the next sign
+const MAX_STRETCHES = 1000; // two texels each: within the 2048 px texture width every WebGL2 device has
+const chainOf = (s: Sign) => (SHOP_KIND[s[4]] ? s[6] ?? null : null); // hotels, venues and post offices have no shopfront
+
+/** The stretches of shopfront that are a chain's: buildings.ts paints their fascia in its colour. */
+export function chainFronts(city: CityData): ChainFronts {
+  const byEdge = new Map<string, Sign[]>();
+  for (const s of city.signs ?? []) {
+    if (s[4] === 'street' || s[4] === 'plate') continue; // an office plate takes no frontage from a neighbour
+    const key = `${s[0]},${s[1]}`;
+    const list = byEdge.get(key);
+    if (list) list.push(s);
+    else byEdge.set(key, [s]);
+  }
+  const texels = [0, 0, 0, 0, 0, 0, 0, 0], edges = new Map<Building, Map<number, number>>(), c = new THREE.Color();
+  for (const list of byEdge.values()) {
+    list.sort((p, q) => p[2] - q[2]);
+    const colours = list.map(chainOf);
+    if (colours.every((x) => x == null)) continue;
+    const [bi, edge] = list[0];
+    const b = city.buildings[bi], r = b.rings[0], j = (edge + 1) % (r.length / 2);
+    const len = Math.hypot(r[j * 2] - r[edge * 2], r[j * 2 + 1] - r[edge * 2 + 1]);
+    const one = colours.every((x) => x === colours[0]);
+    const stretches = one && len <= WHOLE_FRONT ? [[colours[0]!, 0, len]] : list.flatMap((s, k) => {
+      const colour = colours[k];
+      if (colour == null) return [];
+      const lo = s[2] * len - s[3] / 2, hi = s[2] * len + s[3] / 2;
+      const prev = list[k - 1], next = list[k + 1];
+      const from = Math.max(0, lo - REACH, prev ? (prev[2] * len + prev[3] / 2 + lo) / 2 : -Infinity);
+      const to = Math.min(len, hi + REACH, next ? (next[2] * len - next[3] / 2 + hi) / 2 : Infinity);
+      return [[colour, from, to]];
+    }).slice(0, CHAIN_STRETCHES);
+    const first = texels.length / 8;
+    if (first + stretches.length - 1 > MAX_STRETCHES) continue;
+    for (const [colour, from, to] of stretches) {
+      c.setHex(colour);
+      texels.push(c.r, c.g, c.b, stretches.length, from, to, 0, 0);
+    }
+    edges.set(b, (edges.get(b) ?? new Map()).set(edge, first));
+  }
+  return { data: new Float32Array(texels), edges };
 }
 
 const turn = (angle: number) => new THREE.Quaternion().setFromAxisAngle(THREE.Object3D.DEFAULT_UP, angle);
@@ -171,6 +226,7 @@ export class Signs {
   private grid = new Map<string, Placed[]>();
   private panels: THREE.InstancedMesh;
   private slotAttr: THREE.InstancedBufferAttribute;
+  private litAttr: THREE.InstancedBufferAttribute;
   private crosses: THREE.InstancedMesh;
   private brackets: THREE.InstancedMesh;
   private doorFrames: THREE.InstancedMesh;
@@ -185,9 +241,10 @@ export class Signs {
   private logos: LogoRect[];
   private logoImage?: HTMLImageElement;
 
-  constructor(city: CityData, private renderer: THREE.WebGLRenderer, private view = 200) {
+  /** `night`: 0 day → 1 night, as Environment.night. */
+  constructor(city: CityData, private renderer: THREE.WebGLRenderer, private view = 200, night = 0) {
     this.group.name = 'signs';
-    this.logos = city.logos ?? [];
+    this.logos = new URLSearchParams(location.search).has('nologos') ? [] : city.logos ?? [];
     for (const sign of city.signs ?? []) {
       const p = this.place(sign, city.buildings[sign[0]]);
       if (!p) continue;
@@ -206,7 +263,7 @@ export class Signs {
     this.scratch.width = CELL_W * MAX_CELLS;
     this.scratch.height = CELL_H;
     this.scratchTexture = new THREE.Texture(this.scratch);
-    if (this.logos.length && !new URLSearchParams(location.search).has('nologos')) {
+    if (this.logos.length) {
       const image = new Image();
       image.src = '/map/logos.webp';
       image.decode().then(() => {
@@ -219,13 +276,17 @@ export class Signs {
     // Atlas offset and size; size 0 = plain colour, negative v size = text running down.
     this.slotAttr = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY * 4), 4);
     geometry.setAttribute('iSlot', this.slotAttr);
-    const material = new THREE.MeshStandardMaterial({ map: this.atlas, roughness: 0.55 });
+    this.litAttr = new THREE.InstancedBufferAttribute(new Float32Array(CAPACITY), 1);
+    geometry.setAttribute('iLit', this.litAttr);
+    const material = new THREE.MeshStandardMaterial({ map: this.atlas, roughness: 0.9 }); // matte, like the painted fascia behind it
     material.onBeforeCompile = (shader) => {
+      shader.uniforms.uGlow = { value: night * SIGN_GLOW };
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec4 iSlot;\nvarying vec4 vSlot;\nvarying vec2 vFaceUv;')
-        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSlot = iSlot;\nvFaceUv = uv;');
+        .replace('#include <common>', '#include <common>\nattribute vec4 iSlot;\nattribute float iLit;\nvarying vec4 vSlot;\nvarying vec2 vFaceUv;\nvarying float vLit;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSlot = iSlot;\nvFaceUv = uv;\nvLit = iLit;');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec4 vSlot;\nvarying vec2 vFaceUv;')
+        .replace('#include <common>', '#include <common>\nvarying vec4 vSlot;\nvarying vec2 vFaceUv;\nvarying float vLit;\nuniform float uGlow;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vLit * uGlow;')
         .replace(
           '#include <map_fragment>',
           `if (vFaceUv.x < -0.5) {
@@ -268,8 +329,8 @@ export class Signs {
 
   private place(sign: Sign, b: Building | undefined): Placed | null {
     if (!b) return null;
-    const [, edge, t, width, style, name, brand, logoIndex] = sign;
-    const logo = logoIndex === undefined ? undefined : this.logos[logoIndex];
+    const [, edge, t, width, style, name, brand, logoIndex, letters] = sign;
+    const logo = logoIndex == null ? undefined : this.logos[logoIndex];
     const ring = b.rings[0];
     const n = ring.length / 2;
     const ax = ring[edge * 2], az = ring[edge * 2 + 1];
@@ -287,9 +348,10 @@ export class Signs {
     const facing = turn(Math.atan2(nx, nz));
     const outward = turn(-Math.atan2(nz, nx));
     const looks = LOOKS[style];
-    let look = looks[Math.floor(rand(b, edge + 11) * looks.length)];
-    if (brand != null) look = solidLook(brand, 800);
-    else if (logo) look = solidLook(logo[4], 700);
+    // A chain's logo on its own ground: on the chain's colour, a logo in that colour would vanish.
+    const logoLook = logo && solidLook(logo[4], 700);
+    const look = brand != null ? solidLook(brand, 800, letters) : logoLook || looks[Math.floor(rand(b, edge + 11) * looks.length)];
+    const signLook = logoLook || look;
     const placed: Placed = { x, z, faces: [], brackets: [] };
     if (style !== 'street') {
       let along = t * len;
@@ -301,10 +363,10 @@ export class Signs {
         placed.door = pose(dx + nx * push, 0, dz + nz * push, facing);
       }
     }
-    const face = (kind: FaceKind, w: number, h: number, matrices: THREE.Matrix4[], view: number, textRange: number, text = name, rotated = false) => {
+    const face = (kind: FaceKind, w: number, h: number, matrices: THREE.Matrix4[], view: number, textRange: number, text = name, rotated = false, faceLook = look) => {
       const aspect = rotated ? h / w : w / h;
       placed.faces.push({
-        kind, text, look, bg: new THREE.Color(look.bg), rotated, matrices, view, textRange, cell: -1, pharmacy: style === 'pharmacy',
+        kind, text, look: faceLook, bg: new THREE.Color(faceLook.bg), rotated, matrices, view, textRange, cell: -1, pharmacy: style === 'pharmacy', chain: brand != null,
         px: Math.min(CELL_W * MAX_CELLS, Math.max(CELL_H, Math.round(CELL_H * aspect))), logo: kind === 'sign' ? logo : undefined,
       });
     };
@@ -320,7 +382,7 @@ export class Signs {
     }
     const h = logo ? LOGO_SIGN_H : style === 'culture' ? 0.75 : style === 'public' ? 0.5 : 0.6;
     face('sign', width, h, [at(groundH - 0.65, h, width)], this.view, logo || style === 'culture' || style === 'hotel' ? 120 : 90,
-      style === 'public' && !logo ? name.toUpperCase() : name);
+      style === 'public' && !logo ? name.toUpperCase() : name, false, signLook);
 
     const end = Math.min(width / 2 + 0.3, len * (1 - t) - 0.2);
     const hx = wx + ux * end, hz = wz + uz * end;
@@ -340,6 +402,9 @@ export class Signs {
       hanging('hotel', groundH + 1.5, 0.55, 2.2, 0.45);
       bracket(groundH + 2.45, 0.25);
       bracket(groundH + 0.55, 0.25);
+    } else if (brand != null) { // chains hang one out, as on any shopping street
+      hanging('board', groundH + 0.55, 0.7, 0.45, 0.5);
+      bracket(groundH + 0.81, 0.95);
     }
     return placed;
   }
@@ -391,9 +456,9 @@ export class Signs {
     }
     if (f.logo && this.logoImage) {
       const [lx, ly, lw, lh, , emblem] = f.logo;
-      let s = (H * 0.75) / lh;
+      let s = (H * LOGO_SHARE) / lh;
       c.font = f.look.font.replace('{s}', '18');
-      const named = emblem === 1 && c.measureText(f.text).width < w - lw * s - 44;
+      const named = emblem === 1 && !f.chain && c.measureText(f.text).width < w - lw * s - 44;
       s = Math.min(s, (w - 16) / lw);
       const dw = lw * s, dh = lh * s;
       const dx = named ? 10 : (w - dw) / 2;
@@ -415,11 +480,7 @@ export class Signs {
         c.restore();
       });
     } else if (x1 - x0 > 24) {
-      let size = framed ? 34 : 44;
-      for (; size > 12; size -= 2) {
-        c.font = f.look.font.replace('{s}', String(size));
-        if (c.measureText(f.text).width < x1 - x0 - 16) break;
-      }
+      fitFont(c, f.look.font, f.text, x1 - x0 - 16, framed ? 34 : 44);
       c.fillText(f.text, (x0 + x1) / 2, H / 2 + 2);
     }
     const [sx, sy] = cellOrigin(cell);
@@ -464,6 +525,7 @@ export class Signs {
       if (n + f.matrices.length > CAPACITY) break;
       for (const m of f.matrices) {
         this.panels.setMatrixAt(n, m);
+        this.litAttr.setX(n, f.chain ? 1 : 0);
         if (f.cell >= 0) {
           const [sx, sy] = cellOrigin(f.cell);
           this.slotAttr.setXYZW(n, sx / ATLAS, sy / ATLAS, f.px / ATLAS, (f.rotated ? -CELL_H : CELL_H) / ATLAS);
@@ -493,6 +555,7 @@ export class Signs {
     uploadFirst(this.panels.instanceMatrix, n);
     uploadFirst(this.panels.instanceColor, n);
     uploadFirst(this.slotAttr, n);
+    uploadFirst(this.litAttr, n);
     uploadFirst(this.crosses.instanceMatrix, crosses);
     uploadFirst(this.brackets.instanceMatrix, brackets);
   }

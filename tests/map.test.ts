@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Area, Building, CityData, Road } from '../src/world/cityData';
+import type { Area, Building, CityData, Road, Sign, SignStyle } from '../src/world/cityData';
 import {
   assembleRings, besideRoad, centroid, interiorPoint, pointInRing, polygonsOf, roadGrid, signedArea, type OsmElement, type Pt,
 } from '../tools/map/geo';
@@ -11,7 +11,8 @@ import { project } from '../src/world/projection';
 import { buildGraphData } from '../tools/map/graph';
 import { grbMatcher } from '../tools/map/grb';
 import { posts, solid, splitOutlines, type Mass } from '../tools/map/massing';
-import { logoItemsOf, placeSigns } from '../tools/map/signs';
+import { houseOf, logoItemsOf, placeSigns } from '../tools/map/signs';
+import { chainFronts, solidLook } from '../src/world/signs';
 import { facadeOf } from '../tools/map/palette';
 import { streetDetail } from '../tools/map/street';
 import { layWater } from '../tools/map/water';
@@ -314,12 +315,77 @@ describe('bus runs', () => {
   });
 });
 
+describe('chain colours', () => {
+  it('goes to the chain, by name or brand tag', () => {
+    for (const name of ['Brico', 'Jumbo', 'ONLY', 'Leonidas', 'Zeeman', 'vanHaren', 'TUI', 'T2 Think Twice']) {
+      expect(houseOf({ name, shop: 'clothes' })).toBeDefined();
+    }
+    expect(houseOf({ name: 'Brico Antwerpen', shop: 'doityourself', brand: 'Brico' })).toBeDefined();
+  });
+
+  it('leaves other businesses with a similar name alone', () => {
+    for (const name of ['Brico Harput', 'Jumbo world wide super store', 'ONLY & SONS', 'Leonidas Taverna', 'Zeemanshuis', 'Van Haren Schoenen', 'Tui Na Massage']) {
+      expect(houseOf({ name, shop: 'clothes' })).toBeUndefined();
+    }
+  });
+
+  it('never goes to a plate', () => {
+    expect(houseOf({ name: 'Van Haren', office: 'lawyer' })).toBeUndefined();
+    expect(houseOf({ name: 'TUI', office: 'company' })).toBeUndefined();
+  });
+
+  it('letters signs white, unless the colour is light or the chain letters its own signs dark', () => {
+    const letters = (name: string) => {
+      const house = houseOf({ name, shop: 'supermarket' })!;
+      return solidLook(house.colour, 800, house.letters).fg;
+    };
+    for (const name of ['Crelan', 'Brico', 'Jumbo', 'Fnac']) expect(letters(name)).toBe('#1a1a1a');
+    expect(letters("McDonald's")).toBe('#ffc72c');
+    for (const name of ['Albert Heijn', 'Delhaize', 'KBC', 'ING', 'Colruyt', 'Argenta', 'Basic-Fit']) expect(letters(name)).toBe('#ffffff');
+    expect(letters('Leonidas')).toBe('#d4af37');
+  });
+});
+
+describe('chain fronts', () => {
+  const wall = (len: number) => ({ h: 10, c: 0, r: 0, rings: [[0, 0, len, 0, len, 10, 0, 10]] }) as Building;
+  const sign = (t: number, width: number, colour: number | null, style: SignStyle = 'shop'): Sign => [0, 0, t, width, style, 'x', colour];
+  const stretches = (len: number, signs: Sign[]) => {
+    const f = chainFronts({ buildings: [wall(len)], signs } as unknown as CityData);
+    const out: [number, number][] = [];
+    for (let i = 8; i < f.data.length; i += 8) out.push([+f.data[i + 4].toFixed(2), +f.data[i + 5].toFixed(2)]);
+    return out;
+  };
+
+  it('gives a chain the whole of a short frontage it has to itself', () => {
+    expect(stretches(12, [sign(0.5, 3, 0xff0000)])).toEqual([[0, 12]]);
+  });
+
+  it('keeps to its own sign and a few metres on a long frontage', () => {
+    expect(stretches(60, [sign(0.5, 3, 0xff0000)])).toEqual([[24.5, 35.5]]);
+  });
+
+  it('stops halfway to the next shop on a shared frontage', () => {
+    expect(stretches(20, [sign(0.25, 2, 0xff0000), sign(0.75, 2, null)])).toEqual([[0, 10]]);
+  });
+
+  it('ignores street name plates', () => {
+    expect(stretches(12, [sign(0.5, 3, 0xff0000), sign(0.1, 2, null, 'street')])).toEqual([[0, 12]]);
+  });
+
+  it('lets an office plate beside the door take no frontage', () => {
+    expect(stretches(12, [sign(0.5, 3, 0xff0000), sign(0.9, 0.4, null, 'plate')])).toEqual([[0, 12]]);
+  });
+
+  it('paints no shopfront for a hotel chain', () => {
+    expect(stretches(12, [sign(0.5, 3, 0xff0000, 'hotel')])).toEqual([]);
+  });
+});
+
 describe('sign logos', () => {
-  it('only goes to public institutions, museums and independents, never chains or offices', () => {
+  it("prefers a chain's brand logo, and never goes to an office", () => {
     expect(logoItemsOf({ name: 'MAS', tourism: 'museum', wikidata: 'Q104723730' })).toEqual(['Q104723730']);
-    expect(logoItemsOf({ name: 'Delhaize', shop: 'supermarket', wikidata: 'Q1', 'brand:wikidata': 'Q1184173' })).toEqual([]);
-    expect(logoItemsOf({ name: 'Basic-Fit', leisure: 'fitness_centre', brand: 'Basic-Fit', wikidata: 'Q40165577' })).toEqual([]);
-    expect(logoItemsOf({ name: 'Kruidvat Meir', shop: 'chemist', wikidata: 'Q2226366' })).toEqual([]);
+    expect(logoItemsOf({ name: 'Delhaize', shop: 'supermarket', wikidata: 'Q1', 'brand:wikidata': 'Q1184173' })).toEqual(['Q1184173', 'Q1']);
+    expect(logoItemsOf({ name: 'Kruidvat Meir', shop: 'chemist', wikidata: 'Q2226366' })).toEqual(['Q2226366']);
     expect(logoItemsOf({ name: 'McKinsey & Company', office: 'company', wikidata: 'Q310207' })).toEqual([]);
   });
 

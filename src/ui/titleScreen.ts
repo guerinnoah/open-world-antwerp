@@ -14,6 +14,21 @@ export class TitleScreen {
     this.bar?.style.setProperty('transform', `scaleX(${this.filled})`);
   }
 
+  /** Inside the loading line, so a load that recovers anyway removes it with that line. */
+  fail(message: string, retry = true) {
+    const loading = this.root.querySelector<HTMLDivElement>('#loading');
+    if (!loading || loading.classList.contains('failed')) return;
+    loading.classList.add('failed');
+    loading.querySelector('span')!.textContent = message;
+    if (!retry) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'retry';
+    button.textContent = 'Retry';
+    button.addEventListener('click', () => location.reload());
+    loading.append(button);
+  }
+
   ready() {
     if (this.skip) {
       this.hide(false);

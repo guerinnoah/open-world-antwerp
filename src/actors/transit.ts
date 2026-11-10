@@ -6,7 +6,7 @@ import type { LineSchedule, TramRun } from '../world/cityData';
 import type { Clock } from '../world/daylight';
 import { pointAt } from '../world/polyline';
 import { probeRoute } from './trackProbe';
-import { displayAtlas, displayMaterial, type SectionModel } from './tramModel';
+import { displayAtlas, displayMaterial, operatorMaterial, type SectionModel } from './tramModel';
 
 export type Run<R extends TramRun = TramRun> = R & { cum: number[] };
 
@@ -144,6 +144,7 @@ export function obstacleAhead(physics: Physics, v: Sectioned, from: number, dir:
 interface KindMeshes {
   body: THREE.InstancedMesh;
   display: { mesh: THREE.InstancedMesh; rows: THREE.InstancedBufferAttribute } | null;
+  plate: number | null; // m along the section to its nameplate
   count: number;
 }
 
@@ -155,8 +156,11 @@ export class SectionMeshes<K extends string> {
   private quat = new THREE.Quaternion();
   private pos = new THREE.Vector3();
   private one = new THREE.Vector3(1, 1, 1);
+  private plates: THREE.InstancedMesh | null = null; // one draw for every kind's nameplates
+  private plateCount = 0;
+  private along = new THREE.Matrix4();
 
-  constructor(group: THREE.Group, runs: TramRun[], kinds: K[], build: (kind: K) => SectionModel, capacity: (kind: K) => number) {
+  constructor(group: THREE.Group, runs: TramRun[], kinds: K[], build: (kind: K) => SectionModel, capacity: (kind: K) => number, plate: THREE.BufferGeometry) {
     const atlas = displayAtlas(runs);
     this.rows = atlas.rows;
     this.rowCount = atlas.count;
@@ -169,6 +173,7 @@ export class SectionMeshes<K extends string> {
       group.add(mesh);
       return mesh;
     };
+    let plates = 0;
     for (const kind of kinds) {
       const model = build(kind), n = capacity(kind);
       const body = add(new THREE.InstancedMesh(model.body, material, n));
@@ -178,7 +183,12 @@ export class SectionMeshes<K extends string> {
         model.display.setAttribute('iRow', rows);
         display = { mesh: add(new THREE.InstancedMesh(model.display, screen, n)), rows };
       }
-      this.meshes.set(kind, { body, display, count: 0 });
+      if (model.plate !== null) plates += n;
+      this.meshes.set(kind, { body, display, plate: model.plate, count: 0 });
+    }
+    if (plates) {
+      this.plates = add(new THREE.InstancedMesh(plate, operatorMaterial(), plates));
+      this.plates.castShadow = false;
     }
   }
 
@@ -196,6 +206,7 @@ export class SectionMeshes<K extends string> {
       m.display.mesh.setMatrixAt(m.count, this.matrix);
       m.display.rows.setX(m.count, Math.min(row, this.rowCount - 1));
     }
+    if (m.plate !== null && this.plates) this.plates.setMatrixAt(this.plateCount++, this.along.makeTranslation(m.plate, 0, 0).premultiply(this.matrix));
     m.count++;
   }
 
@@ -209,6 +220,11 @@ export class SectionMeshes<K extends string> {
         uploadFirst(m.display.rows, m.count);
       }
       m.count = 0;
+    }
+    if (this.plates) {
+      this.plates.count = this.plateCount;
+      uploadFirst(this.plates.instanceMatrix, this.plateCount);
+      this.plateCount = 0;
     }
   }
 }

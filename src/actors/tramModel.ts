@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { canvasTexture, drawLabel, hexOf, sans } from '../core/canvasText';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { coloured } from '../core/util';
 import type { TramRun } from '../world/cityData';
@@ -151,7 +152,27 @@ function pantograph(x: number, parts: THREE.BufferGeometry[]) {
 export interface SectionModel {
   body: THREE.BufferGeometry;
   display: THREE.BufferGeometry | null;
+  plate: number | null; // m along the section: the operator's name, on both sides
 }
+
+const OPERATOR_W = 1.12, OPERATOR_H = 0.28;
+
+/** A fleet's nameplates: `y` up the side, `hw` m out from the centre line. */
+export function operatorName(y: number, hw: number): THREE.BufferGeometry {
+  const plate = () => new THREE.PlaneGeometry(OPERATOR_W, OPERATOR_H);
+  return mergeGeometries([plate().translate(0, y, hw + 0.015), plate().rotateY(Math.PI).translate(0, y, -hw - 0.015)]);
+}
+
+let operator: THREE.MeshStandardMaterial | undefined;
+/** Shared by trams and buses; opaque, so it needs no sorting against the body. */
+export function operatorMaterial(): THREE.MeshStandardMaterial {
+  operator ??= new THREE.MeshStandardMaterial({
+    map: canvasTexture(256, 64, (g) => drawLabel(g, 'De Lijn', hexOf(WHITE), '#2b3034', sans(700), 0.8125, 0.94, 0.516)), roughness: 0.32, metalness: 0.1,
+  });
+  return operator;
+}
+
+export const tramPlate = () => operatorName(2.63, HW);
 
 export function buildSection(kind: SectionKind): SectionModel {
   const L = SECTION_LENGTH[kind];
@@ -182,23 +203,19 @@ export function buildSection(kind: SectionKind): SectionModel {
   }
   if (kind !== 'rear') parts.push(box(x0 - 0.5, x0 + 0.05, FLOOR + 0.1, ROOF_TOP - 0.15, -HW + 0.12, HW - 0.12, BELLOWS));
   if (kind === 'mid') pantograph(0, parts);
-  return { body: mergeGeometries(parts), display };
+  return { body: mergeGeometries(parts), display, plate: kind === 'mid' ? null : kind === 'cab' ? 0.4 : -0.4 };
 }
 
 export function displayAtlas(runs: TramRun[]): { texture: THREE.CanvasTexture; rows: Map<string, number>; count: number } {
   const keys = [...new Set(runs.map((r) => `${r.line}|${r.to}|${r.colour}`))];
   const W = 512, H = 64;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H * keys.length;
-  const c = canvas.getContext('2d')!;
   const rows = new Map<string, number>();
-  keys.forEach((key, i) => {
+  const texture = canvasTexture(W, H * keys.length, (c) => keys.forEach((key, i) => {
     const [line, to, colour] = key.split('|');
     const y = i * H;
     c.fillStyle = '#050505';
     c.fillRect(0, y, W, H);
-    const hex = `#${Number(colour).toString(16).padStart(6, '0')}`;
+    const hex = hexOf(Number(colour));
     c.fillStyle = hex;
     c.fillRect(8, y + 8, 100, H - 16);
     const rgb = new THREE.Color(hex);
@@ -217,10 +234,7 @@ export function displayAtlas(runs: TramRun[]): { texture: THREE.CanvasTexture; r
     c.fillStyle = 'rgba(0,0,0,0.35)';
     for (let yy = y; yy < y + H; yy += 3) c.fillRect(0, yy, W, 1);
     rows.set(`${line}|${to}|${colour}`, i);
-  });
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
+  }));
   return { texture, rows, count: keys.length };
 }
 

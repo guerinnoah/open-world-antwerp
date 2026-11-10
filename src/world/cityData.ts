@@ -134,8 +134,15 @@ export type SignStyle =
   | 'plate'
   | 'street';
 
-/** [building index, outline edge, position along it 0–1, width (m), style, name, chain colour or null, logo index?] */
-export type Sign = [number, number, number, number, SignStyle, string, (number | null)?, number?];
+/** The sign styles with a shopfront. */
+export const SHOP_KIND: Partial<Record<SignStyle, ShopKind>> = {
+  shop: 1, cafe: 2, restaurant: 2, fastfood: 2, fashion: 3, food: 4, bakery: 5, jewelry: 6, pharmacy: 7, bank: 7, service: 7,
+};
+
+/** [building index, outline edge, position along it 0–1, width (m), style, name, chain colour or null, logo index or null, chain lettering colour] */
+export type Sign = [number, number, number, number, SignStyle, string, (number | null)?, (number | null)?, number?];
 
 /** Cell of public/map/logos.webp: [x, y, w, h (px), background, 1 = emblem beside the name]. */
 export type LogoRect = [number, number, number, number, number, 0 | 1];
+
+export const LOGO_SIGN_H = 0.75, LOGO_SHARE = 0.75; // m: a sign with a logo; the logo's share of its height

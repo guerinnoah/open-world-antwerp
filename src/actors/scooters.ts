@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { hexOf } from '../core/canvasText';
 import { uploadFirst } from '../core/instancing';
 import { coloured, mulberry32 } from '../core/util';
 import { GROUP, RAPIER, groups, type Physics } from '../physics/physics';
@@ -124,7 +125,7 @@ function atlas(): THREE.CanvasTexture {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, ATLAS, ATLAS);
   BRANDS.forEach((b, i) => {
-    ctx.fillStyle = `#${b.stem.toString(16).padStart(6, '0')}`;
+    ctx.fillStyle = hexOf(b.stem);
     ctx.fillRect(i * COLUMN, 0, COLUMN, ATLAS);
     ctx.save();
     ctx.translate(i * COLUMN + COLUMN / 2, ATLAS / 2);

@@ -29,7 +29,7 @@ import { createFacadeDetail } from './world/facadeDetail';
 import { createMarkings } from './world/markings';
 import { createProps } from './world/props';
 import { Interiors } from './world/interiors';
-import { Signs } from './world/signs';
+import { Signs, chainFronts } from './world/signs';
 import { loadTextures } from './world/textures';
 import { clearTramTracks } from './world/trackClearance';
 import { createTrees } from './world/trees';
@@ -41,9 +41,19 @@ const loading = document.querySelector<HTMLDivElement>('#loading')!;
 const stats = document.querySelector<HTMLDivElement>('#stats')!;
 const showStats = params.has('stats') || params.has('fly');
 const title = new TitleScreen(params.has('play') || params.has('fly') || (navigator.webdriver && !params.has('title')));
+// Anything this module throws while loading, awaited or not, lands here instead of the bar just stopping.
+const failLoad = () => title.fail('Something went wrong while loading Antwerp. Try again.');
+addEventListener('error', failLoad);
 
 const quality = pickQuality(params);
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.antialias });
+const renderer = (() => {
+  try {
+    return new THREE.WebGLRenderer({ canvas, antialias: quality.antialias });
+  } catch (e) {
+    title.fail("This browser can't show 3D graphics. Turn on hardware acceleration, or try another browser.", false);
+    throw e;
+  }
+})();
 const maxPixelRatio = Math.min(devicePixelRatio, quality.pixelRatio);
 let pixelRatio = maxPixelRatio;
 renderer.setPixelRatio(pixelRatio);
@@ -107,14 +117,18 @@ addEventListener('resize', resize);
 resize();
 
 onLoadProgress((f) => title.progress(f * 0.8));
+const json = <T>(url: string) => fetch(url).then((r) => (r.ok ? (r.json() as Promise<T>) : Promise.reject(new Error(`${url}: HTTP ${r.status}`))));
 const t0 = performance.now();
 const [city, graph, textures, crowd, aerial] = await Promise.all([
-  track(fetch('/map/city.json').then((r) => r.json() as Promise<CityData>), 14),
-  track(fetch('/map/graph.json').then((r) => r.json() as Promise<GraphData>), 4),
+  track(json<CityData>('/map/city.json'), 14),
+  track(json<GraphData>('/map/graph.json'), 4),
   loadTextures(renderer, quality.textureSize, quality.anisotropy),
   Crowd.load(quality.peds + 24, quality.level === 'high' ? Infinity : 4),
   !quality.aerial || params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync('/map/ortho.webp').catch(() => null), 9),
-]);
+]).catch((e: unknown) => {
+  title.fail("Couldn't load Antwerp. Check your connection and try again.");
+  throw e;
+});
 if (aerial) {
   aerial.colorSpace = THREE.NoColorSpace; // linearised in the ground shader
   aerial.anisotropy = quality.anisotropy;
@@ -125,13 +139,13 @@ clearTramTracks(city, graph.trams);
 const ground = createGround(city, textures, aerial);
 const props = createProps(city, quality.detailView, environment.night);
 const facadeDetail = createFacadeDetail(city.buildings, quality.detailView);
-const signs = new Signs(city, renderer, 200 * quality.detailView);
+const signs = new Signs(city, renderer, 200 * quality.detailView, environment.night);
 const bikes = new Bikes(city, crowd, 130 * quality.detailView);
 scene.add(bikes.group);
 title.progress(0.85);
 const landmarks = await createLandmarks(city.landmarks, textures);
 const scenery = [
-  createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures, environment.night),
+  createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures, environment.night, chainFronts(city)),
   createTrees(city.trees), landmarks,
 ];
 scene.add(...scenery);
@@ -151,6 +165,7 @@ const updateScenery = (dt: number, time: number) => {
   weather.update(camera.position, dt);
 };
 let update: (dt: number, time: number) => void;
+let rooms: THREE.Object3D | null = null;
 const timing = { sim: 0, render: 0 };
 if (params.has('fly')) {
   const fly = new FlyCam(camera, canvas, city.landmarks);
@@ -175,13 +190,14 @@ if (params.has('fly')) {
   const scooters = new Scooters(graph.walk, crowd, 130 * quality.detailView, physics);
   const motorbikes = new Motorbikes(crowd, quality.vehicleView);
   const interiors = new Interiors(signs.doors, city.buildings, physics, environment, crowd);
+  rooms = interiors.warmUp();
   scene.add(scooters.group, motorbikes.group, interiors.group);
   breakables.extras = (b) => (b.parts[0]?.kind === 'veloDock' ? bikes.clearDocks(b.x, b.z, 0.6) : []);
   const start = params.get('spawn') === 'grotemarkt' ? GROTE_MARKT_START : CENTRAAL_START;
   const input = new Input(canvas);
   const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, interiors, breakables, bikes, scooters, motorbikes, start);
   (window as unknown as { game: Game }).game = game;
-  fetch('/map/districts.json').then((r) => r.json() as Promise<District[]>).then((d) => game.attachDistricts(new Districts(d))).catch(() => {});
+  json<District[]>('/map/districts.json').then((d) => game.attachDistricts(new Districts(d))).catch(() => {});
   if (params.has('fpv')) game.setFirstPerson(true);
   const relay = relayUrl(params);
   if (relay) game.attachMultiplayer(new Multiplayer(relay, params, game, physics, crowd, camera));
@@ -233,6 +249,14 @@ if (!params.has('fly')) await renderer.compileAsync(scene, camera);
 const t2 = performance.now();
 loading.remove();
 title.ready();
+removeEventListener('error', failLoad);
+// Room shaders compile after loading; with AO the scene draws into a target, a different program variant.
+if (rooms) {
+  const target = composer ? new THREE.WebGLRenderTarget(1, 1) : null;
+  renderer.setRenderTarget(target);
+  void renderer.compileAsync(rooms, camera, scene).then(() => target?.dispose());
+  renderer.setRenderTarget(null);
+}
 console.info(`city: fetch ${(t1 - t0).toFixed(0)} ms, build ${(t2 - t1).toFixed(0)} ms, ${city.buildings.length} buildings`);
 
 const timer = new THREE.Timer();

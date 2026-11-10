@@ -3,7 +3,7 @@ import { uploadFirst } from '../core/instancing';
 import { track } from '../core/loadProgress';
 
 // Rocketbox avatars: one InstancedMesh each, skinned in the vertex shader from a bone texture.
-export type Clip = 'walk' | 'run' | 'idle' | 'ride' | 'scoot' | 'punch' | 'moto' | 'moped';
+export type Clip = 'walk' | 'run' | 'idle' | 'ride' | 'scoot' | 'punch' | 'moto' | 'moped' | 'sit';
 
 interface ClipInfo {
   row: number;

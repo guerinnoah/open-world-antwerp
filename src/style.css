@@ -1,8 +1,10 @@
+/* notch and home-indicator insets under viewport-fit=cover; #hud and #touch skip the bottom, their margins clear it */
+:root { --safe-t: env(safe-area-inset-top, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --safe-l: env(safe-area-inset-left, 0px); }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; font: 13px/1.3 system-ui, sans-serif; color: #fff; }
 #game { display: block; width: 100vw; height: 100vh; touch-action: none; }
 
 body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
-#title { position: fixed; inset: 0; z-index: 10; display: grid; align-items: end; padding: 6vh 6vw; overflow-y: auto; background: linear-gradient(100deg, rgb(15 17 22 / 0.9) 0%, rgb(15 17 22 / 0.6) 40%, rgb(15 17 22 / 0) 70%); transition: opacity 0.5s; }
+#title { position: fixed; inset: 0; z-index: 10; display: grid; align-items: end; padding: max(6vh, var(--safe-t)) max(6vw, var(--safe-r)) max(6vh, var(--safe-b)) max(6vw, var(--safe-l)); overflow-y: auto; background: linear-gradient(100deg, rgb(15 17 22 / 0.9) 0%, rgb(15 17 22 / 0.6) 40%, rgb(15 17 22 / 0) 70%); transition: opacity 0.5s; }
 #title.gone { opacity: 0; pointer-events: none; }
 #title .card { max-width: 420px; }
 #title h1 { margin: 0; font: 800 min(72px, 15vw)/1 system-ui, sans-serif; letter-spacing: -0.02em; white-space: nowrap; text-shadow: 0 4px 18px rgb(0 0 0 / 0.5); }
@@ -20,8 +22,11 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #loading .bar { width: 220px; height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.2); overflow: hidden; }
 #loading .bar div { height: 100%; background: #fff; transform: scaleX(0); transform-origin: left; transition: transform 0.4s ease-out; }
 @keyframes loading-pulse { to { opacity: 0.5; } }
-#title .play { height: 52px; padding: 0 48px; border: 0; border-radius: 26px; background: #fff; color: #111; font: 800 20px system-ui, sans-serif; letter-spacing: 0.02em; cursor: pointer; box-shadow: 0 4px 18px rgb(0 0 0 / 0.35); }
-#title .play:hover { background: #ffd60a; }
+#loading.failed { height: auto; align-items: flex-start; gap: 16px; }
+#loading.failed span { animation: none; }
+#loading.failed .bar { display: none; }
+#title .play, #title .retry { height: 52px; padding: 0 48px; border: 0; border-radius: 26px; background: #fff; color: #111; font: 800 20px system-ui, sans-serif; letter-spacing: 0.02em; cursor: pointer; box-shadow: 0 4px 18px rgb(0 0 0 / 0.35); }
+#title .play:hover, #title .retry:hover { background: #ffd60a; }
 @media (pointer: coarse) {
   #title { background: linear-gradient(to top, rgb(15 17 22 / 0.92) 0%, rgb(15 17 22 / 0.7) 55%, rgb(15 17 22 / 0.2) 100%); }
   #title .tagline { font-size: 15px; }
@@ -29,7 +34,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
   #title .touch { display: grid; }
 }
 @media (max-height: 520px) and (orientation: landscape) {
-  #title { padding: 4vh 5vw; }
+  #title { padding: max(4vh, var(--safe-t)) max(5vw, var(--safe-r)) max(4vh, var(--safe-b)) max(5vw, var(--safe-l)); }
   #title .card { max-width: none; display: grid; grid-template-columns: auto minmax(0, 360px); column-gap: 32px; align-items: end; }
   #title h1 { font-size: 44px; grid-row: span 2; }
   #title .tagline { display: none; }
@@ -40,15 +45,15 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #views { position: fixed; top: 10px; left: 10px; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 20px); }
 #views button { font: inherit; color: #fff; background: rgb(20 22 28 / 0.7); border: 1px solid rgb(255 255 255 / 0.25); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
 #views button:hover { background: rgb(40 44 56 / 0.85); }
-#stats { position: fixed; bottom: 8px; left: 10px; font: 11px/1.4 ui-monospace, monospace; color: rgb(255 255 255 / 0.8); text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none; }
-#credits { position: fixed; z-index: 11; bottom: 8px; right: 10px; display: flex; align-items: center; gap: 2px; font-size: 11px; color: rgb(255 255 255 / 0.6); text-shadow: 0 1px 2px #000; }
+#stats { position: fixed; bottom: calc(8px + var(--safe-b)); left: calc(10px + var(--safe-l)); font: 11px/1.4 ui-monospace, monospace; color: rgb(255 255 255 / 0.8); text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none; }
+#credits { position: fixed; z-index: 11; bottom: calc(8px + var(--safe-b)); right: calc(10px + var(--safe-r)); display: flex; align-items: center; gap: 2px; font-size: 11px; color: rgb(255 255 255 / 0.6); text-shadow: 0 1px 2px #000; }
 #credits a { color: inherit; }
 #credits .repo { display: flex; padding: 2px 4px; filter: drop-shadow(0 1px 2px #000); }
 #credits summary { list-style: none; padding: 2px 4px; font-size: 13px; cursor: pointer; }
 #credits summary::-webkit-details-marker { display: none; }
 #credits details > div { position: absolute; bottom: calc(100% + 6px); right: 0; width: max-content; max-width: 80vw; padding: 8px 10px; border-radius: 6px; background: rgb(20 22 28 / 0.85); color: rgb(255 255 255 / 0.85); line-height: 1.6; text-align: right; }
 
-#hud { position: fixed; inset: 0; z-index: 1; pointer-events: none; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.6); }
+#hud { position: fixed; inset: var(--safe-t) var(--safe-r) 0 var(--safe-l); z-index: 1; pointer-events: none; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.6); }
 #hud .speed { position: absolute; right: 18px; bottom: 34px; font-size: 40px; font-variant-numeric: tabular-nums; }
 #hud .speed small { font-size: 16px; opacity: 0.8; }
 #hud .controls-list { position: absolute; left: 16px; bottom: 206px; font: 600 13px system-ui, sans-serif; color: #fff; opacity: 0.82; background: rgb(15 17 22 / 0.5); padding: 6px 10px; border-radius: 7px; white-space: pre-line; line-height: 1.55; text-shadow: 0 1px 2px rgb(0 0 0 / 0.5); }
@@ -83,7 +88,7 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #hud .hurt.flash { animation: hurt 0.8s ease-out; }
 @keyframes hurt { from { opacity: var(--hurt); } }
 
-#touch { position: fixed; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
+#touch { position: fixed; inset: var(--safe-t) var(--safe-r) 0 var(--safe-l); pointer-events: none; user-select: none; -webkit-user-select: none; }
 #touch .stick { position: absolute; left: 28px; bottom: 34px; width: 130px; height: 130px; border-radius: 50%; background: rgb(255 255 255 / 0.12); border: 2px solid rgb(255 255 255 / 0.3); pointer-events: auto; touch-action: none; }
 #touch .knob { position: absolute; left: 40px; top: 40px; width: 50px; height: 50px; border-radius: 50%; background: rgb(255 255 255 / 0.55); }
 #touch .btn { position: absolute; pointer-events: auto; touch-action: none; border-radius: 50%; border: 2px solid rgb(255 255 255 / 0.35); background: rgb(20 22 28 / 0.55); color: #fff; font: 700 15px system-ui, sans-serif; }
@@ -92,17 +97,17 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #touch .punch { right: 120px; bottom: 160px; width: 64px; height: 64px; font-size: 12px; }
 #touch[data-seat="foot"] .handbrake, #touch[data-seat="vehicle"] .punch { display: none; }
 
-#minimap { position: fixed; left: 16px; bottom: 30px; width: 170px; height: 170px; border-radius: 10px; border: 3px solid rgb(20 22 28 / 0.75); box-shadow: 0 2px 10px rgb(0 0 0 / 0.4); cursor: pointer; }
+#minimap { position: fixed; left: calc(16px + var(--safe-l)); bottom: calc(30px + var(--safe-b)); width: 170px; height: 170px; border-radius: 10px; border: 3px solid rgb(20 22 28 / 0.75); box-shadow: 0 2px 10px rgb(0 0 0 / 0.4); cursor: pointer; }
 
 #worldmap { position: fixed; inset: 0; z-index: 20; background: #2a2d33; touch-action: none; user-select: none; -webkit-user-select: none; }
 #worldmap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
-#worldmap .dest { position: absolute; left: 16px; top: 14px; padding: 8px 14px; border-radius: 8px; background: rgb(20 22 28 / 0.8); font-size: 16px; font-weight: 700; pointer-events: none; }
+#worldmap .dest { position: absolute; left: calc(16px + var(--safe-l)); top: calc(14px + var(--safe-t)); padding: 8px 14px; border-radius: 8px; background: rgb(20 22 28 / 0.8); font-size: 16px; font-weight: 700; pointer-events: none; }
 #worldmap .dest:empty, #worldmap .street:empty { display: none; }
-#worldmap .street { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); font-size: 20px; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.8); white-space: nowrap; pointer-events: none; }
-#worldmap .help { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: calc(100vw - 24px); box-sizing: border-box; padding: 6px 12px; border-radius: 14px; background: rgb(20 22 28 / 0.75); color: rgb(255 255 255 / 0.85); text-align: center; pointer-events: none; }
-#worldmap .close { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.8); color: #fff; font: 700 24px/1 system-ui, sans-serif; cursor: pointer; }
+#worldmap .street { position: absolute; left: 50%; bottom: calc(52px + var(--safe-b)); transform: translateX(-50%); font-size: 20px; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.8); white-space: nowrap; pointer-events: none; }
+#worldmap .help { position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%); max-width: calc(100vw - 24px); box-sizing: border-box; padding: 6px 12px; border-radius: 14px; background: rgb(20 22 28 / 0.75); color: rgb(255 255 255 / 0.85); text-align: center; pointer-events: none; }
+#worldmap .close { position: absolute; top: calc(10px + var(--safe-t)); right: calc(10px + var(--safe-r)); width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.8); color: #fff; font: 700 24px/1 system-ui, sans-serif; cursor: pointer; }
 
-body > .radio { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+body > .radio { position: fixed; top: calc(10px + var(--safe-t)); left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
 body > .radio[hidden] { display: none; }
 .radio > button { height: 40px; border-radius: 20px; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; font: 700 15px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
 .radio > .power { width: 40px; padding: 0; font-size: 18px; line-height: 1; }
@@ -110,17 +115,17 @@ body > .radio[hidden] { display: none; }
 .radio > .station { padding: 0 16px; }
 .radio > .station.tuning { animation: radio-tuning 0.5s ease-in-out infinite alternate; }
 @keyframes radio-tuning { to { opacity: 0.45; } }
-body > button.sound { position: fixed; top: 10px; right: 10px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); font-size: 18px; line-height: 1; cursor: pointer; }
-body > button.view { position: fixed; top: 10px; right: 58px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; font: 700 13px system-ui, sans-serif; line-height: 1; cursor: pointer; }
+body > button.sound { position: fixed; top: calc(10px + var(--safe-t)); right: calc(10px + var(--safe-r)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); font-size: 18px; line-height: 1; cursor: pointer; }
+body > button.view { position: fixed; top: calc(10px + var(--safe-t)); right: calc(58px + var(--safe-r)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; font: 700 13px system-ui, sans-serif; line-height: 1; cursor: pointer; }
 
 @media (pointer: coarse) {
   #hud .speed { bottom: auto; top: 80px; font-size: 30px; }
   #hud .police { top: 52px; }
   #hud .controls-list { display: none; }
-  #credits { top: 6px; bottom: auto; left: 8px; right: 90px; font-size: 9px; }
+  #credits { top: calc(6px + var(--safe-t)); bottom: auto; left: calc(8px + var(--safe-l)); right: calc(90px + var(--safe-r)); font-size: 9px; }
   #credits details > div { top: calc(100% + 6px); bottom: auto; left: 0; right: auto; text-align: left; }
-  #stats { bottom: auto; top: 40px; }
-  #minimap { left: 10px; top: 34px; bottom: auto; width: 120px; height: 120px; }
+  #stats { bottom: auto; top: calc(40px + var(--safe-t)); }
+  #minimap { left: calc(10px + var(--safe-l)); top: calc(34px + var(--safe-t)); bottom: auto; width: 120px; height: 120px; }
   #hud .health { left: 10px; top: 171px; bottom: auto; width: 126px; height: 6px; }
   #hud .stamina { left: 10px; top: 163px; bottom: auto; width: 126px; }
 }
@@ -128,7 +133,7 @@ body > button.view { position: fixed; top: 10px; right: 58px; width: 40px; heigh
   #hud :is(.vehicle, .street, .district) { right: 196px; }
 }
 
-#net { position: fixed; top: 10px; left: 10px; display: grid; grid-template-columns: auto auto 1fr; justify-items: start; gap: 6px; pointer-events: none; }
+#net { position: fixed; top: calc(10px + var(--safe-t)); left: calc(10px + var(--safe-l)); display: grid; grid-template-columns: auto auto 1fr; justify-items: start; gap: 6px; pointer-events: none; }
 #net button { pointer-events: auto; height: 32px; border-radius: 16px; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; font: 700 13px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
 #net .pill { padding: 0 12px 0 10px; }
 #net .pill::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #9aa0a6; vertical-align: 1px; }
@@ -146,7 +151,7 @@ body > button.view { position: fixed; top: 10px; right: 58px; width: 40px; heigh
 #chat input { pointer-events: auto; box-sizing: border-box; width: 100%; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid rgb(255 255 255 / 0.4); background: rgb(20 22 28 / 0.8); color: #fff; font: 16px system-ui, sans-serif; outline: none; }
 #chat input:focus { border-color: #8ec5ff; }
 @media (pointer: coarse) {
-  #net { top: 4px; }
+  #net { top: calc(4px + var(--safe-t)); }
   #net button { height: 26px; font-size: 12px; }
   #net .chat-button { width: 26px; }
   #chat { margin-left: 130px; width: min(300px, calc(100vw - 200px)); }

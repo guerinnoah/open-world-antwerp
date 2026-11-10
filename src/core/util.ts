@@ -24,7 +24,7 @@ export function mulberry32(seed: number): () => number {
 
 export const parkMiller = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
-export const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
+export const pick = <T,>(items: readonly T[], rand = Math.random) => items[Math.floor(rand() * items.length)];
 
 export function weightedPick<T>(items: readonly T[], weights: readonly number[]): T {
   let r = Math.random() * weights.reduce((a, b) => a + b, 0);
