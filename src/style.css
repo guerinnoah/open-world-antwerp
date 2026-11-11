@@ -17,6 +17,12 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #title dd { margin: 0; color: rgb(255 255 255 / 0.85); }
 #title kbd { display: inline-block; min-width: 14px; margin-right: 3px; padding: 2px 6px; border-radius: 5px; border: 1px solid rgb(255 255 255 / 0.35); border-bottom-width: 2px; background: rgb(255 255 255 / 0.08); font: 700 12px system-ui, sans-serif; text-align: center; }
 #title .touch { display: none; }
+#title .name { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; font-size: 14px; color: rgb(255 255 255 / 0.75); }
+#title .name[hidden] { display: none; }
+/* 16px: iPhones zoom into smaller fields */
+#title .name input { width: 190px; height: 38px; box-sizing: border-box; padding: 0 12px; border-radius: 8px; border: 1px solid rgb(255 255 255 / 0.4); background: rgb(20 22 28 / 0.8); color: #fff; font: 600 16px system-ui, sans-serif; }
+#title .name input:focus { outline: none; border-color: #8ec5ff; }
+#title .name input::placeholder { color: rgb(255 255 255 / 0.45); }
 #loading { height: 52px; display: flex; flex-direction: column; justify-content: center; gap: 10px; font-size: 18px; font-weight: 600; }
 #loading span { animation: loading-pulse 1s ease-in-out infinite alternate; }
 #loading .bar { width: 220px; height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.2); overflow: hidden; }

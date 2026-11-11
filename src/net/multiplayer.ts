@@ -4,7 +4,7 @@ import { riderClip } from '../actors/motorbikes';
 import { PLAYER_LOOK, type Player } from '../actors/player';
 import { ARTIC_SPEC, BIKE_SPEC, BUS_SPEC, SCOOTER_SPEC, VEHICLE_TYPES, Vehicle, isMotorbike, twoWheeled, type VehicleSpec } from '../actors/vehicle';
 import { coarsePointer } from '../core/quality';
-import { lerpPose, pick, wrapAngle } from '../core/util';
+import { lerpPose, wrapAngle } from '../core/util';
 import { GROUP, RAPIER, groups, type Physics } from '../physics/physics';
 import { Chat } from './chat';
 import { Connection, type Status } from './connection';
@@ -48,7 +48,6 @@ const SEND_HZ = 15;
 const IDLE_HZ = 4;
 const SNAP = 4; // m; bigger corrections teleport rather than fling
 const LABEL_RANGE = 220;
-const NICKNAMES = ['Sinjoor', 'Brabo', 'Schipper', 'Pagadder', 'Lange Wapper', 'Bolleke', 'Tramchauffeur', 'Havenbaron'];
 
 const emptyState = (): PlayerState => ({
   time: 0, mode: 0, x: 0, z: 0, angle: 0, vx: 0, vz: 0, spin: 0, kind: -1, colour: 0, steer: 0, throttle: 0, sink: 0, flags: 0,
@@ -83,14 +82,14 @@ export class Multiplayer {
 
   constructor(
     url: string,
-    params: URLSearchParams,
+    name: string,
     private host: MultiplayerHost,
     private physics: Physics,
     private crowd: Crowd,
     private camera: THREE.Camera,
   ) {
-    this.name = pickName(params);
-    this.scatter();
+    this.name = name;
+    stored(NAME_KEY, name);
 
     const ui = document.createElement('div');
     ui.id = 'net';
@@ -180,17 +179,6 @@ export class Multiplayer {
         this.crowd.add(peer.avatar, o.matrix, clip, peer.phase, Math.hypot(x - cam.x, z - cam.z));
       }
       this.placeLabel(peer, x, height - s.sink, z);
-    }
-  }
-
-  private scatter() {
-    const p = this.host.player;
-    for (let i = 0; i < 8; i++) {
-      const a = Math.random() * Math.PI * 2, r = 1.5 + Math.random() * 2;
-      const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
-      if (this.physics.boxOverlaps(x, z, 0, 0.5, 0.5)) continue;
-      p.place(x, z, p.heading);
-      return;
     }
   }
 
@@ -466,12 +454,28 @@ function stored(key: string, value?: string): string | null {
   }
 }
 
-function pickName(params: URLSearchParams): string {
-  const name =
-    cleanName(params.get('name')) ||
-    cleanName(stored('open-world-antwerp.name')) ||
-    `${pick(NICKNAMES)} ${100 + Math.floor(Math.random() * 900)}`;
-  return stored('open-world-antwerp.name', name) ?? name;
+const NAME_KEY = 'open-world-antwerp.name';
+// handed out, not chosen: today's, and the themed ones before 2026-11-11
+const DEFAULT_NAME = /^(Player|Sinjoor|Brabo|Schipper|Pagadder|Lange Wapper|Bolleke|Tramchauffeur|Havenbaron) \d{3}$/;
+const freshName = () => `Player ${100 + Math.floor(Math.random() * 900)}`;
+
+function savedName(params: URLSearchParams): string {
+  const kept = cleanName(stored(NAME_KEY));
+  return cleanName(params.get('name')) || (DEFAULT_NAME.test(kept) ? '' : kept);
+}
+
+export const playerName = (params: URLSearchParams, typed?: string) => cleanName(typed) || savedName(params) || freshName();
+
+export const nameOffer = (params: URLSearchParams) => ({ value: savedName(params), placeholder: freshName() });
+
+export function scatter(player: Player, physics: Physics) {
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * Math.PI * 2, r = 1.5 + Math.random() * 2;
+    const x = player.x + Math.cos(a) * r, z = player.z + Math.sin(a) * r;
+    if (physics.boxOverlaps(x, z, 0, 0.5, 0.5)) continue;
+    player.place(x, z, player.heading);
+    return;
+  }
 }
 
 function avatarFor(crowd: Crowd, look: string): number {

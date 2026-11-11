@@ -1,7 +1,7 @@
-import { Multiplayer } from '../src/net/multiplayer';
+import { Multiplayer, nameOffer, playerName } from '../src/net/multiplayer';
 import { createServer, type Server } from 'node:http';
 import { connect as tcp, type AddressInfo, type Socket } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { safeChat, safeName } from '../server/profanity';
 import { attachRelay, type Relay } from '../server/relay';
@@ -13,6 +13,39 @@ import { DELAY, Timeline } from '../src/net/timeline';
 
 const state = (over: Partial<PlayerState> = {}): PlayerState => ({
   time: 1000, mode: 0, x: 0, z: 0, angle: 0, vx: 0, vz: 0, spin: 0, kind: -1, colour: 0, steer: 0, throttle: 0, sink: 0, flags: 0, ...over,
+});
+
+describe('player names', () => {
+  const saved = new Map<string, string>();
+  beforeEach(() => {
+    saved.clear();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => saved.set(k, v) });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const none = new URLSearchParams();
+
+  it('takes the name typed, else ?name=, else the one chosen last time, else a fresh one', () => {
+    expect(playerName(none)).toMatch(/^Player \d{3}$/);
+    saved.set('open-world-antwerp.name', 'Noah');
+    expect(playerName(none)).toBe('Noah');
+    expect(playerName(new URLSearchParams('name=Lien'))).toBe('Lien');
+    expect(playerName(new URLSearchParams('name=Lien'), ' Mo ')).toBe('Mo');
+  });
+
+  it('forgets names that were handed out, old themed ones included', () => {
+    for (const name of ['Player 120', 'Lange Wapper 381']) {
+      saved.set('open-world-antwerp.name', name);
+      expect(nameOffer(none).value).toBe('');
+    }
+    saved.set('open-world-antwerp.name', 'Sinjoor');
+    expect(nameOffer(none).value).toBe('Sinjoor');
+  });
+
+  it('offers a fresh name as the placeholder, even over a saved one', () => {
+    saved.set('open-world-antwerp.name', 'Noah');
+    expect(nameOffer(none)).toMatchObject({ value: 'Noah', placeholder: expect.stringMatching(/^Player \d{3}$/) });
+  });
 });
 
 describe('protocol', () => {

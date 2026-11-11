@@ -1,11 +1,34 @@
 export class TitleScreen {
   started: boolean;
+  readonly begun: Promise<void>;
   private root = document.querySelector<HTMLDivElement>('#title')!;
   private bar = this.root.querySelector<HTMLDivElement>('#loading .bar div');
+  private nameField = this.root.querySelector<HTMLInputElement>('.name input');
   private filled = 0;
+  private begin?: () => void;
+  private opened!: () => void;
 
   constructor(private skip: boolean) {
     this.started = skip;
+    this.begun = new Promise((resolve) => (this.opened = resolve));
+    if (skip) this.opened();
+  }
+
+  askName({ value, placeholder }: { value: string; placeholder: string }) {
+    const field = this.nameField;
+    if (this.skip || !field) return;
+    field.value = value;
+    field.placeholder = placeholder;
+    field.parentElement!.hidden = false;
+    field.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // otherwise typing mutes, opens the map or starts the game
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) this.begin?.(); // 229: Safari's Enter that confirms an IME word
+    });
+  }
+
+  get typedName(): string | undefined {
+    const field = this.nameField;
+    return field && !field.parentElement!.hidden ? field.value.trim() || field.placeholder : undefined;
   }
 
   /** Never moves back: more downloads join the count late. */
@@ -40,8 +63,11 @@ export class TitleScreen {
       if (this.started) return;
       this.started = true;
       removeEventListener('keydown', onKey);
+      this.nameField?.blur();
       this.hide(true);
+      this.opened();
     };
+    this.begin = start;
     const onKey = (e: KeyboardEvent) => (e.code === 'Enter' || e.code === 'Space') && start();
     play.addEventListener('click', start);
     addEventListener('keydown', onKey);

@@ -13,7 +13,7 @@ import { onLoadProgress, track } from './core/loadProgress';
 import { pickQuality } from './core/quality';
 import { FlyCam } from './debug/flyCam';
 import { CENTRAAL_START, GROTE_MARKT_START, Game } from './game/game';
-import { Multiplayer, relayUrl } from './net/multiplayer';
+import { Multiplayer, nameOffer, playerName, relayUrl, scatter } from './net/multiplayer';
 import { Physics } from './physics/physics';
 import { TitleScreen } from './ui/titleScreen';
 import { Breakables } from './world/breakables';
@@ -43,6 +43,8 @@ const loading = document.querySelector<HTMLDivElement>('#loading')!;
 const stats = document.querySelector<HTMLDivElement>('#stats')!;
 const showStats = params.has('stats') || params.has('fly');
 const title = new TitleScreen(params.has('play') || params.has('fly') || (navigator.webdriver && !params.has('title')));
+const relay = relayUrl(params);
+if (relay) title.askName(nameOffer(params));
 // Anything this module throws while loading, awaited or not, lands here instead of the bar just stopping.
 const failLoad = () => title.fail('Something went wrong while loading Antwerp. Try again.');
 addEventListener('error', failLoad);
@@ -202,8 +204,10 @@ if (params.has('fly')) {
   (window as unknown as { game: Game }).game = game;
   json<District[]>('/map/districts.json').then((d) => game.attachDistricts(new Districts(d))).catch(() => {});
   if (params.has('fpv')) game.setFirstPerson(true);
-  const relay = relayUrl(params);
-  if (relay) game.attachMultiplayer(new Multiplayer(relay, params, game, physics, crowd, camera));
+  if (relay) {
+    scatter(game.player, physics); // before Play: a jump after it would show
+    void title.begun.then(() => game.attachMultiplayer(new Multiplayer(relay, playerName(params, title.typedName), game, physics, crowd, camera)));
+  }
   const STEP = 1 / quality.physicsHz;
   let acc = 0;
   let playing = false;
