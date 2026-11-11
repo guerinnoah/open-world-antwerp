@@ -10,6 +10,7 @@ import type { Tram, Trams } from '../actors/trams';
 import { BIKE_SPEC, SCOOTER_SPEC, Vehicle, isBus, isEmergency, isMotorbike, isPolice, isTruck, twoWheeled } from '../actors/vehicle';
 import type { Sound } from '../audio/sound';
 import type { Input } from '../core/input';
+import { keyLabel } from '../core/keys';
 import { pick } from '../core/util';
 import { GROUP, RAPIER, WHEELS, groups, type Physics } from '../physics/physics';
 import type { Hud } from '../ui/hud';
@@ -275,10 +276,10 @@ export class Boarding {
     }
     const radio = !isBus(v.spec) && !isMotorbike(v.spec) && !isEmergency(v.spec);
     const tips = [toast];
-    if (isEmergency(v.spec)) tips.push(`${this.input.touch ? 'Tap Siren' : 'Press Q'} for the lights.`);
+    if (isEmergency(v.spec)) tips.push(`${this.input.touch ? 'Tap Siren' : `Press ${keyLabel('siren')}`} for the lights.`);
     if (radio && !this.carTipShown) {
       this.carTipShown = true;
-      tips.push(this.input.touch ? 'Tap the station name to change the radio.' : 'Space is the handbrake, H the horn, R the next radio station.');
+      tips.push(this.input.touch ? 'Tap the station name to change the radio.' : `${keyLabel('handbrake')} is the handbrake, ${keyLabel('horn')} the horn, ${keyLabel('punch')} the next radio station.`);
     }
     this.hud.toast(tips.join(' '), tips.length > 1 ? 6000 : undefined);
     this.takeWheel(v);

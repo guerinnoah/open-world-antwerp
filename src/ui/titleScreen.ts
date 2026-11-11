@@ -1,8 +1,12 @@
+import { keyLabel, type Action } from '../core/keys';
+import { onSettings } from '../core/settings';
+
 export class TitleScreen {
   started: boolean;
   readonly begun: Promise<void>;
   private root = document.querySelector<HTMLDivElement>('#title')!;
-  private bar = this.root.querySelector<HTMLDivElement>('#loading .bar div');
+  private bar = this.root.querySelector<HTMLDivElement>('#loading .bar');
+  private fill = this.bar?.querySelector('div');
   private nameField = this.root.querySelector<HTMLInputElement>('.name input');
   private filled = 0;
   private begin?: () => void;
@@ -12,6 +16,9 @@ export class TitleScreen {
     this.started = skip;
     this.begun = new Promise((resolve) => (this.opened = resolve));
     if (skip) this.opened();
+    onSettings(() => {
+      for (const kbd of this.root.querySelectorAll<HTMLElement>('kbd[data-key]')) kbd.textContent = keyLabel(kbd.dataset.key as Action);
+    });
   }
 
   askName({ value, placeholder }: { value: string; placeholder: string }) {
@@ -34,7 +41,8 @@ export class TitleScreen {
   /** Never moves back: more downloads join the count late. */
   progress(fraction: number) {
     this.filled = Math.max(this.filled, Math.min(1, fraction));
-    this.bar?.style.setProperty('transform', `scaleX(${this.filled})`);
+    this.fill?.style.setProperty('transform', `scaleX(${this.filled})`);
+    this.bar?.setAttribute('aria-valuenow', String(Math.round(this.filled * 100)));
   }
 
   /** Inside the loading line, so a load that recovers anyway removes it with that line. */
@@ -68,7 +76,8 @@ export class TitleScreen {
       this.opened();
     };
     this.begin = start;
-    const onKey = (e: KeyboardEvent) => (e.code === 'Enter' || e.code === 'Space') && start();
+    // a focused button or field handles its own Enter and Space
+    const onKey = (e: KeyboardEvent) => (e.code === 'Enter' || e.code === 'Space') && !(e.target as Element).closest?.('button, input, select') && start();
     play.addEventListener('click', start);
     addEventListener('keydown', onKey);
   }

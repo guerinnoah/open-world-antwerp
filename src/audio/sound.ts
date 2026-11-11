@@ -1,3 +1,6 @@
+import { pressed } from '../core/keys';
+import { onSettings, settings } from '../core/settings';
+import { stored } from '../core/storage';
 import { Radio, STATIONS, type RadioStatus, type Station } from './radio';
 
 const MUTE_KEY = 'open-world-antwerp-muted';
@@ -10,16 +13,6 @@ const MAX_RPM = 5600;
 const GESTURES = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 const SIREN_VOICES = 3;
 const SIREN_RANGE = 300;
-
-/** localStorage throws when site storage is blocked. */
-function stored(key: string, value?: string): string | null {
-  try {
-    if (value !== undefined) localStorage.setItem(key, value);
-    return localStorage.getItem(key);
-  } catch {
-    return value ?? null;
-  }
-}
 
 const source = (ctx: AudioContext, buffer: AudioBuffer, loop = false) => {
   const src = ctx.createBufferSource();
@@ -54,8 +47,13 @@ export class Sound {
 
   constructor() {
     this.awaitGesture(true);
-    addEventListener('keydown', (e) => e.code === 'KeyM' && !e.repeat && this.toggleMute());
-    addEventListener('keydown', (e) => e.code === 'KeyR' && !e.repeat && this.radioWanted && (e.shiftKey ? this.toggleRadio() : this.nextStation()));
+    addEventListener('keydown', (e) => pressed('mute', e.code) && !e.repeat && this.toggleMute());
+    addEventListener('keydown', (e) => pressed('punch', e.code) && !e.repeat && this.radioWanted && (e.shiftKey ? this.toggleRadio() : this.nextStation()));
+    onSettings(() => {
+      if (!this.ctx) return;
+      this.master.gain.setTargetAtTime(this.level, this.ctx.currentTime, 0.05);
+      this.radio?.setVolume();
+    });
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
       if (document.hidden) void this.ctx.suspend();
@@ -90,7 +88,7 @@ export class Sound {
     this.muffle.type = 'lowpass';
     this.muffle.frequency.value = 20000;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.8;
+    this.master.gain.value = this.level;
     this.muffle.connect(this.master).connect(ctx.destination);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -105,10 +103,14 @@ export class Sound {
 
   onChange?: () => void;
 
+  private get level() {
+    return this.muted ? 0 : 0.8 * settings.volume;
+  }
+
   toggleMute() {
     this.muted = !this.muted;
     stored(MUTE_KEY, this.muted ? '1' : '0');
-    if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.8, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(this.level, this.ctx.currentTime, 0.05);
     this.onChange?.();
   }
 

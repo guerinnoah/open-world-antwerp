@@ -24,17 +24,17 @@
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body class="on-title">
-    <canvas id="game"></canvas>
+    <canvas id="game" role="img" aria-label="The game view of Antwerp"></canvas>
     <div id="title">
       <div class="card">
         <h1>Open World <span>Antwerp</span></h1>
         <p class="tagline">A real 1:1 slice of Antwerp, right in your browser. Drive a car, take the tram, ride a Velo bike, walk into any shop.</p>
         <dl class="controls keys">
-          <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk, drive</dd>
-          <dt><kbd>E</kbd></dt><dd>Get in or out: any car, bike, scooter, tram or bus</dd>
+          <dt><kbd data-key="forward">W</kbd><kbd data-key="left">A</kbd><kbd data-key="back">S</kbd><kbd data-key="right">D</kbd></dt><dd>Walk, drive</dd>
+          <dt><kbd data-key="use">E</kbd></dt><dd>Get in or out: any car, bike, scooter, tram or bus</dd>
           <dt>Mouse</dt><dd>Drag to look around</dd>
         </dl>
-        <p class="more keys"><kbd>Shift</kbd> sprint, <kbd>R</kbd> punch, <kbd>P</kbd> map. The rest is explained as you go.</p>
+        <p class="more keys"><kbd data-key="sprint">Shift</kbd> sprint, <kbd data-key="punch">R</kbd> punch, <kbd data-key="map">P</kbd> map. The rest is explained as you go.</p>
         <dl class="controls touch">
           <dt>Joystick</dt><dd>Walk, drive (push all the way to sprint)</dd>
           <dt>E</dt><dd>Get in or out: any car, bike, scooter, tram or bus</dd>
@@ -42,8 +42,8 @@
         </dl>
         <p class="more touch">Tap the minimap to pick where to go. The rest is explained as you go.</p>
         <label class="name" hidden>Your name <input type="text" maxlength="16" autocomplete="nickname" autocapitalize="words" spellcheck="false" enterkeyhint="go" /></label>
-        <div id="loading"><span>Loading Antwerp…</span><div class="bar"><div></div></div></div>
-        <button class="play" type="button" hidden>Play</button>
+        <div id="loading"><span role="status">Loading Antwerp…</span><div class="bar" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div></div></div></div>
+        <div class="actions"><button class="play" type="button" hidden>Play</button><button class="open-settings" type="button" aria-haspopup="dialog">Settings</button></div>
       </div>
     </div>
     <div id="stats"></div>
@@ -52,7 +52,7 @@
         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" /></svg>
       </a>
       <details>
-        <summary title="Credits">ⓘ</summary>
+        <summary title="Credits" aria-label="Credits">ⓘ</summary>
         <div>
           Map: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors<br />
           Buildings: <a href="https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb" target="_blank" rel="noopener">GRB, Digitaal Vlaanderen</a><br />

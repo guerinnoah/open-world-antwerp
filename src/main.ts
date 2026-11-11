@@ -1,20 +1,22 @@
 import { inject } from '@vercel/analytics';
-import { N8AOPass } from 'n8ao';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import type { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import './style.css';
 import { Bikes } from './actors/bikes';
 import { Motorbikes } from './actors/motorbikes';
 import { Scooters } from './actors/scooters';
 import { Crowd } from './actors/crowd';
+import { asset } from './core/assets';
 import { Input } from './core/input';
+import { readKeyboardLayout } from './core/keys';
 import { onLoadProgress, track } from './core/loadProgress';
 import { pickQuality } from './core/quality';
+import { onSettings, settings } from './core/settings';
 import { FlyCam } from './debug/flyCam';
 import { CENTRAAL_START, GROTE_MARKT_START, Game } from './game/game';
 import { Multiplayer, nameOffer, playerName, relayUrl, scatter } from './net/multiplayer';
 import { Physics } from './physics/physics';
+import { SettingsPanel } from './ui/settings';
 import { TitleScreen } from './ui/titleScreen';
 import { Breakables } from './world/breakables';
 import { createBuildings } from './world/buildings';
@@ -49,7 +51,10 @@ if (relay) title.askName(nameOffer(params));
 const failLoad = () => title.fail('Something went wrong while loading Antwerp. Try again.');
 addEventListener('error', failLoad);
 
-const quality = pickQuality(params);
+const quality = pickQuality(params, settings.quality);
+if (!params.has('fly')) void Physics.warmUp();
+readKeyboardLayout();
+const settingsPanel = new SettingsPanel(quality.level);
 const renderer = (() => {
   try {
     return new THREE.WebGLRenderer({ canvas, antialias: quality.antialias });
@@ -95,17 +100,7 @@ if (useLiveWeather(params)) {
 }
 
 let composer: EffectComposer | null = null;
-if (quality.ao && !params.has('noao')) {
-  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }));
-  const ao = new N8AOPass(scene, camera, innerWidth, innerHeight);
-  // transparencyAware off: else splash and shop glass re-render the scene twice more per frame.
-  Object.assign(ao.configuration, {
-    aoRadius: 3, distanceFalloff: 1, intensity: 3, halfRes: true, gammaCorrection: false, transparencyAware: false,
-  });
-  ao.setQualityMode('Medium');
-  composer.addPass(ao);
-  composer.addPass(new OutputPass());
-}
+const aoModule = quality.ao && !params.has('noao') ? import('./fx/ao') : null;
 const draw = () => (composer ? composer.render() : renderer.render(scene, camera));
 
 function resize() {
@@ -114,21 +109,26 @@ function resize() {
   composer?.setPixelRatio(renderer.getPixelRatio());
   composer?.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
-  camera.fov = camera.aspect < 1 ? 78 : 60;
+  applyFov();
+}
+/** Portrait shows less width, so it opens up 30%. */
+function applyFov() {
+  camera.fov = settings.fov * (camera.aspect < 1 ? 1.3 : 1);
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+onSettings(applyFov);
 resize();
 
 onLoadProgress((f) => title.progress(f * 0.8));
 const json = <T>(url: string) => fetch(url).then((r) => (r.ok ? (r.json() as Promise<T>) : Promise.reject(new Error(`${url}: HTTP ${r.status}`))));
 const t0 = performance.now();
 const [city, graph, textures, crowd, aerial] = await Promise.all([
-  track(json<CityData>('/map/city.json'), 14),
-  track(json<GraphData>('/map/graph.json'), 4),
+  track(json<CityData>(asset('/map/city.json')), 14),
+  track(json<GraphData>(asset('/map/graph.json')), 4),
   loadTextures(renderer, quality.textureSize, quality.anisotropy),
   Crowd.load(quality.peds + 24, quality.level === 'high' ? Infinity : 4),
-  !quality.aerial || params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync('/map/ortho.webp').catch(() => null), 9),
+  params.has('flat') ? Promise.resolve(null) : track(new THREE.TextureLoader().loadAsync(asset(quality.aerial)).catch(() => null), quality.level === 'high' ? 9 : 2),
 ]).catch((e: unknown) => {
   title.fail("Couldn't load Antwerp. Check your connection and try again.");
   throw e;
@@ -137,6 +137,10 @@ if (aerial) {
   aerial.colorSpace = THREE.NoColorSpace; // linearised in the ground shader
   aerial.anisotropy = quality.anisotropy;
   aerial.wrapS = aerial.wrapT = THREE.ClampToEdgeWrapping;
+}
+if (aoModule) {
+  composer = (await aoModule).createAoComposer(renderer, scene, camera);
+  resize();
 }
 const t1 = performance.now();
 clearTramTracks(city, graph.trams);
@@ -202,7 +206,8 @@ if (params.has('fly')) {
   const input = new Input(canvas);
   const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, interiors, breakables, bikes, scooters, motorbikes, start);
   (window as unknown as { game: Game }).game = game;
-  json<District[]>('/map/districts.json').then((d) => game.attachDistricts(new Districts(d))).catch(() => {});
+  game.attachSettings(settingsPanel);
+  json<District[]>(asset('/map/districts.json')).then((d) => game.attachDistricts(new Districts(d))).catch(() => {});
   if (params.has('fpv')) game.setFirstPerson(true);
   if (relay) {
     scatter(game.player, physics); // before Play: a jump after it would show

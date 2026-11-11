@@ -1,5 +1,7 @@
 import type { Sound } from '../audio/sound';
+import { keyLabel } from '../core/keys';
 import { coarsePointer } from '../core/quality';
+import { onSettings } from '../core/settings';
 
 /** Reading offsetWidth forces the reflow that restarts the animation. */
 function replay(el: HTMLElement, className: string, on = true) {
@@ -8,13 +10,14 @@ function replay(el: HTMLElement, className: string, on = true) {
   if (on) el.classList.add(className);
 }
 
-function button(className: string, onClick: () => void) {
+function button(className: string, onClick: () => void, label?: string) {
   const b = document.createElement('button');
   b.className = className;
   b.type = 'button';
+  if (label) b.setAttribute('aria-label', label);
   b.addEventListener('click', () => {
+    b.blur(); // first, or a dialog it opens hands focus back here on close
     onClick();
-    b.blur();
   });
   document.body.append(b);
   return b;
@@ -52,6 +55,9 @@ export class Hud {
     this.vehicle.className = 'vehicle';
     this.police.className = 'police';
     this.speed.hidden = this.hint.hidden = this.police.hidden = true;
+    this.police.setAttribute('role', 'status');
+    this.toastEl.setAttribute('role', 'status');
+    this.district.setAttribute('aria-live', 'polite');
     this.fadeEl.className = 'fade';
     this.health.className = 'health';
     this.healthBars[0].className = 'lost';
@@ -124,47 +130,61 @@ export class Hud {
     if (this.dead) this.setHint('');
   }
 
-  viewToggle(onClick: () => void) {
+  viewToggle(onClick: () => void, firstPerson: () => boolean) {
     this.viewBtn = button('view', onClick);
+    onSettings(() => this.setView(firstPerson()));
   }
 
   setView(firstPerson: boolean) {
     if (!this.viewBtn) return;
     this.viewBtn.textContent = firstPerson ? '1st' : '3rd';
-    this.viewBtn.title = `Switch to ${firstPerson ? 'third' : 'first'} person (V)`;
+    this.viewBtn.title = `Switch to ${firstPerson ? 'third' : 'first'} person (${keyLabel('view')})`;
+    this.viewBtn.setAttribute('aria-label', `Switch to ${firstPerson ? 'third' : 'first'} person`);
+  }
+
+  settingsButton(onClick: () => void) {
+    const b = button('settings', onClick, 'Settings');
+    b.textContent = '⚙';
+    b.title = 'Settings (Esc)';
+    b.setAttribute('aria-haspopup', 'dialog');
   }
 
   soundToggle(sound: Sound) {
-    const b = button('sound', () => sound.toggleMute());
+    const b = button('sound', () => sound.toggleMute(), 'Mute');
     const refresh = () => {
       b.textContent = sound.muted ? '🔇' : '🔊';
-      b.title = sound.muted ? 'Sound off (M)' : 'Sound on (M)';
+      b.title = `${sound.muted ? 'Sound off' : 'Sound on'} (${keyLabel('mute')})`;
+      b.setAttribute('aria-pressed', String(sound.muted));
     };
     sound.onChange = refresh;
-    refresh();
+    onSettings(refresh);
   }
 
   radio(sound: Sound) {
     const bar = document.createElement('div');
     bar.className = 'radio';
     bar.hidden = true;
-    const power = button('power', () => sound.toggleRadio());
+    const power = button('power', () => sound.toggleRadio(), 'Radio');
     power.textContent = '📻';
     const b = button('station', () => sound.nextStation());
-    b.title = 'Next station (R)';
     bar.append(power, b);
     document.body.append(bar);
     const touch = coarsePointer();
-    sound.onRadio = () => {
+    const refresh = () => {
       const r = sound.radioState;
       bar.hidden = !r;
       if (!r) return;
+      const k = keyLabel('punch');
       power.classList.toggle('off', !r.name);
-      power.title = `Radio ${r.name ? 'off' : 'on'} (Shift+R)`;
-      const status = r.status === 'no signal' ? ' · no signal' : r.status === 'blocked' ? (touch ? ' · tap to play' : ' · R to play') : '';
-      b.textContent = `${r.name ?? 'Radio off'}${status}${touch ? '' : ' [R]'}`;
+      power.title = `Radio ${r.name ? 'off' : 'on'} (Shift+${k})`;
+      power.setAttribute('aria-pressed', String(!!r.name));
+      b.title = `Next station (${k})`;
+      const status = r.status === 'no signal' ? ' · no signal' : r.status === 'blocked' ? (touch ? ' · tap to play' : ` · ${k} to play`) : '';
+      b.textContent = `${r.name ?? 'Radio off'}${status}${touch ? '' : ` [${k}]`}`;
       b.classList.toggle('tuning', r.status === 'tuning');
     };
+    sound.onRadio = refresh;
+    onSettings(refresh);
   }
 
   fade() {

@@ -1,3 +1,5 @@
+import { keyLabel, pressed } from '../core/keys';
+import { onSettings } from '../core/settings';
 import { CHAT_MAX, ChatLimit, cleanChat } from './protocol';
 
 const SHOW = 12_000;
@@ -18,7 +20,8 @@ export class Chat {
     this.button.type = 'button';
     this.button.className = 'chat-button';
     this.button.textContent = '💬';
-    this.button.title = 'Chat (T)';
+    this.button.setAttribute('aria-label', 'Chat');
+    onSettings(() => (this.button.title = `Chat (${keyLabel('chat')})`));
     this.button.hidden = true;
     // the press blurs the field, closing the chat before 'click'
     let openAtPress = false;
@@ -30,6 +33,7 @@ export class Chat {
     this.field.type = 'text';
     this.field.maxLength = CHAT_MAX;
     this.field.placeholder = 'Say something…';
+    this.field.setAttribute('aria-label', 'Chat message');
     this.field.enterKeyHint = 'send';
     this.field.autocomplete = 'off';
     this.form.hidden = true;
@@ -47,7 +51,7 @@ export class Chat {
     });
     this.field.addEventListener('blur', () => this.close());
     addEventListener('keydown', (e) => {
-      if (e.code !== 'KeyT' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || this.isOpen) return;
+      if (!pressed('chat', e.code) || e.repeat || e.ctrlKey || e.metaKey || e.altKey || this.isOpen) return;
       if (!this.enabled || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       e.preventDefault();
       this.open();

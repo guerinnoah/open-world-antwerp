@@ -8,7 +8,7 @@ const WMS = 'https://geo.api.vlaanderen.be/OMWRGBMRVL/wms';
 const LAYER = 'Ortho';
 const TILE = 2048; // px, GetMap's limit
 const GSD = 0.4; // m per pixel; supersampled for sharper mipmaps
-const MAX_DIM = 6144;
+const SIZES = [['ortho.webp', 6144], ['ortho-2k.webp', 2048]] as const; // high preset, the rest: max px per side
 const QUALITY = 82;
 
 const { bounds } = JSON.parse(await readFile(`${OUT_DIR}/city.json`, 'utf8')) as {
@@ -52,10 +52,10 @@ const stitched = await sharp({ create: { width: fullW, height: fullH, channels: 
   .composite(parts)
   .jpeg({ quality: 95 })
   .toBuffer();
-const scale = Math.min(1, MAX_DIM / Math.max(fullW, fullH));
-const out = `${OUT_DIR}/ortho.webp`;
-const { size } = await sharp(stitched)
-  .resize(Math.round(fullW * scale), Math.round(fullH * scale))
-  .webp({ quality: QUALITY })
-  .toFile(out);
-console.log(`Saved ${out}: ${Math.round(fullW * scale)}×${Math.round(fullH * scale)} px, ${(size / 1e6).toFixed(1)} MB (${parts.length} tiles @ ${GSD} m/px)`);
+for (const [file, maxDim] of SIZES) {
+  const scale = Math.min(1, maxDim / Math.max(fullW, fullH));
+  const [w, h] = [Math.round(fullW * scale), Math.round(fullH * scale)];
+  const out = `${OUT_DIR}/${file}`;
+  const { size } = await sharp(stitched).resize(w, h).webp({ quality: QUALITY }).toFile(out);
+  console.log(`Saved ${out}: ${w}×${h} px, ${(size / 1e6).toFixed(1)} MB (${parts.length} tiles @ ${GSD} m/px)`);
+}

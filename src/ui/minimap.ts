@@ -1,3 +1,6 @@
+import { asset } from '../core/assets';
+import { keyLabel } from '../core/keys';
+import { onSettings } from '../core/settings';
 import type { Gps } from '../game/gps';
 import type { CityData, LandmarkId } from '../world/cityData';
 import { MINIMAP_SCALE as SCALE } from './minimapConfig';
@@ -23,14 +26,16 @@ export class Minimap {
   constructor(city: CityData, onClick: () => void) {
     const dpr = Math.min(devicePixelRatio, 2);
     this.canvas.id = 'minimap';
-    this.canvas.title = 'Map (P)';
+    this.canvas.setAttribute('role', 'img');
+    this.canvas.setAttribute('aria-label', 'Minimap');
+    onSettings(() => (this.canvas.title = `Map (${keyLabel('map')})`));
     this.canvas.addEventListener('click', onClick);
     this.canvas.width = this.canvas.height = SIZE * dpr;
     this.ctx = this.canvas.getContext('2d')!;
     this.ctx.scale(dpr, dpr);
     document.body.append(this.canvas);
     ({ minX: this.minX, minZ: this.minZ } = city.bounds);
-    this.map.src = '/map/minimap.webp';
+    this.map.src = asset('/map/minimap.webp');
     this.marks = landmarkMarks(city);
   }
 

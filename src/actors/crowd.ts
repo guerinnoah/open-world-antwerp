@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { asset } from '../core/assets';
 import { uploadFirst } from '../core/instancing';
 import { track } from '../core/loadProgress';
 
@@ -89,7 +90,7 @@ export class Crowd {
 
   static async load(capacity: number, limit = Infinity): Promise<Crowd> {
     const crowd = new Crowd();
-    const manifest = (await (await fetch('/people/people.json')).json()) as Manifest[];
+    const manifest = (await (await fetch(asset('/people/people.json'))).json()) as Manifest[];
     const picked = manifest.slice(0, limit);
     for (const m of manifest.slice(limit)) {
       const heir = picked.find((p) => p.gender === m.gender && p.european === m.european) ?? picked.find((p) => p.european === m.european);
@@ -99,8 +100,8 @@ export class Crowd {
     await Promise.all(
       picked.map(async (info) => {
         const [bin, atlas] = await Promise.all([
-          track(fetch(`/people/${info.name}.bin`).then((r) => r.arrayBuffer()), 4),
-          track(loader.loadAsync(`/people/${info.name}.webp`), 2),
+          track(fetch(asset(`/people/${info.name}.bin`)).then((r) => r.arrayBuffer()), 4),
+          track(loader.loadAsync(asset(`/people/${info.name}.webp`)), 2),
         ]);
         crowd.avatars.push(crowd.build(info, bin, atlas, capacity));
       }),

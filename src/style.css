@@ -3,7 +3,7 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d22; font: 13px/1.3 system-ui, sans-serif; color: #fff; }
 #game { display: block; width: 100vw; height: 100vh; touch-action: none; }
 
-body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
+body.on-title > :not(#title, #game, #credits, #settings) { visibility: hidden; }
 #title { position: fixed; inset: 0; z-index: 10; display: grid; align-items: end; padding: max(6vh, var(--safe-t)) max(6vw, var(--safe-r)) max(6vh, var(--safe-b)) max(6vw, var(--safe-l)); overflow-y: auto; background: linear-gradient(100deg, rgb(15 17 22 / 0.9) 0%, rgb(15 17 22 / 0.6) 40%, rgb(15 17 22 / 0) 70%); transition: opacity 0.5s; }
 #title.gone { opacity: 0; pointer-events: none; }
 #title .card { max-width: 420px; }
@@ -15,7 +15,8 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #title .more kbd { min-width: 0; padding: 0 5px; margin: 0; font-size: 11px; }
 #title dt { font-weight: 700; white-space: nowrap; }
 #title dd { margin: 0; color: rgb(255 255 255 / 0.85); }
-#title kbd { display: inline-block; min-width: 14px; margin-right: 3px; padding: 2px 6px; border-radius: 5px; border: 1px solid rgb(255 255 255 / 0.35); border-bottom-width: 2px; background: rgb(255 255 255 / 0.08); font: 700 12px system-ui, sans-serif; text-align: center; }
+:where(#title kbd, #settings .binding button) { border-radius: 5px; border: 1px solid rgb(255 255 255 / 0.35); border-bottom-width: 2px; background: rgb(255 255 255 / 0.08); color: #fff; font: 700 12px system-ui, sans-serif; text-align: center; }
+#title kbd { display: inline-block; min-width: 14px; margin-right: 3px; padding: 2px 6px; }
 #title .touch { display: none; }
 #title .name { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; font-size: 14px; color: rgb(255 255 255 / 0.75); }
 #title .name[hidden] { display: none; }
@@ -31,6 +32,9 @@ body.on-title > :not(#title, #game, #credits) { visibility: hidden; }
 #loading.failed { height: auto; align-items: flex-start; gap: 16px; }
 #loading.failed span { animation: none; }
 #loading.failed .bar { display: none; }
+#title .actions { display: flex; align-items: center; gap: 18px; }
+#title .open-settings { padding: 8px 4px; border: 0; background: none; color: rgb(255 255 255 / 0.75); font: 600 15px system-ui, sans-serif; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+#title .open-settings:hover { color: #fff; }
 #title .play, #title .retry { height: 52px; padding: 0 48px; border: 0; border-radius: 26px; background: #fff; color: #111; font: 800 20px system-ui, sans-serif; letter-spacing: 0.02em; cursor: pointer; box-shadow: 0 4px 18px rgb(0 0 0 / 0.35); }
 #title .play:hover, #title .retry:hover { background: #ffd60a; }
 @media (pointer: coarse) {
@@ -121,14 +125,16 @@ body > .radio[hidden] { display: none; }
 .radio > .station { padding: 0 16px; }
 .radio > .station.tuning { animation: radio-tuning 0.5s ease-in-out infinite alternate; }
 @keyframes radio-tuning { to { opacity: 0.45; } }
-body > button.sound { position: fixed; top: calc(10px + var(--safe-t)); right: calc(10px + var(--safe-r)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); font-size: 18px; line-height: 1; cursor: pointer; }
-body > button.view { position: fixed; top: calc(10px + var(--safe-t)); right: calc(58px + var(--safe-r)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; font: 700 13px system-ui, sans-serif; line-height: 1; cursor: pointer; }
+body > :is(button.sound, button.view, button.settings) { position: fixed; top: calc(10px + var(--safe-t)); width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.3); background: rgb(20 22 28 / 0.6); color: #fff; line-height: 1; cursor: pointer; }
+body > button.sound { right: calc(10px + var(--safe-r)); font-size: 18px; }
+body > button.view { right: calc(58px + var(--safe-r)); font: 700 13px/1 system-ui, sans-serif; }
+body > button.settings { right: calc(106px + var(--safe-r)); font-size: 23px; }
 
 @media (pointer: coarse) {
   #hud .speed { bottom: auto; top: 80px; font-size: 30px; }
   #hud .police { top: 52px; }
   #hud .controls-list { display: none; }
-  #credits { top: calc(6px + var(--safe-t)); bottom: auto; left: calc(8px + var(--safe-l)); right: calc(90px + var(--safe-r)); font-size: 9px; }
+  #credits { top: calc(6px + var(--safe-t)); bottom: auto; left: calc(8px + var(--safe-l)); right: calc(150px + var(--safe-r)); font-size: 9px; }
   #credits details > div { top: calc(100% + 6px); bottom: auto; left: 0; right: auto; text-align: left; }
   #stats { bottom: auto; top: calc(40px + var(--safe-t)); }
   #minimap { left: calc(10px + var(--safe-l)); top: calc(34px + var(--safe-t)); bottom: auto; width: 120px; height: 120px; }
@@ -167,3 +173,34 @@ body > button.view { position: fixed; top: calc(10px + var(--safe-t)); right: ca
 #nametags .nametag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; will-change: transform; }
 #nametags .name { padding: 2px 7px; border-radius: 9px; background: rgb(20 22 28 / 0.55); font-weight: 700; white-space: nowrap; }
 #nametags .say { max-width: 220px; padding: 5px 10px; border-radius: 10px; background: rgb(255 255 255 / 0.92); color: #1b1d22; font-weight: 600; text-align: center; overflow-wrap: anywhere; box-shadow: 0 2px 6px rgb(0 0 0 / 0.35); }
+
+#settings { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; padding: 18px 20px; border: 1px solid rgb(255 255 255 / 0.15); border-radius: 14px; background: #1f2229; color: #fff; font-size: 14px; box-shadow: 0 12px 40px rgb(0 0 0 / 0.5); accent-color: #8ec5ff; }
+#settings::backdrop { background: rgb(10 11 14 / 0.55); }
+#settings .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+#settings h2 { margin: 0; font-size: 20px; }
+#settings h3 { margin: 18px 0 2px; font-size: 15px; }
+#settings .close { width: 36px; height: 36px; border-radius: 50%; border: 1px solid rgb(255 255 255 / 0.25); background: none; color: #fff; font: 700 22px/1 system-ui, sans-serif; cursor: pointer; }
+#settings .row { display: grid; grid-template-columns: 120px 1fr 48px; align-items: center; gap: 4px 12px; min-height: 40px; }
+#settings :is(select, .reload button, .foot button) { border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.3); background: #2a2e37; color: #fff; }
+#settings .row select { grid-column: 2 / -1; height: 34px; padding: 0 8px; font: inherit; }
+#settings .row input[type="range"] { width: 100%; margin: 0; }
+#settings .row output { text-align: right; font-variant-numeric: tabular-nums; color: rgb(255 255 255 / 0.75); }
+#settings .row.check { grid-template-columns: auto 1fr; justify-items: start; }
+#settings .row.check input { width: 18px; height: 18px; margin: 0; }
+#settings .reload { grid-column: 2 / -1; margin: 0 0 4px; color: #ffd479; font-size: 13px; }
+#settings :is(.reload, .foot) button { padding: 5px 12px; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+#settings .note { margin: 0 0 8px; color: rgb(255 255 255 / 0.6); font-size: 13px; }
+#settings .bindings { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+#settings .binding { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#settings .binding span { color: rgb(255 255 255 / 0.85); font-size: 13px; }
+#settings .binding button { min-width: 44px; height: 30px; padding: 0 8px; white-space: nowrap; cursor: pointer; }
+#settings .binding button.listening { border-color: #8ec5ff; background: rgb(142 197 255 / 0.18); }
+#settings .foot { margin-top: 16px; }
+#settings .status { min-height: 1.3em; margin: 10px 0 0; color: rgb(255 255 255 / 0.7); font-size: 13px; }
+@media (max-width: 480px) { #settings .bindings { grid-template-columns: 1fr; } #settings .row { grid-template-columns: 100px 1fr 44px; } }
+
+:is(button, select, input, summary, a, [tabindex]):focus-visible { outline: 2px solid #8ec5ff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  #loading span, .radio > .station.tuning, #hud .health.low > :not(.lost) { animation: none; }
+  #title { transition: none; }
+}

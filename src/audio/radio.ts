@@ -1,3 +1,5 @@
+import { settings } from '../core/settings';
+
 export interface Station {
   name: string;
   url: string;
@@ -73,10 +75,14 @@ export class Radio {
     this.timeout = window.setTimeout(() => this.status === 'tuning' && this.set('no signal'), TUNE_TIMEOUT_MS);
   }
 
+  setVolume() {
+    if (this.status === 'on') this.gain.gain.setTargetAtTime(VOLUME * settings.radioVolume, this.ctx.currentTime, 0.05);
+  }
+
   private set(status: RadioStatus) {
     const t = this.ctx.currentTime;
     this.status = status;
-    this.gain.gain.setTargetAtTime(status === 'on' ? VOLUME : 0, t, status === 'on' ? 0.25 : 0.02);
+    this.gain.gain.setTargetAtTime(status === 'on' ? VOLUME * settings.radioVolume : 0, t, status === 'on' ? 0.25 : 0.02);
     this.hiss.gain.setTargetAtTime(status === 'tuning' ? 0.05 : 0, t, 0.04);
     this.onStatus();
   }

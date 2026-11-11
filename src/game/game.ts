@@ -12,6 +12,7 @@ import { Trams, type Tram } from '../actors/trams';
 import { isBus, isEmergency, isMotorbike, twoWheeled, type Vehicle } from '../actors/vehicle';
 import { VehicleRenderer } from '../actors/vehicleModels';
 import type { Input, InputState } from '../core/input';
+import { keyLabel, moveKeys } from '../core/keys';
 import { pick } from '../core/util';
 import { Sound } from '../audio/sound';
 import { Splash } from '../fx/splash';
@@ -19,6 +20,7 @@ import type { Multiplayer } from '../net/multiplayer';
 import type { Physics } from '../physics/physics';
 import { Hud } from '../ui/hud';
 import { Minimap } from '../ui/minimap';
+import type { SettingsPanel } from '../ui/settings';
 import { WorldMap } from '../ui/worldMap';
 import type { Breakables } from '../world/breakables';
 import type { CityData, GraphData } from '../world/cityData';
@@ -102,6 +104,7 @@ export class Game {
   private suspect: Suspect = { x: 0, z: 0, vx: 0, vz: 0, speed: 0, ram: false, hidden: false, car: null };
   private startWanted = 0; // ?wanted=N, held until play starts
   private districts: Districts | null = null;
+  private settings: SettingsPanel | null = null;
   private district = { name: '', timer: 0, shown: new Map<string, number>() };
   private hornHeld = false;
   private hospital: [number, number, number];
@@ -146,8 +149,7 @@ export class Game {
     this.rig.yaw = start.yaw;
     this.boarding = new Boarding(this, physics, input, this.hud, this.sound);
     this.collisions = new Collisions(this, this.boarding, physics, this.sound, breakables);
-    this.hud.viewToggle(() => this.toggleView());
-    this.hud.setView(this.rig.firstPerson);
+    this.hud.viewToggle(() => this.toggleView(), () => this.rig.firstPerson);
 
     for (const v of parkCars(physics, this.drive, this.water, trackTest(graph.trams), start, population.parkedCars)) this.addVehicle(v);
     this.traffic = new Traffic(physics, this.drive, this, population.traffic);
@@ -183,6 +185,11 @@ export class Game {
     this.multiplayer = multiplayer;
   }
 
+  attachSettings(panel: SettingsPanel) {
+    this.settings = panel;
+    this.hud.settingsButton(() => panel.show());
+  }
+
   attachDistricts(districts: Districts) {
     this.districts = districts;
   }
@@ -216,7 +223,7 @@ export class Game {
     this.hud.toast(
       this.input.touch
         ? 'Welcome to Antwerp! Joystick to walk, E to steal a car.'
-        : 'Welcome to Antwerp! WASD to walk, E to steal a car.',
+        : `Welcome to Antwerp! ${moveKeys()} to walk, ${keyLabel('use')} to steal a car.`,
       5000,
     );
   }
@@ -420,9 +427,13 @@ export class Game {
     this.crime(t.x, t.y);
   }
 
-  /** Single player stops the world while the map is up; multiplayer can't. */
+  private get overlayOpen() {
+    return this.worldMap.open || !!this.settings?.open;
+  }
+
+  /** Single player stops the world while the map or settings are up; multiplayer can't. */
   get paused() {
-    return this.worldMap.open && !this.multiplayer;
+    return this.overlayOpen && !this.multiplayer;
   }
 
   get mapOpen() {
@@ -439,7 +450,7 @@ export class Game {
       this.state = { ...DEAD };
       return;
     }
-    if (this.worldMap.open) {
+    if (this.overlayOpen) {
       this.state = { ...IDLE };
       return;
     }

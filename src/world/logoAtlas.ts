@@ -1,3 +1,4 @@
+import { asset } from '../core/assets';
 import type { CityData, LogoRect, Operator } from './cityData';
 
 export interface OperatorLogo {
@@ -8,7 +9,7 @@ export interface OperatorLogo {
 let atlas: Promise<HTMLImageElement | undefined> | undefined;
 
 export function logoAtlas(): Promise<HTMLImageElement | undefined> {
-  atlas ??= new URLSearchParams(location.search).has('nologos') ? Promise.resolve(undefined) : decode('/map/logos.webp');
+  atlas ??= new URLSearchParams(location.search).has('nologos') ? Promise.resolve(undefined) : decode(asset('/map/logos.webp'));
   return atlas;
 }
 

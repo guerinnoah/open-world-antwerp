@@ -1,3 +1,6 @@
+import { asset } from '../core/assets';
+import { keyLabel, pressed } from '../core/keys';
+import { onSettings } from '../core/settings';
 import type { Gps } from '../game/gps';
 import type { CityData } from '../world/cityData';
 import type { NavGraph } from '../world/navGraph';
@@ -32,29 +35,38 @@ export class WorldMap {
     this.root.hidden = true;
     this.dest.className = 'dest';
     this.street.className = 'street';
+    this.root.setAttribute('role', 'dialog');
+    this.root.setAttribute('aria-label', 'Map');
+    this.canvas.setAttribute('aria-label', 'City map. Click a place to set a waypoint');
     const help = document.createElement('div');
     help.className = 'help';
-    help.textContent = touch
-      ? 'Tap to set a waypoint · tap it again to clear · drag and pinch to move'
-      : 'Click: set waypoint · Right-click: clear · Drag: move · Scroll: zoom · P or Esc: close';
     const close = document.createElement('button');
     close.className = 'close';
     close.type = 'button';
     close.textContent = '×';
-    close.title = 'Close (P)';
+    close.setAttribute('aria-label', 'Close map');
+    onSettings(() => {
+      help.textContent = touch
+        ? 'Tap to set a waypoint · tap it again to clear · drag and pinch to move'
+        : `Click: set waypoint · Right-click: clear · Drag: move · Scroll: zoom · ${keyLabel('map')} or Esc: close`;
+      close.title = `Close (${keyLabel('map')})`;
+    });
     close.addEventListener('click', () => this.toggle(false));
     this.root.append(this.canvas, this.dest, this.street, help, close);
     document.body.append(this.root);
     this.ctx = this.canvas.getContext('2d')!;
-    this.image.src = '/map/minimap.webp';
+    this.image.src = asset('/map/minimap.webp');
     this.bounds = city.bounds;
     this.marks = landmarkMarks(city);
 
     addEventListener('keydown', (e) => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.code === 'KeyP') this.toggle(!this.open);
-      else if (this.open && e.code === 'Escape') this.toggle(false);
+      if (pressed('map', e.code)) this.toggle(!this.open);
+      else if (this.open && e.code === 'Escape') {
+        e.preventDefault(); // so Esc doesn't also open settings
+        this.toggle(false);
+      }
       else if (this.open && (e.code === 'Delete' || e.code === 'Backspace')) this.gps.clear();
     });
 

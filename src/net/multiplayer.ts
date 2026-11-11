@@ -3,7 +3,9 @@ import { clipForSpeed, phaseStep, type Crowd } from '../actors/crowd';
 import { riderClip } from '../actors/motorbikes';
 import { PLAYER_LOOK, type Player } from '../actors/player';
 import { ARTIC_SPEC, BIKE_SPEC, BUS_SPEC, SCOOTER_SPEC, VEHICLE_TYPES, Vehicle, isMotorbike, twoWheeled, type VehicleSpec } from '../actors/vehicle';
+import { keyLabel } from '../core/keys';
 import { coarsePointer } from '../core/quality';
+import { stored } from '../core/storage';
 import { lerpPose, wrapAngle } from '../core/util';
 import { GROUP, RAPIER, groups, type Physics } from '../physics/physics';
 import { Chat } from './chat';
@@ -189,7 +191,7 @@ export class Multiplayer {
         for (const took of msg.taken) this.removeTakenCar(took);
         for (const p of msg.peers) this.addPeer(p, now);
         if (msg.peers.length) this.chat.system(msg.peers.length === 1 ? `${msg.peers[0].name} is here too.` : `${msg.peers.length} other players are here.`);
-        if (!this.greeted) this.chat.system(coarsePointer() ? 'Tap 💬 to chat.' : 'Press T to chat.');
+        if (!this.greeted) this.chat.system(coarsePointer() ? 'Tap 💬 to chat.' : `Press ${keyLabel('chat')} to chat.`);
         this.greeted = true;
         this.refreshPill();
         break;
@@ -443,15 +445,6 @@ export class Multiplayer {
 function specFor(kind: string): VehicleSpec {
   const specs = [BUS_SPEC, ARTIC_SPEC, BIKE_SPEC, SCOOTER_SPEC, ...VEHICLE_TYPES.map(([spec]) => spec)];
   return specs.find((spec) => spec.name === kind) ?? VEHICLE_TYPES[0][0];
-}
-
-function stored(key: string, value?: string): string | null {
-  try {
-    if (value !== undefined) localStorage.setItem(key, value);
-    return localStorage.getItem(key);
-  } catch {
-    return value ?? null;
-  }
 }
 
 const NAME_KEY = 'open-world-antwerp.name';

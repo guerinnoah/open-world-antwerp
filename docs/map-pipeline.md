@@ -32,7 +32,7 @@ offices never get one. De Lijn's logo on trams and buses and NMBS's on the Centr
 ## Assets
 
 - **Aerial photo:** `pnpm map:fetch-ortho`, run after `map:build`, stitches the latest Digitaal Vlaanderen orthophoto
-  into `public/map/ortho.webp`. On desktop it colours the ground; `?flat` turns it off.
+  into `public/map/ortho.webp`, plus a 2048 px `ortho-2k.webp` for phones. It colours the ground; `?flat` turns it off.
 - **Textures:** `pnpm assets:textures` downloads them from Poly Haven into `public/textures/`, with the colour maps also at 512 px (`_512`) for phones.
 - **People:** run `pnpm tsx tools/assets/fetch-people.ts`, then `pnpm assets:people` with `pnpm dev` running. This
   writes `public/people/`. Re-bake after changing a bike or scooter frame in `src/actors/*Geometry.ts`, or the chair

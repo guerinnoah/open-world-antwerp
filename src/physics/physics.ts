@@ -18,6 +18,8 @@ const ray = (x: number, z: number, dx: number, dz: number) => {
 
 export type Owner = { kind: 'vehicle' | 'ped' | 'player' | 'tram' | 'bus' | 'cyclist'; entity: unknown };
 
+let rapierReady: Promise<void> | undefined;
+
 export class Physics {
   readonly world: RAPIER.World;
   readonly owners = new Map<number, Owner>();
@@ -49,8 +51,14 @@ export class Physics {
     this.world.removeRigidBody(body);
   }
 
+  /** The WASM is its own download: start it with the map's, not after. */
+  static warmUp() {
+    rapierReady ??= RAPIER.init();
+    return rapierReady;
+  }
+
   static async create(city: CityData): Promise<Physics> {
-    await RAPIER.init();
+    await Physics.warmUp();
     const physics = new Physics();
     physics.addStatic(city);
     return physics;

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { asset } from '../core/assets';
 import { track } from '../core/loadProgress';
 
 export const BUILDING_LAYERS = ['brick', 'plaster', 'yellowBrick', 'ashlar', 'slate', 'tiles', 'flatRoof'] as const;
@@ -31,10 +32,10 @@ const GROUND: GroundTexture[] = ['asphalt', 'pavement', 'cobble', 'grass', 'pave
 export async function loadTextures(renderer: THREE.WebGLRenderer, size: number, maxAnisotropy: number): Promise<Textures> {
   const anisotropy = Math.min(maxAnisotropy, renderer.capabilities.getMaxAnisotropy());
   // Phones (size 512) fetch half-size colour maps: a quarter of the download.
-  const albedoUrl = (name: string) => `/textures/${name}_albedo${size < 1024 ? '_512' : ''}.webp`;
+  const albedoUrl = (name: string) => asset(`/textures/${name}_albedo${size < 1024 ? '_512' : ''}.webp`);
   const [albedo, normal, ground, stone] = await Promise.all([
     arrayTexture(BUILDING_LAYERS.map(albedoUrl), size, true, anisotropy),
-    arrayTexture(BUILDING_LAYERS.map((n) => `/textures/${n}_normal.webp`), Math.min(size, 512), false, anisotropy),
+    arrayTexture(BUILDING_LAYERS.map((n) => asset(`/textures/${n}_normal.webp`)), Math.min(size, 512), false, anisotropy),
     Promise.all(GROUND.map((n) => pair(albedoUrl(n), n, anisotropy))),
     pair(albedoUrl('stone'), 'stone', anisotropy),
   ]);
@@ -64,7 +65,7 @@ async function pair(albedoUrl: string, name: string, anisotropy: number): Promis
   const loader = new THREE.TextureLoader();
   const [map, normalMap] = await Promise.all([
     track(loader.loadAsync(albedoUrl)),
-    track(loader.loadAsync(`/textures/${name}_normal.webp`)),
+    track(loader.loadAsync(asset(`/textures/${name}_normal.webp`))),
   ]);
   map.colorSpace = THREE.SRGBColorSpace;
   for (const t of [map, normalMap]) {

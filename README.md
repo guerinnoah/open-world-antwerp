@@ -38,8 +38,10 @@ The map and assets are committed under `public/`, so this is all you need. Open 
 | First / third person | V | 1st / 3rd |
 | Radio on or off | Shift+R | 📻 |
 | Mute | M | 🔊 |
+| Settings | Esc | ⚙ |
 
-Gamepads work too.
+Every key can be changed in Settings, along with graphics quality, volume, look speed and field of view. Gamepads work
+too.
 
 ## Scripts
 

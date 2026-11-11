@@ -40,7 +40,7 @@ kinematically along their routes; other players are kinematic bodies too.
 | `src/actors/` | Player, vehicles, traffic, pedestrians, trams, buses, bikes, scooters, motorbikes |
 | `src/game/` | `Game` and its parts (boarding, collisions, sinking, parked cars, HUD prompts), the chase camera, GPS routing, the wanted level |
 | `src/net/` | Multiplayer client and the shared wire protocol |
-| `src/ui/`, `src/audio/` | HUD, minimap, world map; sound and radio |
+| `src/ui/`, `src/audio/` | HUD, minimap, world map, settings; sound and radio |
 
 ## Conventions
 
@@ -48,3 +48,7 @@ kinematically along their routes; other players are kinematic bodies too.
 - Every drivable thing is a `Vehicle` (`src/actors/vehicle.ts`) with its own spec.
 - Random placement (parked cars, scooters) uses fixed seeds, so every player sees the same city.
 - The map file formats are defined in `src/world/cityData.ts`.
+- Player settings (graphics, volume, look, keys) are saved in `src/core/settings.ts`. Read keys through `pressed()` and show
+  them with `keyLabel()` from `src/core/keys.ts`, never as hard-coded letters, so rebinding and AZERTY labels carry through.
+- Load files from `public/map`, `public/people` and `public/textures` through `asset()`. In builds it adds a content hash,
+  and `vercel.json` lets browsers cache hashed URLs for a year.

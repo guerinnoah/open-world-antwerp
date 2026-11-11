@@ -1,4 +1,6 @@
+import { pressed, type Action } from './keys';
 import { coarsePointer } from './quality';
+import { settings } from './settings';
 
 export interface InputState {
   steer: number;
@@ -43,10 +45,10 @@ export class Input {
     addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
-      if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter') this.actionQueued = true;
-      if (e.code === 'KeyR') this.punchQueued = true;
-      if (e.code === 'KeyQ') this.sirenQueued = true;
-      if (e.code === 'KeyV') this.viewQueued = true;
+      if (pressed('use', e.code)) this.actionQueued = true;
+      if (pressed('punch', e.code)) this.punchQueued = true;
+      if (pressed('siren', e.code)) this.sirenQueued = true;
+      if (pressed('view', e.code)) this.viewQueued = true;
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -79,15 +81,18 @@ export class Input {
   }
 
   sample(): InputState {
-    const k = (...codes: string[]) => codes.some((c) => this.keys.has(c));
-    let steer = (k('KeyD', 'ArrowRight') ? 1 : 0) - (k('KeyA', 'ArrowLeft') ? 1 : 0);
-    let throttle = (k('KeyW', 'ArrowUp') ? 1 : 0) - (k('KeyS', 'ArrowDown') ? 1 : 0);
-    let handbrake = k('Space');
-    let sprint = k('ShiftLeft', 'ShiftRight');
+    const k = (action: Action) => {
+      for (const code of this.keys) if (pressed(action, code)) return true;
+      return false;
+    };
+    let steer = (k('right') ? 1 : 0) - (k('left') ? 1 : 0);
+    let throttle = (k('forward') ? 1 : 0) - (k('back') ? 1 : 0);
+    let handbrake = k('handbrake');
+    let sprint = k('sprint');
     let lookX = this.look.x;
     let lookY = this.look.y;
     let action = this.actionQueued;
-    let horn = k('KeyH');
+    let horn = k('horn');
     let punch = this.punchQueued;
     let siren = this.sirenQueued;
     let view = this.viewQueued;
@@ -126,6 +131,8 @@ export class Input {
 
     this.look.x = this.look.y = 0;
     this.actionQueued = this.punchQueued = this.sirenQueued = this.viewQueued = false;
+    lookX *= settings.lookSpeed;
+    lookY *= settings.lookSpeed * (settings.invertLook ? -1 : 1);
     return { steer: clamp1(steer), throttle: clamp1(throttle), handbrake, sprint, lookX, lookY, action, horn, punch, siren, view };
   }
 
@@ -141,8 +148,8 @@ export class Input {
     root.id = 'touch';
     root.dataset.seat = 'foot';
     root.innerHTML = `
-      <div class="stick"><div class="knob"></div></div>
-      <button class="btn action" type="button">E</button>
+      <div class="stick" aria-hidden="true"><div class="knob"></div></div>
+      <button class="btn action" type="button" aria-label="Get in or out">E</button>
       <button class="btn punch" type="button">Punch</button>
       <button class="btn handbrake" type="button">Handbrake</button>`;
     document.body.append(root);
