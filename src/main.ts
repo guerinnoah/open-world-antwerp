@@ -55,9 +55,11 @@ const quality = pickQuality(params, settings.quality);
 if (!params.has('fly')) void Physics.warmUp();
 readKeyboardLayout();
 const settingsPanel = new SettingsPanel(quality.level);
+const withAo = quality.ao && !params.has('noao');
 const renderer = (() => {
   try {
-    return new THREE.WebGLRenderer({ canvas, antialias: quality.antialias });
+    // N8AO renders the scene without MSAA; multisampling its full-screen output buys nothing.
+    return new THREE.WebGLRenderer({ canvas, antialias: quality.antialias && !withAo });
   } catch (e) {
     title.fail("This browser can't show 3D graphics. Turn on hardware acceleration, or try another browser.", false);
     throw e;
@@ -100,7 +102,7 @@ if (useLiveWeather(params)) {
 }
 
 let composer: EffectComposer | null = null;
-const aoModule = quality.ao && !params.has('noao') ? import('./fx/ao') : null;
+const aoModule = withAo ? import('./fx/ao') : null;
 const draw = () => (composer ? composer.render() : renderer.render(scene, camera));
 
 function resize() {
@@ -153,9 +155,11 @@ scene.add(bikes.group);
 title.progress(0.85);
 const landmarks = await createLandmarks(city.landmarks, textures, (key) => operatorLogo(city, key));
 operatorLogo(city, 'delijn').then((logo) => logo && showOperatorLogo(logo));
+// Full detail covers the shadow box's corners.
+const trees = createTrees(city.trees, Math.max(240 * quality.detailView, quality.shadowRange * 1.5));
 const scenery = [
   createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures, environment.night, chainFronts(city)),
-  createTrees(city.trees), landmarks,
+  trees.group, landmarks,
 ];
 scene.add(...scenery);
 for (const root of scenery) {
@@ -170,6 +174,7 @@ const updateScenery = (dt: number, time: number) => {
   ground.update(time / 1000);
   props.update(camera.position);
   facadeDetail.update(camera.position);
+  trees.update(camera.position);
   signs.update(camera.position, dt);
   weather.update(camera.position, dt);
 };

@@ -182,7 +182,8 @@ export function createGround(city: CityData, textures: Textures, aerial: THREE.T
     const geometry = builder.geometry(layer.key === 'water' ? 18 : layer.scale);
     freeAfterUpload(geometry);
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = -100 + i;
+    // After other opaque objects, so early-z skips ground hidden behind them.
+    mesh.renderOrder = 100 + i;
     mesh.receiveShadow = true;
     mesh.name = layer.key;
     group.add(mesh);

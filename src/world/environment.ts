@@ -46,7 +46,7 @@ export class Environment {
     u.mieCoefficient.value = 0.004;
     u.mieDirectionalG.value = 0.85;
     u.sunPosition.value.copy(this.sunDir);
-    sky.renderOrder = -1000; // before the ground: it doesn't write depth, so the sky would paint over it
+    sky.renderOrder = 1000; // last opaque: it sits on the far plane, so only uncovered pixels shade it
     scene.add(sky);
     this.sky = sky;
     this.fogFar = Math.min(4000, drawDistance * 0.92);

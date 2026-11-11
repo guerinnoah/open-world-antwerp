@@ -167,18 +167,11 @@ export function createProps(city: CityData, viewScale = 1, night = 0): Props {
       chunks.push({ mesh, x: cx, z: cz, view: VIEW[kind] * viewScale + size * 0.7 });
     }
   }
-  if (night > 0.05) {
-    const heads = [...items.lamp.map((it) => [it[0], it[1], 7.4] as const), ...items.lantern.map((it) => [it[0], it[1], 3.9] as const)];
-    const glow = new THREE.InstancedMesh(
-      new THREE.SphereGeometry(0.4, 8, 6),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc48a).multiplyScalar(0.6 + 1.3 * night), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
-      heads.length,
-    );
-    heads.forEach(([x, z, y], i) => glow.setMatrixAt(i, matrix.makeTranslation(x, y, z)));
-    glow.computeBoundingSphere();
-    glow.name = 'lampGlow';
-    group.add(glow);
-  }
+  const glow = night > 0.05 ? lampGlow(
+    [...items.lamp.map((it) => [it[0], it[1], 7.4] as const), ...items.lantern.map((it) => [it[0], it[1], 3.9] as const)],
+    new THREE.Color(0xffc48a).multiplyScalar(0.6 + 1.3 * night),
+  ) : null;
+  if (glow) group.add(glow.group);
 
   const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
   return {
@@ -192,6 +185,7 @@ export function createProps(city: CityData, viewScale = 1, night = 0): Props {
         const { mesh, index } = slots[kind][i];
         mesh.setMatrixAt(index, broken ? hidden : pose(items[kind][i]));
         mesh.instanceMatrix.needsUpdate = true;
+        if (kind === 'lamp' || kind === 'lantern') glow?.setLit(kind === 'lamp' ? i : items.lamp.length + i, !broken);
       }
     },
     loose({ kind, i }) {
@@ -201,6 +195,50 @@ export function createProps(city: CityData, viewScale = 1, night = 0): Props {
       mesh.position.set(x, 0, z);
       mesh.rotation.y = -angle;
       return mesh;
+    },
+  };
+}
+
+const GLOW_NEAR = 60; // m; beyond, glows are point sprites
+
+function lampGlow(heads: (readonly [number, number, number])[], color: THREE.Color) {
+  const blend = { color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
+  const near = GLOW_NEAR.toFixed(1), matrix = new THREE.Matrix4();
+  const at = (h: number) => matrix.makeTranslation(heads[h][0], heads[h][2], heads[h][1]);
+  const spheres = new THREE.InstancedMesh(new THREE.SphereGeometry(0.4, 8, 6), new THREE.MeshBasicMaterial(blend), heads.length);
+  heads.forEach((_, h) => spheres.setMatrixAt(h, at(h)));
+  spheres.material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
+      `#include <begin_vertex>\ntransformed *= step(distance(instanceMatrix[3].xz, cameraPosition.xz), ${near});`);
+  };
+  const dots = new THREE.PointsMaterial({ ...blend, size: 0.8 });
+  // Sphere-sized and at the sphere's front, so the lamp head can't cut through.
+  dots.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float lit;\nvarying float vCover;')
+      .replace('#include <fog_vertex>', `#include <fog_vertex>
+gl_PointSize *= projectionMatrix[1][1];
+vCover = min(gl_PointSize * gl_PointSize, 1.0);
+gl_Position = projectionMatrix * vec4(mvPosition.xyz * (1.0 - 0.4 / length(mvPosition.xyz)), 1.0);
+if (lit < 0.5 || distance(position.xz, cameraPosition.xz) < ${near}) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vCover;')
+      .replace('#include <clipping_planes_fragment>', 'if (length(gl_PointCoord - 0.5) > 0.5) discard;\n#include <clipping_planes_fragment>')
+      .replace('#include <premultiplied_alpha_fragment>', 'gl_FragColor.rgb *= vCover;\n#include <premultiplied_alpha_fragment>');
+  };
+  const lit = new THREE.BufferAttribute(new Float32Array(heads.length).fill(1), 1);
+  const points = new THREE.Points(new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(heads.flatMap(([x, z, y]) => [x, y, z]), 3))
+    .setAttribute('lit', lit), dots);
+  const group = new THREE.Group().add(spheres, points);
+  group.name = 'lampGlow';
+  return {
+    group,
+    setLit(h: number, on: boolean) {
+      spheres.setMatrixAt(h, on ? at(h) : matrix.makeScale(0, 0, 0));
+      spheres.instanceMatrix.needsUpdate = true;
+      lit.setX(h, on ? 1 : 0);
+      lit.needsUpdate = true;
     },
   };
 }

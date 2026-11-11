@@ -34,7 +34,7 @@ export function createMarkings(drive: RoadGraph, crossings: number[][]): THREE.M
     new THREE.MeshStandardMaterial({ color: 0xd8d6cf, roughness: 0.6, depthWrite: false }),
   );
   mesh.name = 'markings';
-  mesh.renderOrder = -80; // after every ground layer (ground.ts: -100 + i)
+  mesh.renderOrder = 120; // after every ground layer (ground.ts: 100 + i)
   mesh.receiveShadow = true;
   return mesh;
 }
