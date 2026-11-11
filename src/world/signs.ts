@@ -5,6 +5,7 @@ import { uploadFirst } from '../core/instancing';
 import { CHAIN_STRETCHES, rand } from './buildings';
 import { LOGO_SHARE, LOGO_SIGN_H, SHOP_KIND, type Building, type CityData, type LogoRect, type Sign, type SignStyle } from './cityData';
 import { facadeStyle } from './facadeLayout';
+import { logoAtlas } from './logoAtlas';
 
 const ATLAS = 2048;
 const MAX_CELLS = 8;
@@ -264,12 +265,11 @@ export class Signs {
     this.scratch.height = CELL_H;
     this.scratchTexture = new THREE.Texture(this.scratch);
     if (this.logos.length) {
-      const image = new Image();
-      image.src = '/map/logos.webp';
-      image.decode().then(() => {
+      logoAtlas().then((image) => {
+        if (!image) return;
         this.logoImage = image;
         for (const p of this.placed) for (const f of p.faces) if (f.logo && f.cell >= 0) this.release(f);
-      }, () => {});
+      });
     }
 
     const geometry = panelGeometry();

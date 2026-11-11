@@ -24,6 +24,8 @@ import { Weather } from './world/weather';
 import { initialSky, liveWeather, useLiveWeather } from './world/daylight';
 import { createGround } from './world/ground';
 import { createLandmarks } from './world/landmarks';
+import { operatorLogo } from './world/logoAtlas';
+import { showOperatorLogo } from './actors/tramModel';
 import { Districts, type District } from './world/districts';
 import { createFacadeDetail } from './world/facadeDetail';
 import { createMarkings } from './world/markings';
@@ -143,7 +145,8 @@ const signs = new Signs(city, renderer, 200 * quality.detailView, environment.ni
 const bikes = new Bikes(city, crowd, 130 * quality.detailView);
 scene.add(bikes.group);
 title.progress(0.85);
-const landmarks = await createLandmarks(city.landmarks, textures);
+const landmarks = await createLandmarks(city.landmarks, textures, (key) => operatorLogo(city, key));
+operatorLogo(city, 'delijn').then((logo) => logo && showOperatorLogo(logo));
 const scenery = [
   createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures, environment.night, chainFronts(city)),
   createTrees(city.trees), landmarks,

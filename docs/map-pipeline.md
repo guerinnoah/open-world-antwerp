@@ -25,8 +25,9 @@ The map area is set in `tools/map/config.ts`.
 ## Logos
 
 Signs show a logo only from files Wikimedia Commons marks as public domain or CC0, for chains and independents alike;
-offices never get one. To remove a logo, add its Wikidata id to `BLOCKED` in `tools/map/logos.ts` and rerun `map:build`.
-`?nologos` hides them all in the game.
+offices never get one. De Lijn's logo on trams and buses and NMBS's on the Centraal sign come the same way (`OPERATORS` in
+`src/world/cityData.ts`); without them those show the name instead. To remove a logo, add its Wikidata id to `BLOCKED` in
+`tools/map/logos.ts` and rerun `map:build`. `?nologos` hides them all in the game.
 
 ## Assets
 

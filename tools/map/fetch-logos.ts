@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { OPERATORS } from '../../src/world/cityData.ts';
 import { RAW_DIR } from './config.ts';
 import { logoItemsOf } from './signs.ts';
 import { HEADERS, commonsInfo, logoFiles, osmTags, sleep } from './wikimedia.ts';
@@ -19,7 +20,7 @@ export interface LogoEntry {
 
 const plain = (html = '') => html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 
-const items = [...new Set((await osmTags()).flatMap((t) => logoItemsOf(t)))];
+const items = [...new Set([...(await osmTags()).flatMap((t) => logoItemsOf(t)), ...Object.values(OPERATORS).map((o) => o.q)])];
 console.log(`${items.length} Wikidata items to check for a logo`);
 const logos = await logoFiles(items);
 console.log(`${logos.size} have a logo on Wikidata`);

@@ -18,6 +18,8 @@ import { streetDetail } from '../tools/map/street';
 import { layWater } from '../tools/map/water';
 import { WaterMap } from '../src/world/water';
 import { inRing } from '../src/world/polyline';
+import { OPERATORS } from '../src/world/cityData';
+import { WHITE } from '../src/actors/tramModel';
 
 const M_LON = project(51.2213, 4.4097)[0] / 0.01;
 const M_LAT = -project(51.2313, 4.3997)[1] / 0.01;
@@ -378,6 +380,12 @@ describe('chain fronts', () => {
 
   it('paints no shopfront for a hotel chain', () => {
     expect(stretches(12, [sign(0.5, 3, 0xff0000, 'hotel')])).toEqual([]);
+  });
+});
+
+describe('operator logos', () => {
+  it("flattens De Lijn's logo on the vehicles' own white, so the plate shows no box", () => {
+    expect(OPERATORS.delijn.bg).toBe(WHITE);
   });
 });
 

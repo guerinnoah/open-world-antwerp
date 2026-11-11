@@ -109,7 +109,7 @@ function roofPod(x0: number, x1: number, parts: THREE.BufferGeometry[]) {
   parts.push(box(x0, x1, ROOF_TOP - 0.02, ROOF_TOP + 0.26, -0.95, 0.95, ROOF));
 }
 
-export const busPlate = () => operatorName(2.68, HW);
+export const busPlate = () => operatorName(2.635, HW);
 
 export function buildBus(kind: BusKind): SectionModel {
   const L = SECTION_LENGTH[kind];

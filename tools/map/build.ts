@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import type { MultiPolygon, Polygon } from 'polygon-clipping';
-import type { Area, AreaKind, Building, CityData, GraphData, Road, RoadKind } from '../../src/world/cityData.ts';
+import { OPERATORS, type Area, type AreaKind, type Building, type CityData, type GraphData, type Operator, type Road, type RoadKind } from '../../src/world/cityData.ts';
 import { BBOX, ORIGIN, OUT_DIR, RAW_DIR } from './config.ts';
 import { buildGraphData, underground } from './graph.ts';
 import { loadGrbHeights } from './grb.ts';
@@ -255,6 +255,8 @@ const streetPlates = placeStreetPlates([graph.drive, graph.walk], buildingIndex,
 const velo = veloStations(elements, roads, (p) => inBounds(p) && clearOfRoads(p) && open(p));
 
 await mkdir(OUT_DIR, { recursive: true });
+const operators: CityData['operators'] = {};
+for (const key of Object.keys(OPERATORS) as Operator[]) operators[key] = logos.operator(key);
 const logoRects = await logos.write();
 const city: CityData = {
   version: 1,
@@ -268,6 +270,7 @@ const city: CityData = {
   trees,
   signs: [...shopfronts.signs, ...streetPlates],
   ...(logoRects.length ? { logos: logoRects } : {}),
+  operators,
   terraces: shopfronts.terraces,
   velo,
   ...streetDetail(elements, roads, inBounds, open),

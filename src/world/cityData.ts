@@ -65,6 +65,7 @@ export interface CityData {
   crossings: number[][];
   signs?: Sign[];
   logos?: LogoRect[];
+  operators?: Partial<Record<Operator, number>>;
   terraces?: number[]; // flat [x, z, facing angle, colour index, …]
   velo?: number[]; // flat [x, z, row angle, docks, …]
   /** Flat [x, z, …]; signals [x, z, facing angle, …]. */
@@ -144,5 +145,11 @@ export type Sign = [number, number, number, number, SignStyle, string, (number |
 
 /** Cell of public/map/logos.webp: [x, y, w, h (px), background, 1 = emblem beside the name]. */
 export type LogoRect = [number, number, number, number, number, 0 | 1];
+
+export type Operator = 'delijn' | 'nmbs';
+export const OPERATORS: Record<Operator, { q: string; bg: number; ink?: number }> = {
+  delijn: { q: 'Q614819', bg: 0xeeeeea },
+  nmbs: { q: 'Q524255', bg: 0x006ab3, ink: 0xffffff }, // as NMBS's own light-on-dark variant
+};
 
 export const LOGO_SIGN_H = 0.75, LOGO_SHARE = 0.75; // m: a sign with a logo; the logo's share of its height

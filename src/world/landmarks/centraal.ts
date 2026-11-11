@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { canvasTexture, drawLabel, sans } from '../../core/canvasText';
-import type { Landmark } from '../cityData';
+import { canvasTexture, drawLabel, fitFont, hexOf, sans } from '../../core/canvasText';
+import { OPERATORS, type Landmark } from '../cityData';
+import { drawLogo, logoSize, type OperatorLogo } from '../logoAtlas';
+import type { LandmarkLogo } from './index';
 import { GOLD, Kit, roundArch } from './kit';
 
 const STONE = 0xd8cfbf;
@@ -21,12 +23,30 @@ export function centraal(_lm: Landmark): THREE.BufferGeometry {
   for (const z of [-35, 35]) wingTurret(kit, 63, z);
   trainHall(kit);
   const geometry = kit.build();
-  geometry.userData.dress = (mesh: THREE.Mesh) => mesh.add(stationSign()); // deferred: pnpm tris builds this without a DOM
+  // deferred: pnpm tris builds this without a DOM
+  geometry.userData.dress = (mesh: THREE.Mesh, logo: LandmarkLogo) => mesh.add(stationSign(logo('nmbs')));
   return geometry;
 }
 
-function stationSign(): THREE.Mesh {
-  const map = canvasTexture(1024, 96, (g) => drawLabel(g, 'NMBS  ·  Antwerpen-Centraal', '#006ab3', '#ffffff', sans(700), 0.625, 0.97, 0.53));
+function stationSign(logo: Promise<OperatorLogo | undefined>): THREE.Mesh {
+  const bg = hexOf(OPERATORS.nmbs.bg);
+  const map = canvasTexture(1024, 96, (g) => drawLabel(g, 'NMBS  ·  Antwerpen-Centraal', bg, '#ffffff', sans(700), 0.625, 0.97, 0.53));
+  logo.then((l) => {
+    if (!l) return;
+    const g = (map.image as HTMLCanvasElement).getContext('2d')!;
+    const { width: w, height: h } = g.canvas, name = 'Antwerpen-Centraal', gap = 28;
+    g.fillStyle = bg;
+    g.fillRect(0, 0, w, h);
+    const size = logoSize(l, 72, w * 0.3);
+    fitFont(g, sans(700), name, w * 0.97 - size[0] - gap, 60);
+    const left = (w - size[0] - gap - g.measureText(name).width) / 2;
+    drawLogo(g, l, left + size[0] / 2, size);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillText(name, left + size[0] + gap, h * 0.53);
+    map.needsUpdate = true;
+  });
   const material = new THREE.MeshStandardMaterial({ map, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 0.84).rotateY(Math.PI / 2), material);
   sign.position.set(ENTRANCE_X + LINTEL_D / 2 + 0.04, LINTEL_Y + LINTEL_H / 2, 0);

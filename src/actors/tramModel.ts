@@ -3,6 +3,7 @@ import { canvasTexture, drawLabel, hexOf, sans } from '../core/canvasText';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { coloured } from '../core/util';
 import type { TramRun } from '../world/cityData';
+import { drawLogo, logoSize, type OperatorLogo } from '../world/logoAtlas';
 
 // Albatros (Flexity 2). Frame: +x forward, y up, +z right (doors right only).
 export type SectionKind = 'cab' | 'mid' | 'rear';
@@ -155,7 +156,7 @@ export interface SectionModel {
   plate: number | null; // m along the section: the operator's name, on both sides
 }
 
-const OPERATOR_W = 1.12, OPERATOR_H = 0.28;
+const OPERATOR_W = 1.36, OPERATOR_H = 0.34; // m: the white band above the windows
 
 /** A fleet's nameplates: `y` up the side, `hw` m out from the centre line. */
 export function operatorName(y: number, hw: number): THREE.BufferGeometry {
@@ -166,13 +167,24 @@ export function operatorName(y: number, hw: number): THREE.BufferGeometry {
 let operator: THREE.MeshStandardMaterial | undefined;
 /** Shared by trams and buses; opaque, so it needs no sorting against the body. */
 export function operatorMaterial(): THREE.MeshStandardMaterial {
-  operator ??= new THREE.MeshStandardMaterial({
-    map: canvasTexture(256, 64, (g) => drawLabel(g, 'De Lijn', hexOf(WHITE), '#2b3034', sans(700), 0.8125, 0.94, 0.516)), roughness: 0.32, metalness: 0.1,
-  });
+  operator ??= new THREE.MeshStandardMaterial({ map: canvasTexture(256, 64, (g) => drawOperator(g)), roughness: 0.32, metalness: 0.1 });
   return operator;
 }
 
-export const tramPlate = () => operatorName(2.63, HW);
+export function showOperatorLogo(logo: OperatorLogo) {
+  const map = operatorMaterial().map!;
+  drawOperator((map.image as HTMLCanvasElement).getContext('2d')!, logo);
+  map.needsUpdate = true;
+}
+
+function drawOperator(g: CanvasRenderingContext2D, logo?: OperatorLogo) {
+  if (!logo) return drawLabel(g, 'De Lijn', hexOf(WHITE), '#2b3034', sans(700), 0.8125, 0.94, 0.516);
+  g.fillStyle = hexOf(WHITE);
+  g.fillRect(0, 0, g.canvas.width, g.canvas.height);
+  drawLogo(g, logo, g.canvas.width / 2, logoSize(logo, g.canvas.height - 8, g.canvas.width - 16));
+}
+
+export const tramPlate = () => operatorName(2.6, HW);
 
 export function buildSection(kind: SectionKind): SectionModel {
   const L = SECTION_LENGTH[kind];

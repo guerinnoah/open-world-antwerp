@@ -1,12 +1,15 @@
 import * as THREE from 'three';
-import type { Landmark } from '../cityData';
+import type { Landmark, Operator } from '../cityData';
+import type { OperatorLogo } from '../logoAtlas';
 import type { Textures } from '../textures';
 import { freeAfterUpload } from '../../core/instancing';
 import { footprintModel } from './footprint';
 
 const modules = import.meta.glob<Record<string, (lm: Landmark) => THREE.BufferGeometry>>('./*.ts');
 
-export async function createLandmarks(landmarks: Landmark[], textures: Textures): Promise<THREE.Group> {
+export type LandmarkLogo = (key: Operator) => Promise<OperatorLogo | undefined>;
+
+export async function createLandmarks(landmarks: Landmark[], textures: Textures, logo: LandmarkLogo): Promise<THREE.Group> {
   const group = new THREE.Group();
   group.name = 'landmarks';
   const material = stoneMaterial(textures);
@@ -28,7 +31,7 @@ export async function createLandmarks(landmarks: Landmark[], textures: Textures)
     mesh.position.set(lm.x, 0, lm.z);
     mesh.rotation.y = -lm.angle;
     mesh.castShadow = mesh.receiveShadow = true;
-    geometries[i].userData.dress?.(mesh);
+    geometries[i].userData.dress?.(mesh, logo);
     group.add(mesh);
   });
   return group;

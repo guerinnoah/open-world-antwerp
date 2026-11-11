@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import sharp, { type OverlayOptions } from 'sharp';
-import type { LogoRect } from '../../src/world/cityData.ts';
+import { OPERATORS, type LogoRect, type Operator } from '../../src/world/cityData.ts';
 import { OUT_DIR, RAW_DIR } from './config.ts';
 import type { LogoEntry } from './fetch-logos.ts';
 import { houseOf, logoItemsOf } from './signs.ts';
@@ -27,6 +27,7 @@ interface Prepared {
 
 interface Logos {
   of(tags: Record<string, string>): { index: number; aspect: number; named: boolean } | undefined;
+  operator(key: Operator): number | undefined;
   write(): Promise<LogoRect[]>;
 }
 
@@ -85,6 +86,18 @@ export async function loadLogos(): Promise<Logos> {
       return { index: logo.index, aspect: logo.w / logo.h, named: logo.w / logo.h < EMBLEM };
     },
 
+    operator(key) {
+      const { q, bg, ink } = OPERATORS[key];
+      const logo = logos.get(q);
+      if (!logo) return undefined;
+      const pixels = Buffer.from(logo.pixels);
+      if (ink !== undefined) {
+        const { r, g, b } = rgbOf(ink);
+        for (let i = 0; i < pixels.length; i += 4) pixels.set([r, g, b], i);
+      }
+      return used.push({ ...logo, pixels, bg }) - 1;
+    },
+
     async write() {
       const rects: LogoRect[] = [];
       const tiles: OverlayOptions[] = [];
@@ -104,7 +117,8 @@ export async function loadLogos(): Promise<Logos> {
         await sharp({ create: { width: ATLAS_W, height: y + H, channels: 3, background: { r: 0, g: 0, b: 0 } } })
           .composite(tiles).webp({ quality: 88, smartSubsample: true, effort: 6 }).toFile(`${OUT_DIR}/logos.webp`);
       }
-      const credits = used.map(({ entry: c }) =>
+      // credited once, though an operator's logo can have a second cell
+      const credits = [...new Map(used.map(({ entry }) => [entry.page, entry])).values()].map((c) =>
         `<li>${escape(c.label)}: <a href="${escape(c.page)}">${escape(c.file)}</a> by ${escape(c.artist)}, ${c.licenceUrl ? `<a href="${escape(c.licenceUrl)}">${escape(c.licence)}</a>` : escape(c.licence)}</li>`);
       await writeFile(`${OUT_DIR}/logos.html`, `<!doctype html>
 <html lang="en">
@@ -112,7 +126,7 @@ export async function loadLogos(): Promise<Logos> {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Open World Antwerp: names and logos</title>
 <style>body { font: 15px/1.5 system-ui, sans-serif; max-width: 42em; margin: 2em auto; padding: 0 1em; color: #222; }</style>
-<h1>Names and logos on signs</h1>
+<h1>Names and logos</h1>
 <p>Open World Antwerp is a free, non-commercial hobby game. It is not affiliated with, sponsored or endorsed by any business
 or organisation whose name or logo appears in it. Names and logos are shown only to depict the city as it really is,
 and remain the trademarks of their owners.</p>
