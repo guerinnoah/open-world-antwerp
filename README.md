@@ -1,77 +1,52 @@
 # Open World Antwerp
 
-**[Play it in your browser](https://antwerp.noahguerin.dev)**
+A driving sandbox in a 1:1 slice of central Antwerp, built from open data and playable in the browser. Written in
+TypeScript with Three.js and Rapier.
+
+**[Play it](https://antwerp.noahguerin.dev)**
 
 ![Antwerp Centraal Station from above](public/og.jpg)
 
-An open-world driving sandbox in a real 1:1 slice of central Antwerp, playable in the browser. Drive a car, tram or
-bus, ride a Velo bike or e-scooter, walk into shops, or drive into the Scheldt. Take someone's car in front of the
-police and they'll chase you: get out of sight to lose them. Everyone online shares the same city. No guns, no missions.
+## Features
 
-Built with Vite, TypeScript, Three.js and Rapier 2D, plus a small WebSocket relay for multiplayer.
+- Cars, trams, buses, Velo bikes and e-scooters
+- Real streets, buildings, shops and trees, with trams and buses on De Lijn's timetable
+- Antwerp's real sun and live weather
+- Shared multiplayer world
 
-## Quick start
+## Getting started
 
-Needs Node 24 and pnpm 11.
+Requires Node 24 and pnpm 11.
 
 ```sh
 pnpm install
-pnpm dev      # http://localhost:5173
+pnpm dev
 ```
 
-The map and assets are committed under `public/`, so this is all you need. Open a second tab to test multiplayer.
+Then open http://localhost:5173. WASD to move, E to get in or out. Esc lists every control.
 
-## Controls
+## Documentation
 
-| Action | Keyboard | Touch |
-|---|---|---|
-| Move, drive | WASD or arrows | Joystick |
-| Get in or out | E | E |
-| Handbrake | Space | Handbrake |
-| Sprint on foot, go faster in a vehicle | Shift | Push the joystick to the edge |
-| Punch, or next radio station in a car | R | Punch, or tap the station |
-| Horn or bell | H | |
-| Siren (emergency vehicles) | Q | Siren |
-| Map and waypoints | P, then Backspace to clear the waypoint | Tap the minimap |
-| Chat | T | 💬 |
-| Look around | Drag the mouse | Swipe |
-| First / third person | V | 1st / 3rd |
-| Radio on or off | Shift+R | 📻 |
-| Mute | M | 🔊 |
-| Settings | Esc | ⚙ |
-
-Every key can be changed in Settings, along with graphics quality, volume, look speed and field of view. Gamepads work
-too.
-
-## Scripts
-
-- `pnpm dev`: dev server, with the multiplayer relay built in
-- `pnpm build`: type-check and build the static site into `dist/`
-- `pnpm test`: unit tests
-- `pnpm server`: the standalone multiplayer relay
-
-## Docs
-
-- [Architecture](docs/architecture.md): how the game fits together
-- [Map pipeline](docs/map-pipeline.md): rebuilding the city from open data
-- [Multiplayer](docs/multiplayer.md): the relay and deployment
-- [Development](docs/development.md): tests, headless tools, URL parameters
+- [Architecture](docs/architecture.md)
+- [Map pipeline](docs/map-pipeline.md)
+- [Multiplayer](docs/multiplayer.md)
+- [Development](docs/development.md)
 
 ## Credits
 
-- Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, available under the
-  [ODbL](https://opendatacommons.org/licenses/odbl/)
-- Building heights: Bron: Grootschalig Referentie Bestand Vlaanderen, Digitaal Vlaanderen
-  ([3D GRB](https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb),
-  Modellicentie Gratis Hergebruik v1.0)
-- People: [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT, see `public/people/LICENSE.txt`)
+- Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors ([ODbL](https://opendatacommons.org/licenses/odbl/))
+- Building heights: Bron: Grootschalig Referentie Bestand Vlaanderen, Digitaal Vlaanderen ([3D GRB](https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/3d-grb), Modellicentie Gratis Hergebruik v1.0)
+- Aerial photo: Bron: Orthofotomozaïek, middenschalig, winteropnamen, kleur, meest recent, Vlaanderen, Digitaal Vlaanderen
+- Trees: Groeninventaris, [Stad Antwerpen](https://portaal-stadantwerpen.opendata.arcgis.com)
+- Timetables: [De Lijn](https://data.delijn.be) (GTFS)
+- Weather: [Open-Meteo](https://open-meteo.com) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))
+- People: [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT)
 - Textures: [Poly Haven](https://polyhaven.com) (CC0)
-- Logos: Wikimedia Commons, credited in `public/map/logos.html`
-- Radio: the public live streams of VRT and DPG Media
+- Logos: Wikimedia Commons, see `public/map/logos.html`
+- Radio: VRT and DPG Media live streams
 
 Not affiliated with any brand shown in the game.
 
 ## License
 
-The code is under the [MIT License](LICENSE). The map data, people, textures and logos keep their own licences, listed
-above.
+Code: [MIT](LICENSE). Data and assets keep their own licences, listed above.

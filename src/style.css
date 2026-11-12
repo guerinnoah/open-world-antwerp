@@ -62,7 +62,7 @@ body.on-title > :not(#title, #game, #credits, #settings) { visibility: hidden; }
 #credits .repo svg { width: 20px; height: 20px; }
 #credits summary { list-style: none; padding: 2px 4px; font-size: 22px; line-height: 1; cursor: pointer; }
 #credits summary::-webkit-details-marker { display: none; }
-#credits details > div { position: absolute; bottom: calc(100% + 6px); right: 0; width: max-content; max-width: 80vw; padding: 8px 10px; border-radius: 6px; background: rgb(20 22 28 / 0.85); color: rgb(255 255 255 / 0.85); line-height: 1.6; text-align: right; }
+#credits details > div { position: absolute; bottom: calc(100% + 6px); right: 0; width: max-content; max-width: min(80vw, 360px); padding: 8px 10px; border-radius: 6px; background: rgb(20 22 28 / 0.85); color: rgb(255 255 255 / 0.85); line-height: 1.6; text-align: right; }
 
 #hud { position: fixed; inset: var(--safe-t) var(--safe-r) 0 var(--safe-l); z-index: 1; pointer-events: none; font-weight: 700; text-shadow: 0 2px 4px rgb(0 0 0 / 0.6); }
 #hud .speed { position: absolute; right: 18px; bottom: 34px; font-size: 40px; font-variant-numeric: tabular-nums; }
