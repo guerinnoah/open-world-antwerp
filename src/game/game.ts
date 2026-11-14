@@ -13,7 +13,6 @@ import { isBus, isEmergency, isMotorbike, twoWheeled, type Vehicle } from '../ac
 import { VehicleRenderer } from '../actors/vehicleModels';
 import type { Input, InputState } from '../core/input';
 import { keyLabel, moveKeys } from '../core/keys';
-import { pick } from '../core/util';
 import { Sound } from '../audio/sound';
 import { Splash } from '../fx/splash';
 import type { Multiplayer } from '../net/multiplayer';
@@ -29,6 +28,7 @@ import type { Districts } from '../world/districts';
 import type { Interiors } from '../world/interiors';
 import { NavGraph, kerbside } from '../world/navGraph';
 import { project } from '../world/projection';
+import type { TrafficSignals } from '../world/signals';
 import type { Door } from '../world/signs';
 import { trackTest } from '../world/trackClearance';
 import { WaterMap } from '../world/water';
@@ -126,6 +126,7 @@ export class Game {
     readonly bikes: Bikes,
     readonly scooters: Scooters,
     private motorbikes: Motorbikes,
+    signals: TrafficSignals,
     start: Start = CENTRAAL_START,
   ) {
     this.water = new WaterMap(city);
@@ -152,9 +153,9 @@ export class Game {
     this.hud.viewToggle(() => this.toggleView(), () => this.rig.firstPerson);
 
     for (const v of parkCars(physics, this.drive, this.water, trackTest(graph.trams), start, population.parkedCars)) this.addVehicle(v);
-    this.traffic = new Traffic(physics, this.drive, this, population.traffic);
+    this.traffic = new Traffic(physics, this.drive, this, population.traffic, signals);
     this.peds = new Pedestrians(
-      physics, walk, this.drive, population.peds, population.pedView, crowd, city.landmarks,
+      physics, walk, this.drive, population.peds, population.pedView, crowd, city.landmarks, city.crossings, signals,
     );
     this.cyclists = new Cyclists(physics, new NavGraph(graph.bike ?? { nodes: [], edges: [] }, true), crowd, population.cyclists, population.pedView);
     this.player.avatar = crowd.indexOf(PLAYER_LOOK);
@@ -162,7 +163,7 @@ export class Game {
     const clock = antwerpClock(params); // De Lijn's schedule for this hour
     this.startWanted = Math.max(0, Math.floor(Number(params.get('wanted')) || 0));
     this.trams = new Trams(physics, graph.trams, population.trams, graph.schedules, clock);
-    this.buses = new Buses(physics, graph.buses, population.buses, this, graph.schedules, clock);
+    this.buses = new Buses(physics, graph.buses, population.buses, this, graph.schedules, clock, signals);
     this.renderer = new VehicleRenderer(population.parkedCars + population.traffic + 20, population.vehicleView);
     scene.add(this.player.object, this.renderer.group, crowd.group, this.cyclists.group, this.trams.group, this.buses.group, this.splash.points);
 
@@ -222,8 +223,8 @@ export class Game {
   private welcome() {
     this.hud.toast(
       this.input.touch
-        ? 'Welcome to Antwerp! Joystick to walk, E to steal a car.'
-        : `Welcome to Antwerp! ${moveKeys()} to walk, ${keyLabel('use')} to steal a car.`,
+        ? 'Welcome to Antwerp. Joystick to walk, E to get in a car.'
+        : `Welcome to Antwerp. ${moveKeys()} to walk, ${keyLabel('use')} to get in a car.`,
       5000,
     );
   }
@@ -356,7 +357,7 @@ export class Game {
     const reachable = !this.indoors && !this.player.swimming && !this.driving?.afloat;
     const outcome = this.wanted.update(dt, this.traffic.spotted, still && reachable && this.traffic.pinned(s.x, s.z));
     if (outcome === 'arrested') this.die(true);
-    else if (outcome === 'lost') this.hud.toast(pick(['You lost them.', 'Lost the police.', 'They gave up looking.']));
+    else if (outcome === 'lost') this.hud.toast('You lost the police.');
   }
 
   crime(x: number, z: number, againstPolice = false) {
@@ -364,7 +365,7 @@ export class Game {
     const first = !this.wanted.level, witnessed = againstPolice || this.traffic.witness(x, z);
     if (witnessed || !first) this.traffic.reveal(x, z); // once wanted, every crime gives you away
     if (this.wanted.crime(witnessed)) {
-      this.hud.toast(first ? pick(['The police saw that! Get out of sight to lose them.', 'Politie! Lose them.', 'Wanted! Break their line of sight.']) : 'More police on the way.');
+      this.hud.toast(first ? 'The police saw that. Get out of sight to lose them.' : 'More police on the way.');
     }
   }
 
@@ -404,9 +405,7 @@ export class Game {
     this.rig.snap();
     this.hud.defeat(0);
     this.hud.fade();
-    this.hud.toast(pick(this.arrested
-      ? ['Released from the Oudaan police tower.', 'Let off with a warning this time.', 'Statement taken. Free to go.']
-      : ['Patched up at ZNA Sint-Elisabeth.', 'Discharged. Look both ways this time.', 'The nurses say: mind the trams.']));
+    this.hud.toast(this.arrested ? 'Released from the Oudaan police tower.' : 'Patched up at ZNA Sint-Elisabeth.');
     this.arrested = false;
   }
 

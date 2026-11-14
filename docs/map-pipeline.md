@@ -9,8 +9,8 @@ pnpm map:fetch-grb            # building heights from 3D GRB (Digitaal Vlaandere
 pnpm map:fetch-logos          # logos from Wikidata
 pnpm map:fetch-brand-colours  # house colours for other chains, sampled from their Wikidata logo
 pnpm map:fetch-trees          # trees from Antwerp's open inventory
-pnpm map:fetch-gtfs           # De Lijn timetables
 pnpm map:build                # writes public/map/
+pnpm map:fetch-gtfs           # De Lijn timetables; reads graph.json, so run map:build again after it
 pnpm map:fetch-districts      # neighbourhood outlines, straight to public/map/districts.json
 ```
 

@@ -13,10 +13,10 @@ is Three's (x, z).
 
 ## How it runs
 
-- `src/main.ts` loads the map, textures and people, builds the scenery, then creates `Game` and the optional systems
-  (interiors, motorbikes, multiplayer…), which attach with `game.attachX()`.
-- The loop steps physics at a fixed rate (60 Hz on desktop, 30 on phones) and renders every frame, interpolating
-  between steps.
+- `src/main.ts` loads the map, textures and people, builds the scenery, then creates `Game` (passing it the interiors,
+  bikes, scooters and motorbikes). Settings, districts and multiplayer attach afterwards with `game.attachX()`.
+- The loop steps physics at a fixed rate (60 Hz on the high preset, 30 otherwise) and renders every frame,
+  interpolating between steps.
 - `src/game/game.ts` owns the simulation. Logic goes in `fixedUpdate`, drawing in `render`. It hands getting in and out of
   vehicles to `boarding.ts`, crashes and knock-downs to `collisions.ts`, and the water to `sinking.ts`.
 

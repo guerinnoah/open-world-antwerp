@@ -31,8 +31,9 @@ import { showOperatorLogo } from './actors/tramModel';
 import { Districts, type District } from './world/districts';
 import { createFacadeDetail } from './world/facadeDetail';
 import { createMarkings } from './world/markings';
-import { createProps } from './world/props';
+import { VIEW as PROP_VIEW, createProps } from './world/props';
 import { Interiors } from './world/interiors';
+import { TrafficSignals } from './world/signals';
 import { Signs, chainFronts } from './world/signs';
 import { loadTextures } from './world/textures';
 import { clearTramTracks } from './world/trackClearance';
@@ -147,7 +148,8 @@ if (aoModule) {
 const t1 = performance.now();
 clearTramTracks(city, graph.trams);
 const ground = createGround(city, textures, aerial);
-const props = createProps(city, quality.detailView, environment.night);
+const signals = new TrafficSignals(city.props.signals, graph.drive, PROP_VIEW.signal * quality.detailView);
+const props = createProps(city, quality.detailView, environment.night, signals);
 const facadeDetail = createFacadeDetail(city.buildings, quality.detailView);
 const signs = new Signs(city, renderer, 200 * quality.detailView, environment.night);
 const bikes = new Bikes(city, crowd, 130 * quality.detailView);
@@ -159,7 +161,7 @@ operatorLogo(city, 'delijn').then((logo) => logo && showOperatorLogo(logo));
 const trees = createTrees(city.trees, Math.max(240 * quality.detailView, quality.shadowRange * 1.5));
 const scenery = [
   createMarkings(graph.drive, city.crossings ?? []), ground.group, props.group, facadeDetail.group, signs.group, createBuildings(city.buildings, textures, environment.night, chainFronts(city)),
-  trees.group, landmarks,
+  trees.group, landmarks, signals.group,
 ];
 scene.add(...scenery);
 for (const root of scenery) {
@@ -173,6 +175,7 @@ for (const root of scenery) {
 const updateScenery = (dt: number, time: number) => {
   ground.update(time / 1000);
   props.update(camera.position);
+  signals.update(Date.now());
   facadeDetail.update(camera.position);
   trees.update(camera.position);
   signs.update(camera.position, dt);
@@ -209,7 +212,7 @@ if (params.has('fly')) {
   breakables.extras = (b) => (b.parts[0]?.kind === 'veloDock' ? bikes.clearDocks(b.x, b.z, 0.6) : []);
   const start = params.get('spawn') === 'grotemarkt' ? GROTE_MARKT_START : CENTRAAL_START;
   const input = new Input(canvas);
-  const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, interiors, breakables, bikes, scooters, motorbikes, start);
+  const game = new Game(scene, camera, physics, input, city, graph, quality, crowd, interiors, breakables, bikes, scooters, motorbikes, signals, start);
   (window as unknown as { game: Game }).game = game;
   game.attachSettings(settingsPanel);
   json<District[]>(asset('/map/districts.json')).then((d) => game.attachDistricts(new Districts(d))).catch(() => {});

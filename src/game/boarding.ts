@@ -11,7 +11,6 @@ import { BIKE_SPEC, SCOOTER_SPEC, Vehicle, isBus, isEmergency, isMotorbike, isPo
 import type { Sound } from '../audio/sound';
 import type { Input } from '../core/input';
 import { keyLabel } from '../core/keys';
-import { pick } from '../core/util';
 import { GROUP, RAPIER, WHEELS, groups, type Physics } from '../physics/physics';
 import type { Hud } from '../ui/hud';
 import type { CameraRig } from './cameraRig';
@@ -129,7 +128,7 @@ export class Boarding {
     this.stand(spot, v.angle);
     this.host.player.down = 2;
     this.host.player.body.setLinvel({ x: velocity.x * 0.35, y: velocity.y * 0.35 }, true);
-    this.hud.toast(pick(['Ouch!', 'Wipeout!', 'Over the handlebars.']));
+    this.hud.toast('Thrown off the motorbike.');
     return true;
   }
 
@@ -208,7 +207,7 @@ export class Boarding {
     this.host.peds.knockDown(owner, -s, c, 3);
     this.sound.bump(b.x, b.z);
     this.host.crime(b.x, b.z);
-    this.mount(bike, pick(['Hé, mijn fiets!', 'Sorry, I need this more.', "That's my bike now.", 'Fietsdief!']));
+    this.mount(bike, 'You took their bike.');
     this.host.rig.yaw = b.heading;
   }
 
@@ -234,11 +233,11 @@ export class Boarding {
     if (toast) this.hud.toast(toast);
     else if (ride.spec.name === 'scooter') {
       const name = BRANDS[brandOf(ride.colour)].name;
-      this.hud.toast(pick([`${name} unlocked. Ride safe!`, `${name} unlocked. Mind the cobbles.`, `${name} unlocked. Max 25 km/h.`, `${name} unlocked. No passengers!`]));
+      this.hud.toast(`${name} unlocked. Max 25 km/h.`);
       this.sound.engineOn('scooter');
     } else if (isVelo(ride)) {
-      this.hud.toast(pick(['Velo time!', 'Pedal power.', 'Off you go, Antwerp style.', 'Mind the tram rails.']));
-    } else this.hud.toast(pick(['Pedal power.', 'Mind the tram rails.', 'Not yours, but hey.']));
+      this.hud.toast('Velo unlocked.');
+    }
     this.takeWheel(ride);
   }
 
@@ -262,7 +261,6 @@ export class Boarding {
       this.mount(v);
       return;
     }
-    let toast: string;
     const jacked = this.host.traffic.has(v), police = isPolice(v.spec) && !this.stolenPolice.has(v);
     if (jacked || police) this.host.crime(v.x, v.z, police);
     if (police) this.stolenPolice.add(v);
@@ -270,18 +268,15 @@ export class Boarding {
       this.host.traffic.release(v);
       const c = Math.cos(v.angle), s = Math.sin(v.angle);
       this.host.peds.spawnFleeing(v.x + s * (v.spec.width / 2 + 0.8), v.z - c * (v.spec.width / 2 + 0.8));
-      toast = pick(isEmergency(v.spec) ? ['Sorry, officer!', "They'll want that back."] : ['Sorry, sir!', 'Out you get!', "This one's mine now."]);
-    } else {
-      toast = pick(isMotorbike(v.spec) ? ['Vroom!', 'Hold on tight.', 'Two wheels, full throttle.', 'Not yours, but hey.'] : ['Vroom!', "Let's go!", 'Nice ride.', 'Not yours, but hey.']);
     }
     const radio = !isBus(v.spec) && !isMotorbike(v.spec) && !isEmergency(v.spec);
-    const tips = [toast];
+    const tips: string[] = [];
     if (isEmergency(v.spec)) tips.push(`${this.input.touch ? 'Tap Siren' : `Press ${keyLabel('siren')}`} for the lights.`);
     if (radio && !this.carTipShown) {
       this.carTipShown = true;
       tips.push(this.input.touch ? 'Tap the station name to change the radio.' : `${keyLabel('handbrake')} is the handbrake, ${keyLabel('horn')} the horn, ${keyLabel('punch')} the next radio station.`);
     }
-    this.hud.toast(tips.join(' '), tips.length > 1 ? 6000 : undefined);
+    if (tips.length) this.hud.toast(tips.join(' '), 6000);
     this.takeWheel(v);
     const moto = v.spec.name === 'motorbike' || v.spec.name === 'moped' ? v.spec.name : null;
     this.sound.engineOn(isBus(v.spec) || isTruck(v.spec) ? 'bus' : moto ?? 'car');
@@ -293,7 +288,7 @@ export class Boarding {
     const c = Math.cos(v.angle), s = Math.sin(v.angle);
     const ahead = v.spec.length / 2 - 1.5, side = v.spec.width / 2 + 0.8;
     this.host.peds.spawnFleeing(v.x + c * ahead + s * side, v.z + s * ahead - c * side);
-    this.hud.toast(pick([`Line ${b.run.line} is out of service.`, 'Next stop: wherever you like.', 'Tickets, please!', 'De Lijn is hiring.']));
+    this.hud.toast(`Line ${b.run.line} is out of service.`);
     this.host.crime(v.x, v.z);
     this.takeWheel(v, `Bus ${b.run.line}`);
     this.host.rig.yaw = v.angle;
@@ -308,7 +303,7 @@ export class Boarding {
     this.host.player.hide();
     this.rideAlong(t);
     this.host.rig.yaw = t.sections[0].rotation();
-    this.hud.toast(`Line ${t.run.line} to ${t.run.to}. ${pick(['Ding ding!', 'Next stop: wherever you like.', 'De Lijn is hiring.'])}`);
+    this.hud.toast(`Line ${t.run.line} to ${t.run.to}.`);
     this.sound.engineOn('tram');
   }
 }

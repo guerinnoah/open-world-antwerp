@@ -29,6 +29,9 @@ Then open http://localhost:5173. WASD to move, E to get in or out. Esc lists eve
 
 - [Architecture](docs/architecture.md)
 - [Map pipeline](docs/map-pipeline.md)
+- [Traffic](docs/traffic.md)
+- [Trams and buses](docs/transit.md)
+- [Police and health](docs/game.md)
 - [Multiplayer](docs/multiplayer.md)
 - [Development](docs/development.md)
 

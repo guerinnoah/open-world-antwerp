@@ -128,6 +128,7 @@ export class Vehicle {
   controls: { steer: number; throttle: number; handbrake: boolean; boost?: boolean } = { steer: 0, throttle: 0, handbrake: true };
   driven = false;
   siren = false;
+  held = false; // AI: waiting at a red light, or queued behind someone who is
   remote = false; // another player's kinematic body; step() skips it
 
   roll = 0;

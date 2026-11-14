@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CityData, RoadGraph } from '../src/world/cityData';
+import { zebraAcross } from '../src/actors/pedestrians';
 import { NavGraph } from '../src/world/navGraph';
+import { TrafficSignals } from '../src/world/signals';
 import { cumulative, offsetPolyline, pointAt } from '../src/world/polyline';
 import { clearTramTracks } from '../src/world/trackClearance';
 import { WaterMap } from '../src/world/water';
@@ -93,5 +95,66 @@ describe('clearTramTracks', () => {
     expect(city.props.lamps).toEqual([20, 2.5]);
     expect(city.props.signals).toEqual([60, -4, 1.2]);
     expect(city.terraces).toEqual([70, 3, 0, 3]);
+  });
+});
+
+describe('zebraAcross', () => {
+  // A street leaving the junction at (0, 0) eastwards; a zebra across it 6 m along, one along it, one behind the junction.
+  const across = [6, -4, 6, 4];
+  const along = [2, 5, 10, 5];
+  const behind = [-6, -4, -6, 4];
+
+  it('finds the crossing on the street being entered, ends pushed out onto the pavement, near end first', () => {
+    expect(zebraAcross([along, behind, across], 0, 0, 1, 0, 0, -5)).toEqual([6, -5, 6, 5]);
+    expect(zebraAcross([across], 0, 0, 1, 0, 0, 5)).toEqual([6, 5, 6, -5]);
+  });
+
+  it('ignores crossings along the street, on another arm or too far from the junction', () => {
+    expect(zebraAcross([along], 0, 0, 1, 0, 0, -5)).toBeNull();
+    expect(zebraAcross([behind], 0, 0, 1, 0, 0, -5)).toBeNull();
+    expect(zebraAcross([[40, -4, 40, 4]], 0, 0, 1, 0, 0, -5)).toBeNull();
+  });
+});
+
+describe('TrafficSignals', () => {
+  // A crossroads of 7 m streets at (20, 0); a second junction node 12 m east (a split junction); and a lone light at x 200.
+  const nodes = [20, 0, 0, 0, 60, 0, 20, -40, 20, 40, 32, 0, 32, 40];
+  const edge = (a: number, b: number) => ({ a, b, p: [nodes[a * 2], nodes[a * 2 + 1], nodes[b * 2], nodes[b * 2 + 1]], len: 1, s: 14, w: 7 });
+  const drive = { nodes, edges: [edge(0, 1), edge(0, 5), edge(5, 2), edge(0, 3), edge(0, 4), edge(5, 6)] };
+  // Eastbound pole (on its right, +z) by the first node; southbound pole by the second; a mid-block eastbound pole.
+  const signals = new TrafficSignals([14, 4.2, 0, 28, -6, Math.PI / 2, 200, 3, 0], drive, 300);
+  const at = (s: number) => signals.update(s * 1000);
+  const times = Array.from({ length: 92 }, (_, i) => i / 2); // one full cycle, every 0.5 s
+  const when = (pole: number, light: string) => times.find((s) => (at(s), signals.light(pole) === light))!;
+
+  it('runs a split junction as one, never giving both axes green, with an all-red gap', () => {
+    for (const s of times) {
+      at(s);
+      expect(signals.light(0) === 'red' || signals.light(1) === 'red').toBe(true);
+    }
+    expect(times.some((s) => (at(s), signals.light(0) === 'red' && signals.light(1) === 'red'))).toBe(true);
+  });
+
+  it('stops traffic short of the junction box on red, nose first, and not on green or for other headings', () => {
+    at(when(0, 'red'));
+    // The merged box's centre is (26, 0); its stop line 6 + 3.5 + 1.5 m before it, at x 15; nose 2.5 m ahead.
+    expect(signals.stopAhead(0, 1.9, 0, 10, 3, 2.5)).toBeCloseTo(12.5);
+    expect(signals.stopAhead(0, 1.9, Math.PI, 10, 3, 2.5)).toBe(Infinity);
+    expect(signals.stopAhead(20, 1.9, 0, 10, 3, 2.5)).toBe(Infinity); // already in the junction: carry on
+    at(when(0, 'green'));
+    expect(signals.stopAhead(0, 1.9, 0, 10, 3, 2.5)).toBe(Infinity);
+  });
+
+  it('stops traffic just short of a light away from junctions', () => {
+    at(when(2, 'red'));
+    expect(signals.stopAhead(180, 0, 0, 10, 3, 2)).toBeCloseTo(16.5);
+  });
+
+  it('lets people cross a street only while its traffic has red', () => {
+    for (const s of times) {
+      at(s);
+      expect(signals.walk(15, 0, 1, 0)).toBe(signals.light(0) === 'red');
+    }
+    expect(signals.walk(500, 500, 1, 0)).toBe(true); // no lights there
   });
 });

@@ -3,6 +3,7 @@ import { pick, wrapAngle } from '../core/util';
 import { GROUP, RAPIER, WHEELS, groups, type Physics } from '../physics/physics';
 import type { GraphEdge, Landmark } from '../world/cityData';
 import type { NavGraph, Step } from '../world/navGraph';
+import type { TrafficSignals } from '../world/signals';
 import { along, cumulative, nearestSegment, offsetPolyline, pointAt, segmentDistance, trimPolyline } from '../world/polyline';
 import { clipForSpeed, phaseStep, type Crowd } from './crowd';
 
@@ -14,7 +15,9 @@ const FLEE_SPEED = 4.5; // m/s
 const CLEAR_AHEAD = 25; // m
 const CLEAR_SIDE = 2.5; // m
 const KEEP_RIGHT = 0.35; // m, so opposite walkers pass
-const CROSS_CHANCE = 0.15;
+const CROSS_CHANCE = 0.35; // at a junction with a zebra crossing
+const ZEBRA_REACH = 12; // m from the junction to the crossing's middle
+const ZEBRA_KERB = 1; // m: ends pushed out of the road, so people wait on the pavement
 const KERB = 0.5; // m short of the kerb when crossing
 const SHARED_INSET = 0.6;
 const OFF_PATH = 2.5;
@@ -33,6 +36,31 @@ function streetWeight(e: GraphEdge, shared: boolean): number {
 
 const distanceTo = (p: number[], x: number, z: number) => nearestSegment(p, x, z).d;
 
+export type Zebra = [number, number, number, number]; // near end x, z, far end x, z
+
+/**
+ * A mapped zebra crossing (city.crossings) across the street (dx, dz) that leaves junction (nx, nz), on that street
+ * rather than another arm of the junction, entered from the end nearer (x, z). Its ends are pushed out onto the pavement.
+ */
+export function zebraAcross(crossings: number[][], nx: number, nz: number, dx: number, dz: number, x: number, z: number): Zebra | null {
+  let best: number[] | null = null, bestD = ZEBRA_REACH;
+  const len = Math.hypot(dx, dz) || 1;
+  for (const c of crossings) {
+    const [ax, az, bx, bz] = [c[0], c[1], c[c.length - 2], c[c.length - 1]];
+    const mx = (ax + bx) / 2 - nx, mz = (az + bz) / 2 - nz, d = Math.hypot(mx, mz);
+    const span = Math.hypot(bx - ax, bz - az) || 1;
+    // across the street, not along it, and on it: ahead of the junction
+    if (d >= bestD || Math.abs(((bx - ax) * dx + (bz - az) * dz) / (span * len)) > 0.5 || mx * dx + mz * dz <= 0) continue;
+    bestD = d;
+    best = c;
+  }
+  if (!best) return null;
+  const [ax, az, bx, bz] = [best[0], best[1], best[best.length - 2], best[best.length - 1]];
+  const span = Math.hypot(bx - ax, bz - az) || 1, ux = ((bx - ax) / span) * ZEBRA_KERB, uz = ((bz - az) / span) * ZEBRA_KERB;
+  const [a, b]: [number, number][] = [[ax - ux, az - uz], [bx + ux, bz + uz]];
+  return Math.hypot(a[0] - x, a[1] - z) < Math.hypot(b[0] - x, b[1] - z) ? [...a, ...b] : [...b, ...a];
+}
+
 type State = 'walk' | 'down' | 'flee';
 
 export interface Ped {
@@ -49,6 +77,7 @@ export interface Ped {
   prev: { x: number; z: number };
   avatar: number;
   away?: [number, number]; // else from the player
+  zebra?: Zebra; // the crossing its path starts with
 }
 
 export function personBody(world: RAPIER.World, x: number, z: number, radius: number, mass: number, damping: number): RAPIER.RigidBody {
@@ -87,6 +116,8 @@ export class Pedestrians {
     private view: number,
     private crowd: Crowd,
     landmarks: Landmark[],
+    private crossings: number[][] = [],
+    private signals?: TrafficSignals,
   ) {
     this.target = base;
     const spine = CENTRE_SPINE.flatMap((id) => {
@@ -254,20 +285,34 @@ export class Pedestrians {
     return options[options.length - 1];
   }
 
-  private laneFor(step: Step, x?: number, z?: number, cross = CROSS_CHANCE): number[] | null {
+  /** The walkable lanes along a step: one per side with a pavement, or a line within a shared street. */
+  private lanes(step: Step): number[][] {
     const e = this.graph.edges[step.edge];
     const l = this.sides[step.edge * 2], r = this.sides[step.edge * 2 + 1];
     const sides = step.forward ? [l, r] : [r, l];
-    const lanes = [0, 1].filter((s) => sides[s] >= 0).map((s) => {
+    return [0, 1].filter((s) => sides[s] >= 0).map((s) => {
       const off = sides[s] === 0 ? (Math.random() - 0.5) * Math.max(1.5, (e.w - 2) * 0.8) : sides[s];
       return this.graph.lane(step, (s === 1 ? off : -off) + KEEP_RIGHT);
     });
+  }
+
+  /** Given a position, the same side of the street; without one, either. */
+  private laneFor(step: Step, x?: number, z?: number): number[] | null {
+    const lanes = this.lanes(step);
     if (!lanes.length) return null;
-    let lane = pick(lanes);
-    if (x !== undefined && z !== undefined && lanes.length === 2 && Math.random() >= cross) {
-      lane = distanceTo(lanes[0], x, z) < distanceTo(lanes[1], x, z) ? lanes[0] : lanes[1];
-    }
+    const lane = x === undefined || z === undefined || lanes.length < 2 ? pick(lanes) : lanes.sort((a, b) => distanceTo(a, x, z) - distanceTo(b, x, z))[0];
     return this.atKerbs(lane, step);
+  }
+
+  /** To the other pavement over a mapped zebra at this junction, if there is one: across it end to end, then on along. */
+  private crossing(step: Step, x: number, z: number): { pts: number[]; zebra: Zebra } | null {
+    const lanes = this.lanes(step);
+    const e = this.graph.edges[step.edge], n = step.forward ? e.a : e.b, p = e.p, m = p.length;
+    const [dx, dz] = step.forward ? [p[2] - p[0], p[3] - p[1]] : [p[m - 4] - p[m - 2], p[m - 3] - p[m - 1]];
+    const zebra = lanes.length === 2 ? zebraAcross(this.crossings, this.graph.nodes[n * 2], this.graph.nodes[n * 2 + 1], dx, dz, x, z) : null;
+    if (!zebra) return null;
+    const far = this.atKerbs(lanes.sort((a, b) => distanceTo(b, x, z) - distanceTo(a, x, z))[0], step);
+    return { pts: [...zebra, ...far.slice((nearestSegment(far, zebra[2], zebra[3]).k + 1) * 2)], zebra };
   }
 
   private kerbLane(step: Step): number[] {
@@ -301,7 +346,9 @@ export class Pedestrians {
       if (p.i >= n) {
         const options = this.graph.options(this.graph.endNode(p.last), p.last.edge);
         const next = this.pickStep(options);
-        const lane = this.laneFor(next, t.x, t.y) ?? this.kerbLane(next);
+        const cross = Math.random() < CROSS_CHANCE ? this.crossing(next, t.x, t.y) : null;
+        const lane = cross?.pts ?? this.laneFor(next, t.x, t.y) ?? this.kerbLane(next);
+        p.zebra = cross?.zebra;
         p.pts = lane;
         p.i = 0;
         p.last = next;
@@ -310,8 +357,12 @@ export class Pedestrians {
       wantX = p.pts[p.i * 2] - t.x;
       wantZ = p.pts[p.i * 2 + 1] - t.y;
       const d = Math.hypot(wantX, wantZ);
-      p.timer = Math.hypot(v.x, v.y) < 0.3 * p.speed ? p.timer + dt : 0;
-      if (p.i > 0 && segmentDistance(p.pts, p.i - 1, t.x, t.y) > OFF_PATH) this.rejoin(p);
+      const z = p.zebra;
+      // At the kerb of a crossing in a signalled junction: wait for the cars on that street to get red.
+      const waiting = p.i === 0 && !!z && d < 1.2 && !!this.signals && !this.signals.walk((z[0] + z[2]) / 2, (z[1] + z[3]) / 2, z[1] - z[3], z[2] - z[0]);
+      p.timer = Math.hypot(v.x, v.y) < 0.3 * p.speed && !waiting ? p.timer + dt : 0;
+      if (waiting) wantX = wantZ = 0;
+      else if (p.i > 0 && segmentDistance(p.pts, p.i - 1, t.x, t.y) > OFF_PATH) this.rejoin(p);
       else if (d < 0.8 || p.timer > 2) {
         p.i++;
         p.timer = 0;
@@ -320,7 +371,7 @@ export class Pedestrians {
         wantX -= wantZ;
         wantZ += x;
       }
-      speed = p.speed;
+      speed = waiting ? 0 : p.speed;
     }
 
     if (p.state !== 'down') {
@@ -336,7 +387,7 @@ export class Pedestrians {
   }
 
   private rejoin(p: Ped) {
-    p.away = undefined;
+    p.away = p.zebra = undefined;
     const t = p.body.translation();
     const near = this.graph.nearest(t.x, t.y, 40);
     if (!near) {
@@ -347,7 +398,7 @@ export class Pedestrians {
     const e = this.graph.edges[near.edge].p, v = Math.min(near.vertex, e.length / 2 - 2), vel = p.body.linvel();
     const ahead = (e[v * 2 + 2] - e[v * 2]) * vel.x + (e[v * 2 + 3] - e[v * 2 + 1]) * vel.y;
     const step: Step = { edge: near.edge, forward: ahead ? ahead > 0 : Math.random() < 0.5 };
-    const lane = this.laneFor(step, t.x, t.y, 0) ?? this.kerbLane(step);
+    const lane = this.laneFor(step, t.x, t.y) ?? this.kerbLane(step);
     const { k } = nearestSegment(lane, t.x, t.y);
     const s = along(lane[k * 2], lane[k * 2 + 1], lane[k * 2 + 2], lane[k * 2 + 3], t.x, t.y);
     p.pts = [

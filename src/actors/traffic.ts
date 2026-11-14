@@ -2,6 +2,7 @@ import { weightedPick, wrapAngle } from '../core/util';
 import { GROUP, RAPIER, groups, type Physics } from '../physics/physics';
 import type { NavGraph, Step } from '../world/navGraph';
 import { lengthFrom, segmentDistance, turnAt } from '../world/polyline';
+import type { TrafficSignals } from '../world/signals';
 import { extent } from './trackProbe';
 import { VEHICLE_TYPES, Vehicle, isEmergency, isPolice, paintFor, type VehicleSpec } from './vehicle';
 
@@ -106,6 +107,7 @@ export class Traffic {
     private graph: NavGraph,
     private host: TrafficHost,
     private target: number,
+    private signals?: TrafficSignals,
   ) {}
 
   get count() {
@@ -406,11 +408,16 @@ export class Traffic {
     }
     if (Math.abs(alpha) > 0.6) target = Math.min(target, CORNER_SPEED + 1);
     if (d.yielding > 0) target = Math.min(target, 3);
+    // Sirens go through; everyone else stops at the line, nose first.
+    const red = this.signals && !v.siren ? this.signals.stopAhead(x, z, a, speed, DECEL, v.spec.length / 2 + 0.5) : Infinity;
+    if (red < Infinity) target = Math.min(target, Math.sqrt(2 * DECEL * red));
+    let held = red < Infinity;
     if (suspect && !ramming(suspect)) target = Math.min(target, this.pullUp(suspect, Math.hypot(suspect.x - x, suspect.z - z)));
 
     d.honkCooldown -= dt;
     if (d.bold <= 0) {
-      const { gap, blocker, player } = this.obstacleAhead(v);
+      const { gap, blocker, player, queued } = this.obstacleAhead(v);
+      if (queued && gap < 12) held = true;
       // Else two AI cars crossing wait forever: a siren, then the lower id, goes first.
       const other = blocker && this.drivers.get(blocker);
       const first = other && (v.siren !== other.v.siren ? v.siren : other.id > d.id);
@@ -436,7 +443,9 @@ export class Traffic {
       }
     }
     d.bold -= dt;
-    if (target < 0.5 && Math.abs(speed) < 0.5) {
+    // Waiting at a red light, or in the queue behind one, isn't being stuck: else it would push through the cars ahead.
+    v.held = held;
+    if (target < 0.5 && Math.abs(speed) < 0.5 && !held) {
       d.stuck += dt;
       if (d.stuck > (v.siren ? 1.5 : 3.5)) {
         d.bold = 2.5;
@@ -563,7 +572,7 @@ export class Traffic {
     return ahead > 0 && ahead < o.spec.length / 2 + 4 + Math.max(o.forwardSpeed, 0) * 1.3 + v.spec.length && Math.abs(side) < 2;
   }
 
-  private obstacleAhead(v: Vehicle): { gap: number; blocker?: Vehicle; player: boolean } {
+  private obstacleAhead(v: Vehicle): { gap: number; blocker?: Vehicle; player: boolean; queued: boolean } {
     const { x, z, angle: a } = v;
     const len = 4 + Math.max(v.forwardSpeed, 0) * 1.3;
     const half = v.spec.length / 2;
@@ -571,7 +580,7 @@ export class Traffic {
     this.box.halfExtents = { x: len / 2, y: 0.95 };
     let gap = Infinity;
     let blocker: Vehicle | undefined;
-    let player = false;
+    let player = false, queued = false;
     this.physics.world.intersectionsWithShape(
       { x: x + fx * (half + len / 2), y: z + fz * (half + len / 2) },
       a,
@@ -585,6 +594,7 @@ export class Traffic {
           const owner = this.physics.owners.get(collider.handle);
           blocker = owner?.kind === 'vehicle' ? (owner.entity as Vehicle) : undefined;
           player = owner?.kind === 'player' || (!!blocker && blocker.driven && !this.drivers.has(blocker));
+          queued = !!(owner?.entity as { held?: boolean } | undefined)?.held; // a car or bus waiting for a light
         }
         return true;
       },
@@ -593,7 +603,7 @@ export class Traffic {
       undefined,
       v.body,
     );
-    return { gap, blocker, player };
+    return { gap, blocker, player, queued };
   }
 
   private rejoin(d: Driver) {

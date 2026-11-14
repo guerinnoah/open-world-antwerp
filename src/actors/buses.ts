@@ -3,6 +3,7 @@ import { lerpPose, type Pose } from '../core/util';
 import type { Physics } from '../physics/physics';
 import type { BusRun, LineSchedule } from '../world/cityData';
 import type { Clock } from '../world/daylight';
+import type { TrafficSignals } from '../world/signals';
 import { cumulative, pointAt } from '../world/polyline';
 import { AXLES, BUS_WIDTH as WIDTH, KINDS, LAYOUTS, SECTION_LENGTH, buildBus, busPlate, type BusKind } from './busModel';
 import type { TrafficHost } from './traffic';
@@ -35,6 +36,7 @@ export interface Bus extends Sectioned {
   honkCooldown: number;
   layover: number;
   layout: BusKind[];
+  held?: boolean; // waiting at a red light, or queued behind someone who is
 }
 
 export class Buses {
@@ -55,6 +57,7 @@ export class Buses {
     private host: TrafficHost,
     schedules: Record<string, LineSchedule> | undefined,
     clock: Clock,
+    private signals?: TrafficSignals,
   ) {
     this.runs = runs.map((r) => ({ ...r, cum: cumulative(r.p) }));
     this.meshes = new SectionMeshes(this.group, runs, KINDS, buildBus, () => target + OUT_OF_SERVICE, busPlate());
@@ -167,14 +170,19 @@ export class Buses {
       if (ahead < 40 && b.speed < 0.5) b.layover += dt;
     }
 
+    const lead = b.sections[0], at = lead.translation();
+    const red = this.signals ? this.signals.stopAhead(at.x, at.y, lead.rotation(), b.speed, BRAKE, SECTION_LENGTH[b.layout[0]] / 2 + 0.5) : Infinity;
+    if (red < Infinity) target = Math.min(target, Math.sqrt(2 * BRAKE * red));
+
     const { gap, owner, solid } = obstacleAhead(this.physics, b, b.s, 1, 3 + (b.speed * b.speed) / (2 * BRAKE) + 2, WIDTH / 2, 0.2);
     b.waitingFor = owner?.kind === 'bus' ? (owner.entity as Bus) : undefined;
+    b.held = red < Infinity || (gap < 12 && !!(owner?.entity as { held?: boolean } | undefined)?.held);
     if (gap < Infinity) {
       // impatient: nudge cars and people; transit only in a bus deadlock (lower id goes)
       const transit = owner?.kind === 'bus' || owner?.kind === 'tram';
       const pushy = !transit || (b.waitingFor?.waitingFor === b && b.id < b.waitingFor.id);
       target = Math.min(target, b.blocked < PATIENCE || !pushy ? Math.max(0, (gap - 1.5) * 0.7) : 2);
-      if (b.speed < 0.5) b.blocked += dt;
+      if (b.speed < 0.5 && !b.held) b.blocked += dt; // a queue at a red light isn't worth pushing
       if (b.blocked > HONK_AFTER && b.honkCooldown <= 0 && !transit) {
         const p = b.sections[0].translation();
         this.honks.push([p.x, p.y]);

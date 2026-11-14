@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { box, coloured, stableRandom } from '../core/util';
 import type { CityData } from './cityData';
 import { OLD_TOWN_RADIUS } from './roofs';
+import type { TrafficSignals } from './signals';
 
 const CHUNK = 500;
 
@@ -24,7 +25,8 @@ const MODELS = {
   ]),
   signal: () => mergeGeometries([ // lenses face -x, towards oncoming traffic
     cyl(0.07, 0.06, 3.2, 0, 0x5b5f63), box(0.24, 0.9, 0.3, 0, 2.3, 0, 0x1c1d1f),
-    box(0.02, 0.16, 0.16, -0.13, 2.95, 0, 0xd8251f), box(0.02, 0.16, 0.16, -0.13, 2.67, 0, 0x6a4f12), box(0.02, 0.16, 0.16, -0.13, 2.39, 0, 0x184a26),
+    // unlit lenses; signals.ts draws the lit one in front
+    box(0.02, 0.16, 0.16, -0.13, 2.95, 0, 0x4a1512), box(0.02, 0.16, 0.16, -0.13, 2.67, 0, 0x4a3a12), box(0.02, 0.16, 0.16, -0.13, 2.39, 0, 0x163a20),
   ]),
   terrace: () => mergeGeometries([ // ~200 triangles: there are a thousand
     cyl(0.36, 0.36, 0.03, 0.74, 0x2a2a2a, 10), cyl(0.03, 0.03, 0.74, 0, 0x2a2a2a, 5), cyl(0.22, 0.2, 0.03, 0, 0x2a2a2a, 6),
@@ -75,7 +77,7 @@ const HIT = {
   velo: { blocksPeople: false, tall: false, metal: true, keep: 0.92 },
   terminal: { blocksPeople: false, tall: true, metal: true, keep: 0.9 },
 } satisfies Record<string, Hit>;
-const VIEW: Record<Kind, number> = {
+export const VIEW: Record<Kind, number> = {
   lamp: 400, lantern: 300, bench: 180, bollard: 150, signal: 300, terrace: 150, parasol: 260, veloDock: 100, veloTerminal: 160,
 };
 const chunkOf = (kind: Kind) => (kind.startsWith('velo') ? 150 : CHUNK);
@@ -88,7 +90,7 @@ export interface Props {
   loose(part: PropRef): THREE.InstancedMesh;
 }
 
-export function createProps(city: CityData, viewScale = 1, night = 0): Props {
+export function createProps(city: CityData, viewScale = 1, night = 0, lights?: TrafficSignals): Props {
   const items: Record<Kind, Item[]> = {
     lamp: [], lantern: [], bench: [], bollard: [], signal: [], terrace: [], parasol: [], veloDock: [], veloTerminal: [],
   };
@@ -185,6 +187,7 @@ export function createProps(city: CityData, viewScale = 1, night = 0): Props {
         const { mesh, index } = slots[kind][i];
         mesh.setMatrixAt(index, broken ? hidden : pose(items[kind][i]));
         mesh.instanceMatrix.needsUpdate = true;
+        if (kind === 'signal') lights?.knock(i, broken);
         if (kind === 'lamp' || kind === 'lantern') glow?.setLit(kind === 'lamp' ? i : items.lamp.length + i, !broken);
       }
     },
